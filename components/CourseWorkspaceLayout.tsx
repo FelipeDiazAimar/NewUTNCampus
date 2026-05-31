@@ -449,7 +449,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           {/* Left: sections list */}
           <div className="min-w-0 shrink-0" style={{
             flex: 1,
-            ...(isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260 } : {}),
+            ...(isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 } : {}),
           }}>
             <div style={{ maxWidth: isPanelOpen ? "none" : "42rem", margin: "0 auto" }}>
               {children}
