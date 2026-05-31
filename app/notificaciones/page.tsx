@@ -93,7 +93,27 @@ export default function NotificacionesPage() {
 
     const data = await res.json();
     setProfile(data.profile);
-    setMaterias(data.materias ?? []);
+    const existingMaterias = data.materias ?? [];
+
+    if (existingMaterias.length === 0 && courseNames.length > 0) {
+      const seeded = await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "init", courses: courseNames }),
+      });
+      if (!seeded.ok) {
+        setError("No se pudieron cargar las notificaciones.");
+        setLoading(false);
+        return;
+      }
+      const seededData = await seeded.json();
+      setProfile(seededData.profile ?? data.profile);
+      setMaterias(seededData.materias ?? []);
+      setLoading(false);
+      return;
+    }
+
+    setMaterias(existingMaterias);
     setLoading(false);
   }
 

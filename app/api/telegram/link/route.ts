@@ -35,27 +35,41 @@ async function ensureProfile(email: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const email = getUserKey(req);
-  if (!email) {
-    return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  try {
+    const email = getUserKey(req);
+    if (!email) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? "";
+    if (!botUsername) {
+      return NextResponse.json({ error: "Falta TELEGRAM_BOT_USERNAME" }, { status: 500 });
+    }
+
+    const profile = await ensureProfile(email);
+    if (!profile) {
+      return NextResponse.json({ error: "No se pudo crear el perfil" }, { status: 500 });
+    }
+
+    const linkCode = randomUUID().slice(0, 8);
+    const patchRes = await supabaseFetch(
+      `perfil_notificaciones?email=eq.${encodeURIComponent(email)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ telegram_link_code: linkCode }),
+      }
+    );
+    if (!patchRes.ok) {
+      const text = await patchRes.text();
+      return NextResponse.json({ error: text || "No se pudo guardar el codigo" }, { status: 500 });
+    }
+
+    const url = `https://t.me/${botUsername}?start=${linkCode}`;
+    return NextResponse.json({ url });
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message || "Error al generar el enlace" },
+      { status: 500 }
+    );
   }
-
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? "";
-  if (!botUsername) {
-    return NextResponse.json({ error: "Falta TELEGRAM_BOT_USERNAME" }, { status: 500 });
-  }
-
-  const profile = await ensureProfile(email);
-  if (!profile) {
-    return NextResponse.json({ error: "No se pudo crear el perfil" }, { status: 500 });
-  }
-
-  const linkCode = randomUUID().slice(0, 8);
-  await supabaseFetch(`perfil_notificaciones?email=eq.${encodeURIComponent(email)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ telegram_link_code: linkCode }),
-  });
-
-  const url = `https://t.me/${botUsername}?start=${linkCode}`;
-  return NextResponse.json({ url });
 }
