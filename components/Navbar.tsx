@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
+import { clearCourseCache } from "@/lib/hooks";
 
 export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
 
   async function logout() {
     await fetch("/api/auth", { method: "DELETE" });
+    clearCourseCache();
     router.push("/");
   }
 
