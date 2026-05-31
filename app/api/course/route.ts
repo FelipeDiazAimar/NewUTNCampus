@@ -103,16 +103,86 @@ type SectionMeta = {
   htmlEnd: number;    // index where it ends
 };
 
-function extractSectionSummary(sectionHtml: string): string {
-  // Moodle renders section summaries in a div.summary > div.no-overflow
-  const summaryBlock =
-    sectionHtml.match(/class="[^"]*\bsummary\b[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ??
-    sectionHtml.match(/class="[^"]*section_description[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
+function sanitizeSummaryHtml(html: string): string {
+  return html
+    // Remove dangerous elements
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/<object[\s\S]*?<\/object>/gi, "")
+    .replace(/<embed[^>]*>/gi, "")
+    // Remove event handlers
+    .replace(/\s+on\w+="[^"]*"/gi, "")
+    .replace(/\s+on\w+='[^']*'/gi, "")
+    .replace(/href="javascript:[^"]*"/gi, 'href="#"')
+    // Strip inline styles and Moodle classes so they never override the app's typography
+    .replace(/\s+style="[^"]*"/gi, "")
+    .replace(/\s+class="[^"]*"/gi, "")
+    // Make Moodle-relative URLs absolute so images and links resolve correctly
+    .replace(/\b(href|src)="\/(?!\/)/g, `$1="${MOODLE_BASE}/`)
+    // Remove empty paragraphs and stacked <br> left by Moodle's editor
+    .replace(/<p>\s*(<br\s*\/?>)?\s*<\/p>/gi, "")
+    .replace(/(<br\s*\/?>\s*){2,}/gi, "<br>")
+    .trim();
+}
 
-  // Strip the inner no-overflow wrapper if present
-  const inner = summaryBlock.match(/class="[^"]*no-overflow[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? summaryBlock;
-  const text = stripTags(inner).replace(/\s+/g, " ").trim();
-  return text;
+/** Walk an HTML string and return content up to the matching closing </div>. */
+function extractUntilClosingDiv(html: string): string {
+  let depth = 1, i = 0;
+  while (i < html.length && depth > 0) {
+    const o = html.indexOf("<div", i);
+    const c = html.indexOf("</div>", i);
+    if (c === -1) break;
+    if (o !== -1 && o < c) { depth++; i = o + 4; }
+    else { depth--; if (depth === 0) return html.slice(0, c); i = c + 6; }
+  }
+  return html.split("</div>")[0];
+}
+
+/** Extract the section summary HTML from a Moodle section chunk.
+ *  Requires the content to be inside a known Moodle summary container so
+ *  sidebar / navigation divs (which also use no-overflow) are never matched. */
+function extractSummaryHtml(sectionHtml: string): string {
+  // Only look before the first module to avoid false positives inside content.
+  const firstModuleIdx = sectionHtml.search(/\bid="module-\d+"/);
+  const searchArea = firstModuleIdx > 0
+    ? sectionHtml.slice(0, firstModuleIdx)
+    : sectionHtml.slice(0, 12000);
+
+  // Known containers for section description text across all Moodle themes.
+  // Order matters — most specific first.
+  const CONTAINERS: RegExp[] = [
+    /class="[^"]*\bsummarytext\b[^"]*"/,
+    /class="[^"]*\bsection-description\b[^"]*"/,
+    /class="[^"]*\bsectiondescription\b[^"]*"/,
+    /class="[^"]*\bdescription-inner\b[^"]*"/,
+    // "summary" as a whole word — but must NOT be part of "section-summary"
+    /class="([^"]*\bsummary\b[^"]*)"/,
+  ];
+
+  for (const pat of CONTAINERS) {
+    const m = searchArea.match(pat);
+    if (!m || m.index === undefined) continue;
+
+    // For the generic "summary" pattern, skip if it is "section-summary"
+    if (pat.source.includes("summary") && m[0].includes("section-summary")) continue;
+
+    // Advance past the opening tag of this container
+    const tagEnd = searchArea.indexOf(">", m.index) + 1;
+    if (tagEnd <= 0) continue;
+    const inner = searchArea.slice(tagEnd, tagEnd + 4000);
+
+    // If the container has a no-overflow child, use that; otherwise use the container directly.
+    const noOverflowM = inner.match(/class="[^"]*\bno-overflow\b[^"]*"[^>]*>/);
+    const contentSrc = noOverflowM
+      ? inner.slice(noOverflowM.index! + noOverflowM[0].length)
+      : inner;
+
+    const content = sanitizeSummaryHtml(extractUntilClosingDiv(contentSrc).trim());
+    if (content) return content;
+  }
+
+  return "";
 }
 
 function parseSectionMeta(mainHtml: string): SectionMeta[] {
@@ -183,13 +253,20 @@ export async function GET(req: NextRequest) {
           modules = [];
         }
 
-        const summary = extractSectionSummary(sectionHtml);
-        console.log(`[course] section ${meta.sectionNum} "${meta.name}": ${modules.length} modules, summary: ${summary.length} chars`);
+        const summaryHtml = extractSummaryHtml(sectionHtml);
+        console.log(`[course] section ${meta.sectionNum} "${meta.name}": ${modules.length} modules, summaryHtml: ${summaryHtml.length} chars`);
+        modules.forEach((m) => {
+          console.log(
+            `  [mod] id=${m.id} modname=${JSON.stringify(m.modname)} name=${JSON.stringify(m.name)} ` +
+            `visible=${m.visible} url=${JSON.stringify(m.url ?? "")} ` +
+            `descLen=${m.description?.length ?? 0}`
+          );
+        });
         return {
           id: meta.sectionNum,
           name: meta.name,
           visible: 1,
-          summary,
+          summaryHtml,
           modules,
         };
       })

@@ -9,8 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@tailwindcss/typography": "^0.5.19",
     "docx-preview": "^0.3.7",
     "googleapis": "^173.0.0",
+    "html-react-parser": "^6.1.2",
     "jszip": "^3.10.1",
     "lucide-react": "^1.17.0",
     "mammoth": "^1.12.0",

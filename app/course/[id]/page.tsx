@@ -8,6 +8,7 @@ import { useCourseContents } from "@/lib/hooks";
 import type { MoodleModule, MoodleContent } from "@/lib/moodle";
 import type { AssignInfo } from "@/app/api/assign/route";
 import WorkspaceLayout, { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
+import parse from "html-react-parser";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
 
 function getUserInfo() {
@@ -450,6 +451,11 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 
   if (mod.modname === "label") {
     if (mod.description) {
+      // Skip labels that only contain links and no real body text.
+      // e.g. institutional navigation labels: <a href="...">RIA</a>
+      const textOnly = mod.description.replace(/<a[\s\S]*?<\/a>/gi, "").replace(/<[^>]+>/g, "").trim();
+      if (!textOnly) return null;
+
       return (
         <div
           className="px-4 py-3 text-[13px] text-[#3c3c43] leading-relaxed label-content"
@@ -519,12 +525,16 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 
 // ─── SectionAccordion ─────────────────────────────────────────────────────────
 
+// Institutional navigation links added automatically to all UTN courses — never useful to students.
+const INSTITUTIONAL_LINKS = new Set(["RIA", "eLibro", "Biblioteca", "Estudiantes", "Docentes"]);
+const isVisible = (m: MoodleModule) => m.visible !== 0 && !INSTITUTIONAL_LINKS.has(m.name);
+
 function SectionAccordion({ section, defaultOpen }: {
-  section: { id: number; name: string; summary?: string; modules: MoodleModule[] };
+  section: { id: number; name: string; summaryHtml?: string; modules: MoodleModule[] };
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
-  const visibleMods = section.modules.filter((m) => m.visible !== 0 && m.modname !== "label");
+  const visibleMods = section.modules.filter((m) => isVisible(m) && m.modname !== "label");
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
@@ -539,15 +549,22 @@ function SectionAccordion({ section, defaultOpen }: {
       </button>
       {open && (
         <div className="border-t border-[rgba(60,60,67,0.1)]">
-          {/* Section summary / description text */}
-          {section.summary && (
-            <div className="px-4 py-3 text-[13px] text-[#3c3c43] leading-relaxed border-b border-[rgba(60,60,67,0.08)]"
-              style={{ background: "#fafafa" }}>
-              {section.summary}
+          {section.summaryHtml && (
+            <div
+              className="prose prose-sm max-w-none px-4 py-3 border-b border-[rgba(60,60,67,0.08)]
+                prose-p:text-[#3c3c43] prose-p:leading-relaxed prose-p:my-1
+                prose-a:text-[#007aff] prose-a:no-underline hover:prose-a:underline
+                prose-strong:text-[#1c1c1e] prose-strong:font-semibold
+                prose-ul:pl-4 prose-ol:pl-4 prose-li:text-[#3c3c43] prose-li:my-0.5
+                prose-headings:text-[#1c1c1e] prose-headings:font-semibold
+                prose-img:rounded-lg prose-img:my-2"
+              style={{ background: "#fafafa" }}
+            >
+              {parse(section.summaryHtml)}
             </div>
           )}
           <div className="divide-y divide-[rgba(60,60,67,0.06)]">
-            {section.modules.filter((m) => m.visible !== 0).map((mod) => <ModuleRow key={mod.id} mod={mod} />)}
+            {section.modules.filter(isVisible).map((mod) => <ModuleRow key={mod.id} mod={mod} />)}
           </div>
         </div>
       )}

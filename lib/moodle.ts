@@ -25,7 +25,7 @@ export interface MoodleCourseSection {
   id: number;
   name: string;
   visible: number;
-  summary: string;
+  summaryHtml: string;
   modules: MoodleModule[];
 }
 

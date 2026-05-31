@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --bg: #ffffff;
@@ -42,6 +43,21 @@ body {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* ── Prose / section summary ────────────────────────────────────────────────── */
+/* Force the app's system font stack — never let Moodle HTML override it */
+.prose {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+    "Helvetica Neue", sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+}
+/* Tighten default prose spacing for compact card layout */
+.prose p   { margin-top: 0.35em; margin-bottom: 0.35em; }
+.prose ul,
+.prose ol  { margin-top: 0.35em; margin-bottom: 0.35em; }
+.prose li  { margin-top: 0.15em; margin-bottom: 0.15em; }
+.prose h1, .prose h2, .prose h3,
+.prose h4, .prose h5, .prose h6 { margin-top: 0.6em; margin-bottom: 0.25em; }
 
 /* ── Custom scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 5px; height: 5px; }
