@@ -1,13 +1,14 @@
 "use client";
 
-import { use, useEffect, useRef, useState, useCallback } from "react";
+import { use, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useCourseContents } from "@/lib/hooks";
 import type { MoodleModule, MoodleContent } from "@/lib/moodle";
-import type { ConvertResult, Slide } from "@/app/api/convert/route";
 import type { AssignInfo } from "@/app/api/assign/route";
+import WorkspaceLayout, { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
+import Spinner, { SpinnerBlock } from "@/components/Spinner";
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -74,10 +75,18 @@ function formatBytes(b: number) {
 
 // ─── File-kind detection ──────────────────────────────────────────────────────
 
-type ViewerKind =
-  | "pdf" | "image" | "video" | "audio"
-  | "docx" | "xlsx" | "pptx" | "text"
-  | "none";
+type ViewerKind = PanelKind | "image" | "video" | "audio" | "none";
+
+// Use the fileType field scraped from Moodle's icon URL — highest priority because
+// content.filename is the module display name and often has no extension.
+function kindFromFileType(ft?: string): ViewerKind {
+  if (!ft) return "none";
+  const m: Record<string, ViewerKind> = {
+    PDF: "pdf", PPTX: "pptx", DOCX: "docx", XLSX: "xlsx",
+    TXT: "text", IMG: "image", MP4: "video", MP3: "audio",
+  };
+  return m[ft.toUpperCase()] ?? "none";
+}
 
 function kindFromExt(name: string): ViewerKind {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -105,391 +114,86 @@ function kindFromCT(ct: string): ViewerKind {
   return "none";
 }
 
-// Only PPTX and text are still server-converted; DOCX and XLSX are rendered client-side
-const OFFICE_KINDS: ViewerKind[] = ["pptx", "text"];
+const PANEL_KINDS: ViewerKind[] = ["pdf", "docx", "xlsx", "pptx", "text"];
 
-// ─── Viewer states ────────────────────────────────────────────────────────────
+// ─── Viewer states (media only — documents go to the panel) ──────────────────
 
 type State =
   | { phase: "idle" }
-  | { phase: "loading"; label: string }
-  | { phase: "error"; message: string }
-  | { phase: "pdf" }
+  | { phase: "detecting" }
+  | { phase: "panel" }   // document sent to right panel
   | { phase: "image" }
   | { phase: "video" }
   | { phase: "audio" }
-  | { phase: "docx"; buffer: ArrayBuffer }
-  | { phase: "xlsx"; buffer: ArrayBuffer }
-  | { phase: "office"; data: ConvertResult }
   | { phase: "none" };
-
-// ─── Sub-viewers ─────────────────────────────────────────────────────────────
-
-// DOCX — renders natively via docx-preview (proper fonts, tables, images)
-function DocxViewer({ buffer }: { buffer: ArrayBuffer }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<"rendering" | "done" | "error">("rendering");
-  const [errMsg, setErrMsg] = useState("");
-
-  useEffect(() => {
-    if (!ref.current) return;
-    import("docx-preview")
-      .then(({ renderAsync }) =>
-        renderAsync(buffer, ref.current!, undefined, {
-          inWrapper: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
-          renderHeaders: true,
-          renderFooters: true,
-          renderFootnotes: true,
-          renderEndnotes: true,
-          useBase64URL: true,
-          breakPages: true,
-        })
-      )
-      .then(() => setStatus("done"))
-      .catch((e) => { setStatus("error"); setErrMsg((e as Error).message); });
-  }, [buffer]);
-
-  return (
-    <div className="overflow-auto" style={{ maxHeight: "75vh", background: "#525659" }}>
-      {status === "rendering" && (
-        <div className="flex items-center justify-center gap-2 h-20 bg-white">
-          <div className="w-4 h-4 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
-          <span className="text-[13px] text-[#6c6c70]">Renderizando documento…</span>
-        </div>
-      )}
-      {status === "error" && (
-        <p className="text-[#ff3b30] text-sm p-4">Error al renderizar: {errMsg}</p>
-      )}
-      <div ref={ref} className={status === "rendering" ? "hidden" : ""} />
-    </div>
-  );
-}
-
-// XLSX / CSV — parses client-side with SheetJS, renders with Excel-style grid
-function XlsxViewer({ buffer }: { buffer: ArrayBuffer }) {
-  type CellData = { v: string; right: boolean };
-  type SheetParsed = { name: string; cols: string[]; rows: { num: number; cells: CellData[] }[] };
-
-  const [sheets, setSheets] = useState<SheetParsed[]>([]);
-  const [active, setActive] = useState(0);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    import("xlsx").then((XLSX) => {
-      const wb = XLSX.read(buffer, { type: "array" });
-      const parsed: SheetParsed[] = wb.SheetNames.map((name) => {
-        const ws = wb.Sheets[name];
-        const ref = ws["!ref"];
-        if (!ref) return { name, cols: [], rows: [] };
-        const range = XLSX.utils.decode_range(ref);
-
-        const cols: string[] = [];
-        for (let c = range.s.c; c <= range.e.c; c++) cols.push(XLSX.utils.encode_col(c));
-
-        const rows = [];
-        for (let r = range.s.r; r <= range.e.r; r++) {
-          const cells: CellData[] = [];
-          for (let c = range.s.c; c <= range.e.c; c++) {
-            const cell = ws[XLSX.utils.encode_cell({ r, c })];
-            cells.push({ v: cell ? XLSX.utils.format_cell(cell) : "", right: cell?.t === "n" });
-          }
-          rows.push({ num: r + 1, cells });
-        }
-        return { name, cols, rows };
-      });
-      setSheets(parsed);
-    }).catch((e) => setErr((e as Error).message));
-  }, [buffer]);
-
-  if (err) return <p className="text-[#ff3b30] text-sm p-4">{err}</p>;
-  if (sheets.length === 0) return (
-    <div className="flex items-center justify-center gap-2 h-20">
-      <div className="w-4 h-4 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
-      <span className="text-[13px] text-[#6c6c70]">Procesando hoja de cálculo…</span>
-    </div>
-  );
-
-  const sheet = sheets[active];
-  const BORDER = "1px solid #c8c8c8";
-  const HDR = "#f0f0f0";
-
-  return (
-    <div className="flex flex-col" style={{ maxHeight: "75vh" }}>
-      {/* Sheet tabs */}
-      {sheets.length > 1 && (
-        <div className="flex gap-0 border-b border-[#c8c8c8] bg-[#f0f0f0] px-2 pt-1.5 overflow-x-auto">
-          {sheets.map((s, i) => (
-            <button
-              key={i}
-              onClick={() => setActive(i)}
-              style={{
-                padding: "4px 14px", fontSize: "12px", fontWeight: i === active ? 600 : 400,
-                borderTop: i === active ? "2px solid #007aff" : "2px solid transparent",
-                borderLeft: BORDER, borderRight: BORDER,
-                borderBottom: i === active ? "1px solid white" : BORDER,
-                background: i === active ? "white" : "#e8e8e8",
-                color: i === active ? "#007aff" : "#555",
-                marginBottom: i === active ? "-1px" : 0,
-                whiteSpace: "nowrap", cursor: "pointer",
-              }}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Spreadsheet grid */}
-      <div className="overflow-auto flex-1" style={{ background: "#fff" }}>
-        <table style={{ borderCollapse: "collapse", fontSize: "12px", fontFamily: "system-ui,sans-serif", tableLayout: "auto" }}>
-          <thead>
-            <tr>
-              {/* Corner cell */}
-              <th style={{ position: "sticky", top: 0, left: 0, zIndex: 4, background: HDR, border: BORDER, minWidth: 46, width: 46 }} />
-              {sheet.cols.map((col) => (
-                <th key={col} style={{
-                  position: "sticky", top: 0, zIndex: 3,
-                  background: HDR, border: BORDER,
-                  padding: "3px 6px", minWidth: 72,
-                  fontWeight: 600, textAlign: "center",
-                  fontSize: 11, color: "#444",
-                  userSelect: "none",
-                }}>
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sheet.rows.map(({ num, cells }) => (
-              <tr key={num} style={{ height: 20 }}>
-                {/* Row number */}
-                <td style={{
-                  position: "sticky", left: 0, zIndex: 2,
-                  background: HDR, border: BORDER,
-                  padding: "2px 8px 2px 4px", textAlign: "right",
-                  fontWeight: 600, fontSize: 11, color: "#444",
-                  minWidth: 46, userSelect: "none",
-                }}>
-                  {num}
-                </td>
-                {/* Data cells */}
-                {cells.map((cell, ci) => (
-                  <td key={ci} style={{
-                    border: BORDER,
-                    padding: "2px 6px",
-                    whiteSpace: "nowrap",
-                    textAlign: cell.right ? "right" : "left",
-                    background: "white",
-                    maxWidth: 240,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}>
-                    {cell.v}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── SlideViewer — presentation-style 16:9 canvas ─────────────────────────────
-
-function SlideViewer({ slides }: { slides: Slide[] }) {
-  const [idx, setIdx] = useState(0);
-
-  if (slides.length === 0) {
-    return <p className="text-[#8e8e93] text-sm text-center py-8">Sin contenido en la presentación.</p>;
-  }
-
-  const slide = slides[idx];
-
-  return (
-    <div style={{ background: "#0d0f14" }}>
-      {/* 16:9 slide canvas */}
-      <div style={{ aspectRatio: "16/9", position: "relative", background: "linear-gradient(140deg, #0f1923 0%, #1a2332 100%)", overflow: "hidden" }}>
-        {/* Accent bar */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "3px", background: "linear-gradient(90deg, #007aff, #5ac8fa)" }} />
-
-        {/* Content */}
-        <div style={{ position: "absolute", inset: "16px 36px 28px 24px", display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px", overflow: "hidden" }}>
-          {slide.paragraphs.length === 0 ? (
-            <p style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", textAlign: "center" }}>Diapositiva sin texto.</p>
-          ) : (
-            <>
-              <h2 style={{ color: "#ffffff", fontSize: "clamp(13px, 3.2vw, 22px)", fontWeight: "700", lineHeight: "1.2", letterSpacing: "-0.2px", margin: 0, textShadow: "0 1px 6px rgba(0,0,0,0.5)" }}>
-                {slide.paragraphs[0]}
-              </h2>
-
-              {slide.paragraphs.length > 1 && (
-                <div style={{ width: "32px", height: "2px", background: "#007aff", borderRadius: "1px", flexShrink: 0 }} />
-              )}
-
-              {slide.paragraphs.slice(1).map((p, i) => (
-                <div key={i} style={{ display: "flex", gap: "7px", alignItems: "flex-start" }}>
-                  <span style={{ color: "#5ac8fa", fontSize: "clamp(9px, 1.7vw, 12px)", marginTop: "1px", flexShrink: 0, lineHeight: "1.45" }}>•</span>
-                  <p style={{ color: "rgba(210,230,255,0.82)", fontSize: "clamp(9px, 1.7vw, 12px)", lineHeight: "1.45", margin: 0 }}>{p}</p>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-
-        {/* Slide number */}
-        <div style={{ position: "absolute", bottom: "8px", right: "12px", color: "rgba(255,255,255,0.22)", fontSize: "9px", fontWeight: "500", fontVariantNumeric: "tabular-nums" }}>
-          {idx + 1} / {slides.length}
-        </div>
-
-        {/* Prev */}
-        {idx > 0 && (
-          <button
-            onClick={() => setIdx((i) => i - 1)}
-            style={{ position: "absolute", left: "6px", top: "50%", transform: "translateY(-50%)", width: "26px", height: "26px", borderRadius: "50%", background: "rgba(255,255,255,0.13)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><polyline points="15,18 9,12 15,6" /></svg>
-          </button>
-        )}
-
-        {/* Next */}
-        {idx < slides.length - 1 && (
-          <button
-            onClick={() => setIdx((i) => i + 1)}
-            style={{ position: "absolute", right: "6px", top: "50%", transform: "translateY(-50%)", width: "26px", height: "26px", borderRadius: "50%", background: "rgba(255,255,255,0.13)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><polyline points="9,18 15,12 9,6" /></svg>
-          </button>
-        )}
-      </div>
-
-      {/* Thumbnail strip */}
-      {slides.length > 1 && (
-        <div style={{ display: "flex", gap: "6px", padding: "8px 10px", overflowX: "auto", background: "#161b22", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-          {slides.map((s, i) => (
-            <button
-              key={i}
-              onClick={() => setIdx(i)}
-              style={{ flexShrink: 0, width: "64px", height: "40px", borderRadius: "4px", border: `2px solid ${i === idx ? "#007aff" : "rgba(255,255,255,0.08)"}`, background: "linear-gradient(140deg, #0f1923, #1a2332)", padding: "4px 5px", cursor: "pointer", display: "flex", flexDirection: "column", justifyContent: "flex-start", transition: "border-color 0.15s", position: "relative", overflow: "hidden" }}
-            >
-              <div style={{ width: "100%", height: "2px", background: "linear-gradient(90deg,#007aff,#5ac8fa)", marginBottom: "3px" }} />
-              <span style={{ color: i === idx ? "#60b3ff" : "rgba(255,255,255,0.4)", fontSize: "5px", fontWeight: "700", lineHeight: "1.3", textAlign: "left", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" } as React.CSSProperties}>
-                {s.paragraphs[0] ?? `Slide ${s.index}`}
-              </span>
-              <span style={{ position: "absolute", bottom: "2px", right: "3px", color: "rgba(255,255,255,0.18)", fontSize: "4.5px" }}>{i + 1}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TextViewer({ text }: { text: string }) {
-  const isHtml = /<[a-z][\s\S]*>/i.test(text.slice(0, 500));
-  if (isHtml) {
-    return <iframe srcDoc={text} title="Vista HTML" sandbox="allow-same-origin" className="w-full border-0" style={{ height: "70vh" }} />;
-  }
-  return (
-    <pre className="p-4 text-[13px] text-[#1c1c1e] leading-relaxed overflow-auto whitespace-pre-wrap break-words" style={{ maxHeight: "70vh", fontFamily: "'SF Mono','Menlo',monospace" }}>
-      {text}
-    </pre>
-  );
-}
 
 // ─── FileViewer ───────────────────────────────────────────────────────────────
 
 function FileViewer({ content }: { content: MoodleContent }) {
-  const [open, setOpen] = useState(false);
   const [state, setState] = useState<State>({ phase: "idle" });
+  const { openPanel, closePanel, activeKey } = usePdfPreview();
 
-  const proxyUrl = `/api/files?url=${encodeURIComponent(content.fileurl!)}&inline=1`;
+  const proxyUrl   = `/api/files?url=${encodeURIComponent(content.fileurl!)}&inline=1`;
   const downloadUrl = `/api/files?url=${encodeURIComponent(content.fileurl!)}`;
-  const quickKind = kindFromExt(content.filename);
+  const isActive   = activeKey === content.fileurl;
 
-  const load = useCallback(async () => {
-    if (state.phase !== "idle") return;
+  const badge = content.fileType ?? (content.filename.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE");
 
-    let kind = quickKind;
+  const handleClick = useCallback(async () => {
+    // Toggle: close if already open in panel
+    if (isActive) { closePanel(); setState({ phase: "idle" }); return; }
+
+    // Detect kind — fileType from icon scrape is most reliable
+    let kind: ViewerKind = kindFromFileType(content.fileType);
+    if (kind === "none") kind = kindFromExt(content.filename);
+
     if (kind === "none") {
-      setState({ phase: "loading", label: "Detectando tipo…" });
+      setState({ phase: "detecting" });
       try {
         const r = await fetch(`/api/meta?url=${encodeURIComponent(content.fileurl!)}`);
         const j = await r.json();
-        kind = kindFromCT(j.contentType) !== "none" ? kindFromCT(j.contentType) : kindFromExt(j.filename ?? "");
+        kind = kindFromCT(j.contentType) !== "none"
+          ? kindFromCT(j.contentType)
+          : kindFromExt(j.filename ?? "");
       } catch { /* remain none */ }
     }
 
-    // DOCX — client-side via docx-preview
-    if (kind === "docx") {
-      setState({ phase: "loading", label: "Descargando documento…" });
-      try {
-        const res = await fetch(proxyUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        setState({ phase: "docx", buffer: await res.arrayBuffer() });
-      } catch (e) { setState({ phase: "error", message: (e as Error).message }); }
+    // Document kinds → open in right panel
+    if (PANEL_KINDS.includes(kind)) {
+      openPanel({
+        kind: kind as PanelKind,
+        proxyUrl,
+        fileUrl: content.fileurl!,
+        name: content.filename,
+      });
+      setState({ phase: "panel" });
       return;
     }
 
-    // XLSX / CSV — client-side via SheetJS
-    if (kind === "xlsx") {
-      setState({ phase: "loading", label: "Descargando hoja de cálculo…" });
-      try {
-        const res = await fetch(proxyUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        setState({ phase: "xlsx", buffer: await res.arrayBuffer() });
-      } catch (e) { setState({ phase: "error", message: (e as Error).message }); }
-      return;
-    }
-
-    // PPTX / text — server-side conversion
-    if (OFFICE_KINDS.includes(kind)) {
-      setState({ phase: "loading", label: "Convirtiendo documento…" });
-      try {
-        const r = await fetch(`/api/convert?url=${encodeURIComponent(content.fileurl!)}&filename=${encodeURIComponent(content.filename)}`);
-        if (!r.ok) throw new Error(await r.text());
-        const data: ConvertResult = await r.json();
-        setState({ phase: "office", data });
-      } catch (e) {
-        setState({ phase: "error", message: (e as Error).message });
-      }
-      return;
-    }
-
-    if (kind === "pdf") { setState({ phase: "pdf" }); return; }
+    // Media → show inline
     if (kind === "image") { setState({ phase: "image" }); return; }
     if (kind === "video") { setState({ phase: "video" }); return; }
     if (kind === "audio") { setState({ phase: "audio" }); return; }
     setState({ phase: "none" });
-  }, [state.phase, quickKind, content.fileurl, content.filename, proxyUrl]);
+  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel]);
 
-  function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next) load();
-  }
-
-  const ext = content.filename.split(".").pop()?.toUpperCase().slice(0, 4) ?? "FILE";
+  const isOpen = state.phase !== "idle" || isActive;
 
   return (
     <div>
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-[#f2f2f7] transition-colors">
-        <button onClick={toggle} className="w-8 h-8 rounded-lg bg-[#e8f4fd] flex items-center justify-center shrink-0 active:opacity-70">
-          <span style={{ fontSize: ext.length > 3 ? "8px" : "9px" }} className="font-bold text-[#007aff] leading-none">{ext}</span>
+        <button onClick={handleClick} className="w-8 h-8 rounded-lg bg-[#e8f4fd] flex items-center justify-center shrink-0 active:opacity-70">
+          <span style={{ fontSize: badge.length > 3 ? "8px" : "9px" }} className="font-bold text-[#007aff] leading-none">{badge}</span>
         </button>
 
-        <button onClick={toggle} className="flex-1 min-w-0 text-left active:opacity-70">
+        <button onClick={handleClick} className="flex-1 min-w-0 text-left active:opacity-70">
           <p className="text-[14px] text-[#1c1c1e] truncate">{content.filename}</p>
           {content.filesize > 0 && <p className="text-[12px] text-[#8e8e93]">{formatBytes(content.filesize)}</p>}
         </button>
 
         <div className="flex items-center gap-3 shrink-0">
-          <button onClick={toggle} title={open ? "Cerrar" : "Ver"} className="text-[#007aff] hover:opacity-70 transition-opacity">
-            {open ? (
+          <button onClick={handleClick} title={isActive ? "Cerrar" : "Ver"} className="text-[#007aff] hover:opacity-70 transition-opacity">
+            {isActive ? (
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                 <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
                 <line x1="1" y1="1" x2="23" y2="23"/>
@@ -511,21 +215,23 @@ function FileViewer({ content }: { content: MoodleContent }) {
         </div>
       </div>
 
-      {open && (
+      {/* Inline area — only for media and status indicators */}
+      {isOpen && (
         <div className="border-t border-[rgba(60,60,67,0.06)] bg-[#f9f9f9]">
-          {(state.phase === "loading" || state.phase === "idle") && (
-            <div className="flex items-center justify-center gap-2 h-20">
-              <div className="w-4 h-4 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
-              <span className="text-[13px] text-[#6c6c70]">{state.phase === "loading" ? state.label : "Cargando…"}</span>
+          {state.phase === "detecting" && (
+            <div className="flex items-center justify-center gap-2.5 h-16">
+              <Spinner size={18} color="#007aff" />
+              <span className="text-[13px] text-[#6c6c70]">Detectando tipo…</span>
             </div>
           )}
-          {state.phase === "error" && (
-            <p className="text-sm text-[#8e8e93] text-center py-5">
-              Error al cargar.{" "}<a href={downloadUrl} className="text-[#007aff]">Descargar</a>
-            </p>
+          {(state.phase === "panel" || isActive) && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-[#e8f4fd]">
+              <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
+              <span className="text-[13px] text-[#007aff] font-medium">Abierto en el visor →</span>
+            </div>
           )}
           {state.phase === "none" && (
-            <div className="py-6 text-center px-4">
+            <div className="py-5 text-center px-4">
               <p className="text-sm text-[#8e8e93] mb-3">No se puede previsualizar este formato.</p>
               <a href={downloadUrl} className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#007aff] text-white rounded-2xl text-sm font-semibold">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -540,11 +246,6 @@ function FileViewer({ content }: { content: MoodleContent }) {
           {state.phase === "image" && <div className="p-3"><img src={proxyUrl} alt={content.filename} className="max-w-full mx-auto rounded-xl shadow-sm" loading="lazy" /></div>}
           {state.phase === "video" && <div className="p-3"><video src={proxyUrl} controls className="w-full rounded-xl max-h-[70vh]" /></div>}
           {state.phase === "audio" && <div className="p-4"><audio src={proxyUrl} controls className="w-full" /></div>}
-          {state.phase === "pdf" && <iframe src={proxyUrl} title={content.filename} className="w-full border-0" style={{ height: "75vh" }} />}
-          {state.phase === "docx" && <DocxViewer buffer={state.buffer} />}
-          {state.phase === "xlsx" && <XlsxViewer buffer={state.buffer} />}
-          {state.phase === "office" && state.data.kind === "slides" && <SlideViewer slides={state.data.slides} />}
-          {state.phase === "office" && state.data.kind === "text" && <TextViewer text={state.data.text} />}
         </div>
       )}
     </div>
@@ -581,7 +282,7 @@ function UrlModuleRow({ mod }: { mod: MoodleModule }) {
     >
       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#ffe8ed", color: "#ff2d55" }}>
         {resolving ? (
-          <div className="w-3.5 h-3.5 border-2 border-[#ff2d55] border-t-transparent rounded-full animate-spin" />
+          <Spinner size={18} color="#ff2d55" />
         ) : (
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -654,9 +355,9 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
       {open && (
         <div className="border-t border-[rgba(60,60,67,0.08)]" style={{ background: "#fafafa" }}>
           {fetching && (
-            <div className="flex items-center justify-center gap-2 h-20">
-              <div className="w-4 h-4 border-2 border-[#34c759] border-t-transparent rounded-full animate-spin" />
-              <span className="text-[13px] text-[#6c6c70]">Cargando tarea…</span>
+            <div className="flex items-center justify-center gap-2.5 h-20">
+              <Spinner size={20} color="#34c759" />
+              <span className="text-[13px] font-medium text-[#6c6c70]">Cargando tarea…</span>
             </div>
           )}
           {err && <p className="text-sm text-[#ff3b30] px-4 py-4">{err}</p>}
@@ -748,7 +449,19 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
   const [open, setOpen] = useState(false);
 
   if (mod.modname === "label") {
-    return <div className="px-4 py-2 text-[13px] text-[#6c6c70] italic" dangerouslySetInnerHTML={{ __html: mod.name }} />;
+    if (mod.description) {
+      return (
+        <div
+          className="px-4 py-3 text-[13px] text-[#3c3c43] leading-relaxed label-content"
+          dangerouslySetInnerHTML={{ __html: mod.description }}
+        />
+      );
+    }
+    return (
+      <div className="px-4 py-2 text-[13px] text-[#6c6c70] italic">
+        {mod.name}
+      </div>
+    );
   }
 
   // Assignment → show details inline
@@ -806,7 +519,10 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 
 // ─── SectionAccordion ─────────────────────────────────────────────────────────
 
-function SectionAccordion({ section, defaultOpen }: { section: { id: number; name: string; modules: MoodleModule[] }; defaultOpen?: boolean }) {
+function SectionAccordion({ section, defaultOpen }: {
+  section: { id: number; name: string; summary?: string; modules: MoodleModule[] };
+  defaultOpen?: boolean;
+}) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const visibleMods = section.modules.filter((m) => m.visible !== 0 && m.modname !== "label");
 
@@ -822,8 +538,17 @@ function SectionAccordion({ section, defaultOpen }: { section: { id: number; nam
         </svg>
       </button>
       {open && (
-        <div className="border-t border-[rgba(60,60,67,0.1)] divide-y divide-[rgba(60,60,67,0.06)]">
-          {section.modules.filter((m) => m.visible !== 0).map((mod) => <ModuleRow key={mod.id} mod={mod} />)}
+        <div className="border-t border-[rgba(60,60,67,0.1)]">
+          {/* Section summary / description text */}
+          {section.summary && (
+            <div className="px-4 py-3 text-[13px] text-[#3c3c43] leading-relaxed border-b border-[rgba(60,60,67,0.08)]"
+              style={{ background: "#fafafa" }}>
+              {section.summary}
+            </div>
+          )}
+          <div className="divide-y divide-[rgba(60,60,67,0.06)]">
+            {section.modules.filter((m) => m.visible !== 0).map((mod) => <ModuleRow key={mod.id} mod={mod} />)}
+          </div>
         </div>
       )}
     </div>
@@ -848,54 +573,62 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   return (
     <div className="min-h-screen bg-[#f2f2f7]">
       <Navbar fullname={userInfo.fullname} />
-      <main className="max-w-2xl mx-auto px-4 py-6">
-        {/* Back link */}
-        <Link href="/dashboard" className="inline-flex items-center gap-1 text-[15px] text-[#007aff] font-medium mb-5 hover:opacity-70 transition-opacity">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <polyline points="15,18 9,12 15,6" />
-          </svg>
-          Materias
-        </Link>
+      {/*
+        WorkspaceLayout manages the split-panel. It provides PdfPreviewContext
+        so any FileViewer nested inside can push PDFs to the right panel.
+        It also handles max-width: single-column uses max-w-2xl centred,
+        split mode expands to max-w-[1600px].
+      */}
+      <WorkspaceLayout>
+        <div className="py-6">
+          {/* Back link */}
+          <Link href="/dashboard" className="inline-flex items-center gap-1 text-[15px] text-[#007aff] font-medium mb-5 hover:opacity-70 transition-opacity">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <polyline points="15,18 9,12 15,6" />
+            </svg>
+            Materias
+          </Link>
 
-        {/* Course header — iOS Large Title style */}
-        {(courseName || loading) && (
-          <div style={{ marginBottom: "24px" }}>
-            {loading && !courseName ? (
-              <div className="space-y-2">
-                <div className="h-3 w-16 bg-[#e5e5ea] rounded animate-pulse" />
-                <div className="h-8 w-3/4 bg-[#e5e5ea] rounded-lg animate-pulse" />
-              </div>
-            ) : (
-              <>
-                <p style={{ fontSize: "11px", fontWeight: "700", color: "#007aff", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
-                  Materia
-                </p>
-                <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "#1c1c1e", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
-                  {courseName}
-                </h1>
-                {!loading && (
-                  <p style={{ fontSize: "13px", color: "#8e8e93", marginTop: "6px" }}>
-                    {visible.length} sección{visible.length !== 1 ? "es" : ""}
+          {/* Course header — iOS Large Title style */}
+          {(courseName || loading) && (
+            <div style={{ marginBottom: "24px" }}>
+              {loading && !courseName ? (
+                <div className="space-y-2">
+                  <div className="h-3 w-16 bg-[#e5e5ea] rounded animate-pulse" />
+                  <div className="h-8 w-3/4 bg-[#e5e5ea] rounded-lg animate-pulse" />
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: "11px", fontWeight: "700", color: "#007aff", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
+                    Materia
                   </p>
-                )}
-              </>
-            )}
-          </div>
-        )}
+                  <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "#1c1c1e", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
+                    {courseName}
+                  </h1>
+                  {!loading && (
+                    <p style={{ fontSize: "13px", color: "#8e8e93", marginTop: "6px" }}>
+                      {visible.length} sección{visible.length !== 1 ? "es" : ""}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
-        {loading && (
-          <div className="space-y-3">
-            {[...Array(4)].map((_, i) => <div key={i} className="bg-white rounded-2xl h-20 animate-pulse shadow-sm" />)}
-          </div>
-        )}
-        {error && <div className="bg-[#fff2f2] border border-[#ffcdd2] rounded-2xl p-5 text-[#ff3b30] text-sm">{error}</div>}
-        {!loading && !error && (
-          <div className="space-y-3">
-            {visible.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
-            {visible.length === 0 && <p className="text-center py-16 text-[#6c6c70] text-[15px]">Sin contenido visible todavía.</p>}
-          </div>
-        )}
-      </main>
+          {loading && (
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+              <SpinnerBlock label="Cargando secciones…" size={30} minHeight={200} />
+            </div>
+          )}
+          {error && <div className="bg-[#fff2f2] border border-[#ffcdd2] rounded-2xl p-5 text-[#ff3b30] text-sm">{error}</div>}
+          {!loading && !error && (
+            <div className="space-y-3">
+              {visible.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
+              {visible.length === 0 && <p className="text-center py-16 text-[#6c6c70] text-[15px]">Sin contenido visible todavía.</p>}
+            </div>
+          )}
+        </div>
+      </WorkspaceLayout>
     </div>
   );
 }

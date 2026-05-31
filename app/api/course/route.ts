@@ -47,8 +47,16 @@ function parseModules(html: string): MoodleModule[] {
 
     if (modname === "label") {
       const labelHtml =
-        chunk.match(/class="[^"]*no-overflow[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
-      modules.push({ id: modId, name: stripTags(labelHtml) || name, modname: "label", modicon: "", visible });
+        chunk.match(/class="[^"]*no-overflow[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ??
+        chunk.match(/class="[^"]*contentwithoutlink[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
+      modules.push({
+        id: modId,
+        name: stripTags(labelHtml) || name,
+        modname: "label",
+        modicon: "",
+        visible,
+        description: labelHtml.trim() || undefined,
+      });
       continue;
     }
 
@@ -94,6 +102,18 @@ type SectionMeta = {
   htmlStart: number;  // index in main HTML where this section starts
   htmlEnd: number;    // index where it ends
 };
+
+function extractSectionSummary(sectionHtml: string): string {
+  // Moodle renders section summaries in a div.summary > div.no-overflow
+  const summaryBlock =
+    sectionHtml.match(/class="[^"]*\bsummary\b[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ??
+    sectionHtml.match(/class="[^"]*section_description[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
+
+  // Strip the inner no-overflow wrapper if present
+  const inner = summaryBlock.match(/class="[^"]*no-overflow[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? summaryBlock;
+  const text = stripTags(inner).replace(/\s+/g, " ").trim();
+  return text;
+}
 
 function parseSectionMeta(mainHtml: string): SectionMeta[] {
   const positions = [...mainHtml.matchAll(/id="section-(\d+)"/g)];
@@ -148,27 +168,28 @@ export async function GET(req: NextRequest) {
       metas.map(async (meta) => {
         let modules: MoodleModule[];
 
+        let sectionHtml: string;
         if (!meta.isSummary) {
-          // Full content already in main HTML — slice it
-          const chunk = mainHtml.slice(meta.htmlStart, meta.htmlEnd);
-          modules = parseModules(chunk);
+          sectionHtml = mainHtml.slice(meta.htmlStart, meta.htmlEnd);
+          modules = parseModules(sectionHtml);
         } else if (meta.dbId) {
-          // Summary only — fetch the dedicated section page
           const sRes = await fetch(`${MOODLE_BASE}/course/section.php?id=${meta.dbId}`, {
             headers: { Cookie: cookie },
           });
-          const sHtml = await sRes.text();
-          modules = parseModules(sHtml);
+          sectionHtml = await sRes.text();
+          modules = parseModules(sectionHtml);
         } else {
+          sectionHtml = "";
           modules = [];
         }
 
-        console.log(`[course] section ${meta.sectionNum} "${meta.name}": ${modules.length} modules`);
+        const summary = extractSectionSummary(sectionHtml);
+        console.log(`[course] section ${meta.sectionNum} "${meta.name}": ${modules.length} modules, summary: ${summary.length} chars`);
         return {
           id: meta.sectionNum,
           name: meta.name,
           visible: 1,
-          summary: "",
+          summary,
           modules,
         };
       })

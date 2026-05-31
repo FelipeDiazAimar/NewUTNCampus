@@ -91,18 +91,25 @@ export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const url = req.nextUrl.searchParams.get("url");
   const filename = req.nextUrl.searchParams.get("filename") ?? "archivo";
+  // `type` overrides extension-based detection (useful when filename has no extension)
+  const typeHint = req.nextUrl.searchParams.get("type")?.toLowerCase() ?? "";
 
   if (!sessionToken || !url) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
   }
+
+  // Build a synthetic filename from the type hint so convertBuffer picks the right branch
+  const effectiveFilename = typeHint
+    ? `file.${typeHint}`
+    : filename;
 
   try {
     const res = await fetchWithCookie(url, `MoodleSession=${sessionToken}`);
     const contentType = res.headers.get("content-type") ?? "application/octet-stream";
     const buf = Buffer.from(await res.arrayBuffer());
 
-    console.log("[convert]", filename, contentType, buf.length, "bytes");
-    const result = await convertBuffer(buf, filename, contentType);
+    console.log("[convert]", effectiveFilename, contentType, buf.length, "bytes");
+    const result = await convertBuffer(buf, effectiveFilename, contentType);
     return NextResponse.json(result);
   } catch (err) {
     console.error("[convert] error:", (err as Error).message);

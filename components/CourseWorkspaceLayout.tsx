@@ -1,0 +1,471 @@
+"use client";
+
+import React, {
+  createContext, useContext, useState, useRef, useEffect, useCallback,
+} from "react";
+import dynamic from "next/dynamic";
+import type { Slide } from "@/app/api/convert/route";
+
+const PDFViewer = dynamic(() => import("./CampusPDFViewer"), { ssr: false });
+
+// ─── Public types & context ───────────────────────────────────────────────────
+
+export type PanelKind = "pdf" | "docx" | "xlsx" | "pptx" | "text";
+
+export interface PanelEntry {
+  kind: PanelKind;
+  proxyUrl: string;  // /api/files?url=...&inline=1  (DOCX / XLSX fetch source)
+  fileUrl: string;   // original Moodle URL           (/api/convert source)
+  name: string;
+}
+
+export interface PanelCtx {
+  openPanel: (entry: PanelEntry) => void;
+  closePanel: () => void;
+  activeKey: string | null; // fileUrl of the currently open file
+}
+
+export const PanelContext = createContext<PanelCtx>({
+  openPanel: () => {},
+  closePanel: () => {},
+  activeKey: null,
+});
+
+/** Hook for any FileViewer nested inside WorkspaceLayout */
+export function usePdfPreview(): PanelCtx {
+  return useContext(PanelContext);
+}
+
+// ─── Aspect ratios for column-width calculation ───────────────────────────────
+
+const KIND_RATIOS: Record<PanelKind, number> = {
+  pdf:  0.71, // overridden by onAspectRatio callback from CampusPDFViewer
+  docx: 0.71,
+  pptx: 1.78,
+  xlsx: 1.4,
+  text: 0.71,
+};
+
+// ─── Panel internal loading state ─────────────────────────────────────────────
+
+type PanelState =
+  | { phase: "loading"; label: string }
+  | { phase: "error"; msg: string }
+  | { phase: "pdf"; url: string }
+  | { phase: "docx"; buffer: ArrayBuffer }
+  | { phase: "xlsx"; buffer: ArrayBuffer }
+  | { phase: "slides"; slides: Slide[] }
+  | { phase: "text"; text: string };
+
+// ─── DOCX viewer (docx-preview client-side) ───────────────────────────────────
+
+function DocxViewer({ buffer }: { buffer: ArrayBuffer }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!ref.current) return;
+    setDone(false); setErr("");
+    import("docx-preview")
+      .then(({ renderAsync }) =>
+        renderAsync(buffer, ref.current!, undefined, {
+          inWrapper: true, ignoreWidth: false, ignoreHeight: false,
+          renderHeaders: true, renderFooters: true, useBase64URL: true, breakPages: true,
+        })
+      )
+      .then(() => setDone(true))
+      .catch((e) => setErr((e as Error).message));
+  }, [buffer]);
+
+  return (
+    <div className="flex-1 overflow-auto" style={{ background: "#525659" }}>
+      {!done && !err && (
+        <div className="flex items-center justify-center gap-2 h-24">
+          <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+          <span className="text-[12px] text-white/60">Renderizando documento…</span>
+        </div>
+      )}
+      {err && <p className="text-[#ff6b6b] text-[13px] p-4">{err}</p>}
+      <div ref={ref} className={done ? "" : "hidden"} />
+    </div>
+  );
+}
+
+// ─── XLSX viewer (SheetJS client-side) ────────────────────────────────────────
+
+function XlsxViewer({ buffer }: { buffer: ArrayBuffer }) {
+  type CellData = { v: string; right: boolean };
+  type Sheet = { name: string; cols: string[]; rows: { num: number; cells: CellData[] }[] };
+
+  const [sheets, setSheets] = useState<Sheet[]>([]);
+  const [active, setActive] = useState(0);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    import("xlsx").then((XLSX) => {
+      const wb = XLSX.read(buffer, { type: "array" });
+      const parsed: Sheet[] = wb.SheetNames.map((name) => {
+        const ws = wb.Sheets[name];
+        if (!ws["!ref"]) return { name, cols: [], rows: [] };
+        const range = XLSX.utils.decode_range(ws["!ref"]);
+        const cols: string[] = [];
+        for (let c = range.s.c; c <= range.e.c; c++) cols.push(XLSX.utils.encode_col(c));
+        const rows = [];
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const cells: CellData[] = [];
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const cell = ws[XLSX.utils.encode_cell({ r, c })];
+            cells.push({ v: cell ? XLSX.utils.format_cell(cell) : "", right: cell?.t === "n" });
+          }
+          rows.push({ num: r + 1, cells });
+        }
+        return { name, cols, rows };
+      });
+      setSheets(parsed);
+    }).catch((e) => setErr((e as Error).message));
+  }, [buffer]);
+
+  if (err) return <p className="text-[#ff6b6b] text-[13px] p-4">{err}</p>;
+  if (!sheets.length) return (
+    <div className="flex items-center justify-center gap-2 h-24">
+      <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+      <span className="text-[12px] text-white/60">Cargando hoja…</span>
+    </div>
+  );
+
+  const sheet = sheets[active];
+  const HEAD = "#2d2d30"; const ROW = "#1e1e1e"; const BORDER = "rgba(255,255,255,0.1)";
+
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#1e1e1e" }}>
+      {/* Sheet tabs */}
+      {sheets.length > 1 && (
+        <div className="flex gap-0 shrink-0 border-b overflow-x-auto" style={{ borderColor: BORDER, background: "#252526" }}>
+          {sheets.map((s, i) => (
+            <button key={i} onClick={() => setActive(i)}
+              className="px-4 py-1.5 text-[11px] font-medium whitespace-nowrap transition-colors"
+              style={{
+                background: i === active ? "#1e1e1e" : "transparent",
+                color: i === active ? "#fff" : "rgba(255,255,255,0.5)",
+                borderTop: i === active ? "2px solid #007aff" : "2px solid transparent",
+              }}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Grid */}
+      <div className="overflow-auto flex-1">
+        <table style={{ borderCollapse: "collapse", fontSize: "12px", color: "#d4d4d4" }}>
+          <thead>
+            <tr>
+              <th style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 8px", position: "sticky", top: 0, left: 0, zIndex: 3, minWidth: 40, fontWeight: 600 }}>#</th>
+              {sheet.cols.map((c) => (
+                <th key={c} style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 12px", position: "sticky", top: 0, zIndex: 2, fontWeight: 600, textAlign: "center" }}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sheet.rows.map((row) => (
+              <tr key={row.num}>
+                <td style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 8px", position: "sticky", left: 0, zIndex: 1, textAlign: "right", color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>{row.num}</td>
+                {row.cells.map((cell, ci) => (
+                  <td key={ci} style={{ background: ROW, border: `1px solid ${BORDER}`, padding: "3px 12px", textAlign: cell.right ? "right" : "left", whiteSpace: "nowrap" }}>{cell.v}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Slides viewer (PPTX) ─────────────────────────────────────────────────────
+
+function SlideViewer({ slides }: { slides: Slide[] }) {
+  const [idx, setIdx] = useState(0);
+
+  if (!slides.length) return <p className="text-white/40 text-[13px] text-center py-8">Sin contenido.</p>;
+
+  const slide = slides[idx];
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#0d0f14" }}>
+      {/* 16:9 canvas */}
+      <div className="flex-1 flex items-center justify-center p-3">
+        <div style={{ width: "100%", aspectRatio: "16/9", position: "relative", background: "linear-gradient(140deg,#0f1923,#1a2332)", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg,#007aff,#5ac8fa)" }} />
+          <div style={{ position: "absolute", inset: "14px 32px 24px 20px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 6 }}>
+            {slide.paragraphs.length === 0
+              ? <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, textAlign: "center" }}>Diapositiva sin texto.</p>
+              : <>
+                <h2 style={{ color: "#fff", fontSize: "clamp(12px,3vw,20px)", fontWeight: 700, lineHeight: 1.2, margin: 0, textShadow: "0 1px 6px rgba(0,0,0,0.5)" }}>{slide.paragraphs[0]}</h2>
+                {slide.paragraphs.length > 1 && <div style={{ width: 28, height: 2, background: "#007aff", borderRadius: 1 }} />}
+                {slide.paragraphs.slice(1).map((p, i) => (
+                  <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <span style={{ color: "#5ac8fa", fontSize: "clamp(8px,1.5vw,11px)", marginTop: 1, flexShrink: 0 }}>•</span>
+                    <p style={{ color: "rgba(210,230,255,0.82)", fontSize: "clamp(8px,1.5vw,11px)", lineHeight: 1.45, margin: 0 }}>{p}</p>
+                  </div>
+                ))}
+              </>}
+          </div>
+          <div style={{ position: "absolute", bottom: 6, right: 10, color: "rgba(255,255,255,0.2)", fontSize: 9 }}>{idx + 1} / {slides.length}</div>
+          {idx > 0 && <NavBtn dir="left" onClick={() => setIdx(i => i - 1)} />}
+          {idx < slides.length - 1 && <NavBtn dir="right" onClick={() => setIdx(i => i + 1)} />}
+        </div>
+      </div>
+      {/* Thumbnail strip */}
+      {slides.length > 1 && (
+        <div style={{ display: "flex", gap: 5, padding: "6px 8px", overflowX: "auto", background: "#161b22", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+          {slides.map((s, i) => (
+            <button key={i} onClick={() => setIdx(i)}
+              style={{ flexShrink: 0, width: 56, height: 36, borderRadius: 4, border: `2px solid ${i === idx ? "#007aff" : "rgba(255,255,255,0.08)"}`, background: "linear-gradient(140deg,#0f1923,#1a2332)", padding: "3px 4px", cursor: "pointer", position: "relative", overflow: "hidden" }}>
+              <div style={{ width: "100%", height: 2, background: "linear-gradient(90deg,#007aff,#5ac8fa)", marginBottom: 2 }} />
+              <span style={{ color: i === idx ? "#60b3ff" : "rgba(255,255,255,0.4)", fontSize: "4.5px", fontWeight: 700, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" } as React.CSSProperties}>
+                {s.paragraphs[0] ?? `Slide ${s.index}`}
+              </span>
+              <span style={{ position: "absolute", bottom: 2, right: 2, color: "rgba(255,255,255,0.2)", fontSize: 4 }}>{i + 1}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavBtn({ dir, onClick }: { dir: "left" | "right"; onClick: () => void }) {
+  const side = dir === "left" ? { left: 5 } : { right: 5 };
+  return (
+    <button onClick={onClick} style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", ...side, width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,0.13)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+        {dir === "left" ? <polyline points="15,18 9,12 15,6" /> : <polyline points="9,18 15,12 9,6" />}
+      </svg>
+    </button>
+  );
+}
+
+// ─── Text viewer ──────────────────────────────────────────────────────────────
+
+function TextViewer({ text }: { text: string }) {
+  const isHtml = /<[a-z][\s\S]*>/i.test(text.slice(0, 500));
+  if (isHtml) return <iframe srcDoc={text} title="Vista HTML" sandbox="allow-same-origin" className="flex-1 border-0 w-full" />;
+  return (
+    <pre className="flex-1 overflow-auto p-4 text-[12px] text-[#d4d4d4] leading-relaxed whitespace-pre-wrap break-words"
+      style={{ fontFamily: "'SF Mono','Menlo',monospace", background: "#1e1e1e" }}>
+      {text}
+    </pre>
+  );
+}
+
+// ─── Panel content loader ─────────────────────────────────────────────────────
+
+function PanelContent({ entry, onAspectRatio }: { entry: PanelEntry; onAspectRatio: (r: number) => void }) {
+  const [ps, setPs] = useState<PanelState>({ phase: "loading", label: "Cargando…" });
+
+  useEffect(() => {
+    setPs({ phase: "loading", label: "Cargando…" });
+    let cancelled = false;
+
+    async function load() {
+      try {
+        if (entry.kind === "pdf") {
+          if (!cancelled) setPs({ phase: "pdf", url: entry.proxyUrl });
+          return;
+        }
+
+        if (entry.kind === "docx") {
+          setPs({ phase: "loading", label: "Descargando documento…" });
+          const res = await fetch(entry.proxyUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const buf = await res.arrayBuffer();
+          if (!cancelled) setPs({ phase: "docx", buffer: buf });
+          return;
+        }
+
+        if (entry.kind === "xlsx") {
+          setPs({ phase: "loading", label: "Descargando hoja de cálculo…" });
+          const res = await fetch(entry.proxyUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const buf = await res.arrayBuffer();
+          if (!cancelled) setPs({ phase: "xlsx", buffer: buf });
+          return;
+        }
+
+        if (entry.kind === "pptx") {
+          setPs({ phase: "loading", label: "Convirtiendo presentación…" });
+          const r = await fetch(`/api/convert?url=${encodeURIComponent(entry.fileUrl)}&type=pptx`);
+          if (!r.ok) throw new Error(await r.text());
+          const data = await r.json();
+          if (!cancelled) {
+            if (data.kind === "slides") setPs({ phase: "slides", slides: data.slides });
+            else if (data.kind === "text")  setPs({ phase: "text", text: data.text });
+            else throw new Error("Respuesta inesperada");
+          }
+          return;
+        }
+
+        if (entry.kind === "text") {
+          setPs({ phase: "loading", label: "Cargando texto…" });
+          const res = await fetch(entry.proxyUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          if (!cancelled) setPs({ phase: "text", text });
+          return;
+        }
+      } catch (e) {
+        if (!cancelled) setPs({ phase: "error", msg: (e as Error).message });
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [entry.kind, entry.proxyUrl, entry.fileUrl]);
+
+  if (ps.phase === "loading") {
+    return (
+      <div className="flex-1 flex items-center justify-center gap-2.5" style={{ background: "#525659" }}>
+        <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+        <span className="text-[13px] text-white/60">{ps.label}</span>
+      </div>
+    );
+  }
+
+  if (ps.phase === "error") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6" style={{ background: "#525659" }}>
+        <p className="text-[#ff6b6b] text-[14px]">No se pudo cargar</p>
+        <p className="text-[rgba(255,107,107,0.6)] text-[12px] text-center">{ps.msg}</p>
+        <a href={`/api/files?url=${encodeURIComponent(entry.fileUrl)}`}
+          className="mt-2 px-4 py-2 bg-white/10 text-white text-[12px] rounded-lg hover:bg-white/20 transition-colors">
+          Descargar
+        </a>
+      </div>
+    );
+  }
+
+  if (ps.phase === "pdf") return (
+    <div className="flex-1 overflow-hidden">
+      <PDFViewer src={ps.url} maxHeight="100%" onAspectRatio={onAspectRatio} />
+    </div>
+  );
+
+  if (ps.phase === "docx") return <DocxViewer buffer={ps.buffer} />;
+  if (ps.phase === "xlsx") return <XlsxViewer buffer={ps.buffer} />;
+  if (ps.phase === "slides") return <SlideViewer slides={ps.slides} />;
+  if (ps.phase === "text") return <TextViewer text={ps.text} />;
+
+  return null;
+}
+
+// ─── Panel header icon button ─────────────────────────────────────────────────
+
+function IconBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} title={title}
+      className="flex items-center justify-center w-7 h-7 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0">
+      {children}
+    </button>
+  );
+}
+
+// ─── WorkspaceLayout ──────────────────────────────────────────────────────────
+
+export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+  const [active, setActive] = useState<PanelEntry | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const openPanel = useCallback((entry: PanelEntry) => {
+    setActive((prev) => {
+      if (prev?.fileUrl === entry.fileUrl) return null; // toggle
+      setAspectRatio(KIND_RATIOS[entry.kind]);
+      return entry;
+    });
+  }, []);
+
+  const closePanel = useCallback(() => { setActive(null); setAspectRatio(null); }, []);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else panelRef.current?.requestFullscreen().catch(() => {});
+  }
+
+  // Right column flex: portrait docs get less space, landscape/slides get more
+  const rightFlex = active
+    ? Math.max(0.6, Math.min(1.8, aspectRatio ?? KIND_RATIOS[active.kind]))
+    : 0;
+
+  const isPanelOpen = !!active;
+
+  return (
+    <PanelContext.Provider value={{ openPanel, closePanel, activeKey: active?.fileUrl ?? null }}>
+      <div className="max-w-[1600px] mx-auto px-4">
+        <div className="flex items-start gap-4">
+
+          {/* Left: sections list */}
+          <div className="min-w-0 shrink-0" style={{
+            flex: 1,
+            ...(isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260 } : {}),
+          }}>
+            <div style={{ maxWidth: isPanelOpen ? "none" : "42rem", margin: "0 auto" }}>
+              {children}
+            </div>
+          </div>
+
+          {/* Right: viewer panel */}
+          <div style={{ flex: rightFlex, minWidth: 0, overflow: "hidden", transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)" }}>
+            {isPanelOpen && (
+              <div ref={panelRef} className="sticky" style={{ top: 72, height: "calc(100vh - 80px)" }}>
+                <div className="flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl">
+
+                  {/* Header bar */}
+                  <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: "#2d2d30", height: 36 }}>
+                    <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
+                    <p className="flex-1 min-w-0 text-white/80 text-[12px] font-medium truncate" title={active?.name}>
+                      {active?.name}
+                    </p>
+                    <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
+                      {isFullscreen ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                          <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
+                          <polyline points="3,16 3,21 8,21" /><polyline points="16,21 21,21 21,16" />
+                        </svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                          <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
+                          <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      )}
+                    </IconBtn>
+                    <IconBtn onClick={closePanel} title="Cerrar visor">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </IconBtn>
+                  </div>
+
+                  {/* Content area */}
+                  <PanelContent
+                    key={active.fileUrl}
+                    entry={active}
+                    onAspectRatio={setAspectRatio}
+                  />
+
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </PanelContext.Provider>
+  );
+}

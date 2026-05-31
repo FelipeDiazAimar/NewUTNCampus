@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useCourses } from "@/lib/hooks";
 import type { MoodleCourse } from "@/lib/moodle";
+import { SpinnerBlock } from "@/components/Spinner";
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -130,18 +131,10 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Skeleton */}
+        {/* Loading */}
         {loading && (
-          <div className="bg-white rounded-2xl overflow-hidden shadow-sm divide-y divide-[rgba(60,60,67,0.1)]">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-3.5 px-4 py-3">
-                <div className="w-10 h-10 rounded-[12px] bg-[#f2f2f7] animate-pulse" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3.5 bg-[#f2f2f7] rounded animate-pulse w-3/4" />
-                  <div className="h-2.5 bg-[#f2f2f7] rounded animate-pulse w-1/3" />
-                </div>
-              </div>
-            ))}
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <SpinnerBlock label="Cargando materias…" size={30} minHeight={180} />
           </div>
         )}
 
