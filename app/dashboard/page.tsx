@@ -24,6 +24,7 @@ type HomeItem = {
   icon: React.ComponentType<{ className?: string }>;
   tone?: string;
   muted?: boolean;
+  popup?: boolean;
   row: number;
   col: number;
   rowSpan: number;
@@ -48,6 +49,7 @@ function getUserInfo() {
 export default function DashboardPage() {
   const router = useRouter();
   const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
+  const [popupItem, setPopupItem] = useState<HomeItem | null>(null);
 
   useEffect(() => {
     setUserInfo(getUserInfo());
@@ -78,6 +80,7 @@ export default function DashboardPage() {
         href: "#",
         icon: Settings,
         tone: "#8e8e93",
+        popup: true,
         row: 1,
         col: 3,
         rowSpan: 1,
@@ -108,6 +111,7 @@ export default function DashboardPage() {
         href: "#",
         icon: MessageSquare,
         tone: "#5ac8fa",
+        popup: true,
         row: 3,
         col: 1,
         rowSpan: 1,
@@ -123,6 +127,7 @@ export default function DashboardPage() {
         href: "#",
         icon: HelpCircle,
         tone: "#34c759",
+        popup: true,
         row: 4,
         col: 1,
         rowSpan: 1,
@@ -138,6 +143,7 @@ export default function DashboardPage() {
         href: "#",
         icon: Video,
         tone: "#ff2d55",
+        popup: true,
         row: 5,
         col: 3,
         rowSpan: 1,
@@ -153,6 +159,7 @@ export default function DashboardPage() {
         href: "#",
         icon: Box,
         muted: true,
+        popup: true,
         row: 6,
         col: 3,
         rowSpan: 1,
@@ -169,6 +176,7 @@ export default function DashboardPage() {
         href: "#",
         icon: UserCheck,
         tone: "#34c759",
+        popup: true,
         row: 3,
         col: 2,
         rowSpan: 2,
@@ -185,6 +193,7 @@ export default function DashboardPage() {
         href: "#",
         icon: GraduationCap,
         tone: "#af52de",
+        popup: true,
         row: 5,
         col: 1,
         rowSpan: 2,
@@ -260,6 +269,11 @@ export default function DashboardPage() {
                   "--row-span-md": item.rowSpanMd ?? item.rowSpan,
                   "--col-span-md": item.colSpanMd ?? item.colSpan,
                 } as CSSProperties}
+                onClick={(event) => {
+                  if (!item.popup) return;
+                  event.preventDefault();
+                  setPopupItem(item);
+                }}
               >
                 <div className={isWidget ? "flex flex-col h-full" : "flex flex-col items-center justify-center h-full"}>
                   <div
@@ -286,6 +300,40 @@ export default function DashboardPage() {
         </div>
         </div>
       </main>
+
+      {popupItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: "rgba(0, 0, 0, 0.45)" }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Cerrar"
+            onClick={() => setPopupItem(null)}
+          />
+          <div className="relative w-full max-w-sm rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-5 shadow-lg">
+            <div className="flex items-center justify-center mb-4" style={{ color: popupItem.tone ?? "var(--accent)" }}>
+              <popupItem.icon className="w-8 h-8" />
+            </div>
+            <h2 className="text-[18px] font-semibold text-[var(--fg)] text-center">
+              {popupItem.title}
+            </h2>
+            <p className="text-[14px] text-[var(--secondary)] text-center mt-2">
+              Proximamente, estamos trabajando en ello.
+            </p>
+            <button
+              type="button"
+              className="mt-5 w-full rounded-2xl bg-[var(--surface2)] py-2.5 text-[14px] font-semibold text-[var(--fg)] hover:opacity-90"
+              onClick={() => setPopupItem(null)}
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
