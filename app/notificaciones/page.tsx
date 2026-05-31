@@ -154,7 +154,14 @@ export default function NotificacionesPage() {
   async function handleLinkTelegram() {
     const res = await fetch("/api/telegram/link", { method: "POST" });
     if (!res.ok) {
-      setError("No se pudo generar el enlace de Telegram.");
+      let message = "No se pudo generar el enlace de Telegram.";
+      try {
+        const payload = (await res.json()) as { error?: string };
+        if (payload?.error) message = payload.error;
+      } catch {
+        // ignore parse errors
+      }
+      setError(message);
       return;
     }
     const data = await res.json();
