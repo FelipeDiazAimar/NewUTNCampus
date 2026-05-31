@@ -41,8 +41,8 @@ function Toggle({
       } ${disabled ? "opacity-50" : ""}`}
     >
       <span
-        className={`absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? "translate-x-6" : "translate-x-1"
+        className={`absolute left-1 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+          checked ? "translate-x-5" : "translate-x-0"
         }`}
       />
     </button>
@@ -55,6 +55,7 @@ export default function NotificacionesPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [materias, setMaterias] = useState<MateriaConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
 
   const courseNames = useMemo(
@@ -64,7 +65,13 @@ export default function NotificacionesPage() {
 
   async function loadProfile() {
     setLoading(true);
+    setError(null);
     const res = await fetch("/api/notifications", { cache: "no-store" });
+    if (!res.ok && res.status !== 404) {
+      setError("No se pudieron cargar las notificaciones.");
+      setLoading(false);
+      return;
+    }
     if (res.status === 404) {
       await fetch("/api/notifications", {
         method: "POST",
@@ -72,6 +79,11 @@ export default function NotificacionesPage() {
         body: JSON.stringify({ action: "init", courses: courseNames }),
       });
       const retry = await fetch("/api/notifications", { cache: "no-store" });
+      if (!retry.ok) {
+        setError("No se pudieron cargar las notificaciones.");
+        setLoading(false);
+        return;
+      }
       const data = await retry.json();
       setProfile(data.profile);
       setMaterias(data.materias ?? []);
@@ -142,6 +154,11 @@ export default function NotificacionesPage() {
       <Navbar />
 
       <main className="max-w-xl mx-auto px-4 pt-20 pb-10">
+        {error && (
+          <div className="mb-5 rounded-2xl border border-[#ffcdd2] bg-[#fff2f2] p-4 text-sm text-[#ff3b30] dark:border-[rgba(255,59,48,0.25)] dark:bg-[rgba(255,59,48,0.08)]">
+            {error}
+          </div>
+        )}
         <div className="mb-6">
           <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight">
             Notificaciones

@@ -46,9 +46,17 @@ function getUserInfo() {
   }
 }
 
+function formatGreetingName(value?: string) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const normalized = trimmed.includes("@") ? trimmed.split("@")[0] : trimmed;
+  return normalized.split(" ")[0];
+}
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
+  const [userInfo, setUserInfo] = useState<{ fullname?: string; username?: string }>({});
   const [popupItem, setPopupItem] = useState<HomeItem | null>(null);
 
   useEffect(() => {
@@ -231,8 +239,8 @@ export default function DashboardPage() {
               Inicio
             </p>
             <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight mt-1">
-              {userInfo.fullname
-                ? `Hola, ${userInfo.fullname.split(" ")[0]}`
+              {formatGreetingName(userInfo.fullname || userInfo.username)
+                ? `Hola, ${formatGreetingName(userInfo.fullname || userInfo.username)}`
                 : "Campus UTN"}
             </h1>
             <p className="text-[14px] text-[var(--secondary)] mt-1">
