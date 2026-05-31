@@ -28,6 +28,10 @@ type HomeItem = {
   col: number;
   rowSpan: number;
   colSpan: number;
+  rowMd?: number;
+  colMd?: number;
+  rowSpanMd?: number;
+  colSpanMd?: number;
 };
 
 function getUserInfo() {
@@ -63,6 +67,10 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 2,
         colSpan: 2,
+        rowMd: 1,
+        colMd: 1,
+        rowSpanMd: 2,
+        colSpanMd: 2,
       },
       {
         type: "app",
@@ -74,6 +82,10 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
+        rowMd: 1,
+        colMd: 3,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
       {
         type: "app",
@@ -85,6 +97,10 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
+        rowMd: 1,
+        colMd: 4,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
       {
         type: "app",
@@ -96,6 +112,10 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 1,
         colSpan: 1,
+        rowMd: 3,
+        colMd: 1,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
       {
         type: "app",
@@ -107,6 +127,10 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 1,
         colSpan: 1,
+        rowMd: 3,
+        colMd: 2,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
       {
         type: "app",
@@ -118,6 +142,10 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
+        rowMd: 3,
+        colMd: 5,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
       {
         type: "app",
@@ -129,6 +157,10 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
+        rowMd: 3,
+        colMd: 6,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
       {
         type: "widget",
@@ -141,6 +173,10 @@ export default function DashboardPage() {
         col: 2,
         rowSpan: 2,
         colSpan: 2,
+        rowMd: 2,
+        colMd: 3,
+        rowSpanMd: 2,
+        colSpanMd: 2,
       },
       {
         type: "widget",
@@ -153,6 +189,10 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 2,
         colSpan: 2,
+        rowMd: 1,
+        colMd: 5,
+        rowSpanMd: 2,
+        colSpanMd: 2,
       },
     ],
     []
@@ -166,14 +206,16 @@ export default function DashboardPage() {
         className="springboard-scroll relative w-full px-0 pt-16 pb-10 -mt-16 overflow-x-hidden overflow-y-auto"
         style={{
           "--cell": "min(110px, calc((100vw - 24px) / 3))",
+          "--cell-md": "112px",
+          "--gap": "10px",
+          "--gap-md": "12px",
+          "--cols": "3",
+          "--cols-md": "6",
         } as CSSProperties}
       >
         <div className="pointer-events-none absolute -top-12 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl opacity-70" style={{ background: "radial-gradient(circle at 30% 30%, rgba(0,122,255,0.35), transparent 70%)" }} />
         <div className="pointer-events-none absolute top-32 -right-10 h-56 w-56 rounded-full blur-3xl opacity-60" style={{ background: "radial-gradient(circle at 30% 30%, rgba(90,200,250,0.35), transparent 70%)" }} />
-        <div
-          className="mx-auto px-2 md:px-6"
-          style={{ width: "min(100%, calc(var(--cell) * 3 + 20px))" }}
-        >
+        <div className="springboard-wrap px-0 md:px-6">
           <div className="mb-6 mt-4">
             <p className="text-[12px] uppercase tracking-[0.28em] text-[var(--secondary)]">
               Inicio
@@ -189,11 +231,7 @@ export default function DashboardPage() {
           </div>
 
           <div
-            className="relative grid gap-2.5 md:gap-3"
-            style={{
-              gridTemplateColumns: "repeat(3, var(--cell))",
-              gridAutoRows: "var(--cell)",
-            } as CSSProperties}
+            className="springboard-grid relative"
           >
           {items.map((item) => {
             const Icon = item.icon;
@@ -211,11 +249,17 @@ export default function DashboardPage() {
               <Link
                 key={`${item.type}-${item.title}`}
                 href={item.href}
-                className={`${baseClass} ${sizeClass} ${mutedClass}`}
+                className={`springboard-item ${baseClass} ${sizeClass} ${mutedClass}`}
                 style={{
-                  gridRow: `${item.row} / span ${item.rowSpan}`,
-                  gridColumn: `${item.col} / span ${item.colSpan}`,
-                }}
+                  "--row": item.row,
+                  "--col": item.col,
+                  "--row-span": item.rowSpan,
+                  "--col-span": item.colSpan,
+                  "--row-md": item.rowMd ?? item.row,
+                  "--col-md": item.colMd ?? item.col,
+                  "--row-span-md": item.rowSpanMd ?? item.rowSpan,
+                  "--col-span-md": item.colSpanMd ?? item.colSpan,
+                } as CSSProperties}
               >
                 <div className={isWidget ? "flex flex-col h-full" : "flex flex-col items-center justify-center h-full"}>
                   <div

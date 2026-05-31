@@ -117,5 +117,39 @@ body {
   height: 0;
 }
 
+.springboard-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), var(--cell));
+  grid-auto-rows: var(--cell);
+  gap: var(--gap);
+}
+
+.springboard-item {
+  grid-row: var(--row) / span var(--row-span);
+  grid-column: var(--col) / span var(--col-span);
+}
+
+.springboard-wrap {
+  width: min(100%, calc(var(--cell) * var(--cols) + var(--gap) * (var(--cols) - 1)));
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .springboard-grid {
+    grid-template-columns: repeat(var(--cols-md), var(--cell-md));
+    grid-auto-rows: var(--cell-md);
+    gap: var(--gap-md);
+  }
+
+  .springboard-item {
+    grid-row: var(--row-md) / span var(--row-span-md);
+    grid-column: var(--col-md) / span var(--col-span-md);
+  }
+
+  .springboard-wrap {
+    width: min(100%, calc(var(--cell-md) * var(--cols-md) + var(--gap-md) * (var(--cols-md) - 1)));
+  }
+}
+
 /* Firefox */
 * { scrollbar-width: thin; scrollbar-color: rgba(120, 120, 128, 0.28) transparent; }
