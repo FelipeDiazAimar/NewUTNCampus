@@ -50,18 +50,18 @@ function CourseIcon({ name, index }: { name: string; index: number }) {
 function CourseRow({ course, index }: { course: MoodleCourse; index: number }) {
   return (
     <Link href={`/course/${course.id}`}>
-      <div className="flex items-center gap-3.5 px-4 py-3 active:bg-[#f2f2f7] transition-colors cursor-pointer">
+      <div className="flex items-center gap-3.5 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors cursor-pointer">
         <CourseIcon name={course.fullname} index={index} />
         <div className="flex-1 min-w-0">
-          <p className="text-[15px] font-medium text-[#1c1c1e] truncate leading-snug">
+          <p className="text-[15px] font-medium text-[var(--fg)] truncate leading-snug">
             {course.fullname}
           </p>
-          <p className="text-[12px] text-[#6c6c70] mt-0.5">
+          <p className="text-[12px] text-[var(--secondary)] mt-0.5">
             {course.coursecategory}
           </p>
         </div>
         <svg
-          className="w-4 h-4 text-[#c7c7cc] shrink-0"
+          className="w-4 h-4 text-[#c7c7cc] dark:text-[var(--secondary)] shrink-0"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -91,19 +91,19 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f2f2f7]">
+    <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
 
       <main className="max-w-2xl mx-auto px-4 py-6">
         {/* Greeting */}
         <div className="mb-5">
-          <h1 className="text-[28px] font-bold text-[#1c1c1e] tracking-tight">
+          <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight">
             {userInfo.fullname
               ? `Hola, ${userInfo.fullname.split(" ")[0]}`
               : "Mis materias"}
           </h1>
           {!loading && (
-            <p className="text-[14px] text-[#6c6c70] mt-0.5">
+            <p className="text-[14px] text-[var(--secondary)] mt-0.5">
               {courses.length} materia{courses.length !== 1 ? "s" : ""} activa
               {courses.length !== 1 ? "s" : ""}
             </p>
@@ -113,7 +113,7 @@ export default function DashboardPage() {
         {/* Search */}
         <div className="relative mb-4">
           <svg
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8e8e93]"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--secondary)]"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -127,19 +127,19 @@ export default function DashboardPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar materia…"
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-[rgba(60,60,67,0.12)] text-[15px] text-[#1c1c1e] placeholder:text-[#c7c7cc] outline-none focus:border-[#007aff] transition-colors shadow-sm"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--separator)] text-[15px] text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none focus:border-[var(--accent)] transition-colors shadow-sm"
           />
         </div>
 
         {/* Loading */}
         {loading && (
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden">
             <SpinnerBlock label="Cargando materias…" size={30} minHeight={180} />
           </div>
         )}
 
         {error && (
-          <div className="bg-[#fff2f2] border border-[#ffcdd2] rounded-2xl p-5 text-[#ff3b30] text-sm">
+          <div className="bg-[#fff2f2] dark:bg-[rgba(255,59,48,0.08)] border border-[#ffcdd2] dark:border-[rgba(255,59,48,0.25)] rounded-2xl p-5 text-[#ff3b30] text-sm">
             Error al cargar materias: {error}
           </div>
         )}
@@ -147,13 +147,13 @@ export default function DashboardPage() {
         {!loading && !error && (
           <>
             {filtered.length === 0 ? (
-              <p className="text-center py-16 text-[#6c6c70] text-[15px]">
+              <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
                 {search
                   ? "Sin resultados para esa búsqueda."
                   : "No tenés materias inscriptas."}
               </p>
             ) : (
-              <div className="bg-white rounded-2xl overflow-hidden shadow-sm divide-y divide-[rgba(60,60,67,0.1)]">
+              <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm divide-y divide-[var(--separator)]">
                 {filtered.map((course, i) => (
                   <CourseRow key={course.id} course={course} index={i} />
                 ))}

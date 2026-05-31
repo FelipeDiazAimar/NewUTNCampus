@@ -182,18 +182,18 @@ function FileViewer({ content }: { content: MoodleContent }) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-3 hover:bg-[#f2f2f7] transition-colors">
-        <button onClick={handleClick} className="w-8 h-8 rounded-lg bg-[#e8f4fd] flex items-center justify-center shrink-0 active:opacity-70">
-          <span style={{ fontSize: badge.length > 3 ? "8px" : "9px" }} className="font-bold text-[#007aff] leading-none">{badge}</span>
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] transition-colors">
+        <button onClick={handleClick} className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center shrink-0 active:opacity-70">
+          <span style={{ fontSize: badge.length > 3 ? "8px" : "9px" }} className="font-bold text-[var(--accent)] leading-none">{badge}</span>
         </button>
 
         <button onClick={handleClick} className="flex-1 min-w-0 text-left active:opacity-70">
-          <p className="text-[14px] text-[#1c1c1e] truncate">{content.filename}</p>
-          {content.filesize > 0 && <p className="text-[12px] text-[#8e8e93]">{formatBytes(content.filesize)}</p>}
+          <p className="text-[14px] text-[var(--fg)] truncate">{content.filename}</p>
+          {content.filesize > 0 && <p className="text-[12px] text-[var(--secondary)]">{formatBytes(content.filesize)}</p>}
         </button>
 
         <div className="flex items-center gap-3 shrink-0">
-          <button onClick={handleClick} title={isActive ? "Cerrar" : "Ver"} className="text-[#007aff] hover:opacity-70 transition-opacity">
+          <button onClick={handleClick} title={isActive ? "Cerrar" : "Ver"} className="text-[var(--accent)] hover:opacity-70 transition-opacity">
             {isActive ? (
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                 <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
@@ -206,7 +206,7 @@ function FileViewer({ content }: { content: MoodleContent }) {
               </svg>
             )}
           </button>
-          <a href={downloadUrl} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[#8e8e93] hover:text-[#007aff] transition-colors">
+          <a href={downloadUrl} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7,10 12,15 17,10"/>
@@ -218,22 +218,22 @@ function FileViewer({ content }: { content: MoodleContent }) {
 
       {/* Inline area — only for media and status indicators */}
       {isOpen && (
-        <div className="border-t border-[rgba(60,60,67,0.06)] bg-[#f9f9f9]">
+        <div className="border-t border-[rgba(60,60,67,0.06)] bg-[var(--surface2)]">
           {state.phase === "detecting" && (
             <div className="flex items-center justify-center gap-2.5 h-16">
               <Spinner size={18} color="#007aff" />
-              <span className="text-[13px] text-[#6c6c70]">Detectando tipo…</span>
+              <span className="text-[13px] text-[var(--secondary)]">Detectando tipo…</span>
             </div>
           )}
           {(state.phase === "panel" || isActive) && (
-            <div className="flex items-center gap-2 px-4 py-3 bg-[#e8f4fd]">
+            <div className="flex items-center gap-2 px-4 py-3 bg-[var(--accent-light)]">
               <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
-              <span className="text-[13px] text-[#007aff] font-medium">Abierto en el visor →</span>
+              <span className="text-[13px] text-[var(--accent)] font-medium">Abierto en el visor →</span>
             </div>
           )}
           {state.phase === "none" && (
             <div className="py-5 text-center px-4">
-              <p className="text-sm text-[#8e8e93] mb-3">No se puede previsualizar este formato.</p>
+              <p className="text-sm text-[var(--secondary)] mb-3">No se puede previsualizar este formato.</p>
               <a href={downloadUrl} className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#007aff] text-white rounded-2xl text-sm font-semibold">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -279,7 +279,7 @@ function UrlModuleRow({ mod }: { mod: MoodleModule }) {
     <button
       onClick={handleOpen}
       disabled={resolving}
-      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#f2f2f7] active:bg-[#e5e5ea] transition-colors text-left"
+      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
     >
       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#ffe8ed", color: "#ff2d55" }}>
         {resolving ? (
@@ -292,10 +292,10 @@ function UrlModuleRow({ mod }: { mod: MoodleModule }) {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[15px] text-[#1c1c1e] truncate">{mod.name}</p>
-        {externalUrl && <p className="text-[11px] text-[#8e8e93] truncate">{externalUrl}</p>}
+        <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
+        {externalUrl && <p className="text-[11px] text-[var(--secondary)] truncate">{externalUrl}</p>}
       </div>
-      <svg className="w-4 h-4 text-[#c7c7cc] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <svg className="w-4 h-4 text-[var(--secondary)] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
         <polyline points="15 3 21 3 21 9"/>
         <line x1="10" y1="14" x2="21" y2="3"/>
@@ -340,15 +340,15 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
     <div>
       <button
         onClick={toggle}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#f2f2f7] active:bg-[#e5e5ea] transition-colors text-left"
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
       >
         <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold" style={{ background: "#e8f8ed", color: "#34c759", fontSize: "7px" }}>
           Tarea
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[15px] text-[#1c1c1e] truncate">{mod.name}</p>
+          <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
         </div>
-        <svg className={`w-4 h-4 text-[#c7c7cc] shrink-0 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <svg className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
           <polyline points="9,18 15,12 9,6" />
         </svg>
       </button>
@@ -358,7 +358,7 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
           {fetching && (
             <div className="flex items-center justify-center gap-2.5 h-20">
               <Spinner size={20} color="#34c759" />
-              <span className="text-[13px] font-medium text-[#6c6c70]">Cargando tarea…</span>
+              <span className="text-[13px] font-medium text-[var(--secondary)]">Cargando tarea…</span>
             </div>
           )}
           {err && <p className="text-sm text-[#ff3b30] px-4 py-4">{err}</p>}
@@ -369,8 +369,8 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
                 <div className="bg-white rounded-xl px-3 py-3 shadow-sm space-y-2.5">
                   {info.dates.map((d, i) => (
                     <div key={i} className="flex items-start gap-3">
-                      <p className="text-[11px] font-semibold text-[#8e8e93] uppercase tracking-wide w-16 shrink-0 pt-0.5">{d.label}</p>
-                      <p className="text-[13px] text-[#1c1c1e] font-medium">{d.value}</p>
+                      <p className="text-[11px] font-semibold text-[var(--secondary)] uppercase tracking-wide w-16 shrink-0 pt-0.5">{d.label}</p>
+                      <p className="text-[13px] text-[var(--fg)] font-medium">{d.value}</p>
                     </div>
                   ))}
                 </div>
@@ -382,15 +382,15 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
                   <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: statusColor }}>
                     Estado de entrega
                   </p>
-                  <p className="text-[14px] font-semibold text-[#1c1c1e]">{submissionVal}</p>
+                  <p className="text-[14px] font-semibold text-[var(--fg)]">{submissionVal}</p>
                 </div>
               )}
 
               {/* Time remaining */}
               {timeRow && (
                 <div className="flex items-center gap-2 px-1">
-                  <span className="text-[12px] text-[#8e8e93]">{timeRow.label}:</span>
-                  <span className="text-[12px] font-medium" style={{ color: isOverdue ? "#ff9500" : "#1c1c1e" }}>
+                  <span className="text-[12px] text-[var(--secondary)]">{timeRow.label}:</span>
+                  <span className={`text-[12px] font-medium ${isOverdue ? "text-[#ff9500]" : "text-[var(--fg)]"}`}>
                     {timeRow.value}
                   </span>
                 </div>
@@ -399,23 +399,23 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
               {/* Grade */}
               {gradeRow && (
                 <div className="flex items-center gap-2 px-1">
-                  <span className="text-[12px] text-[#8e8e93]">{gradeRow.label}:</span>
-                  <span className="text-[12px] font-medium text-[#1c1c1e]">{gradeRow.value}</span>
+                  <span className="text-[12px] text-[var(--secondary)]">{gradeRow.label}:</span>
+                  <span className="text-[12px] font-medium text-[var(--fg)]">{gradeRow.value}</span>
                 </div>
               )}
 
               {/* Other status rows */}
               {otherRows.map((r, i) => (
                 <div key={i} className="flex items-start gap-2 px-1">
-                  <span className="text-[12px] text-[#8e8e93] shrink-0">{r.label}:</span>
-                  <span className="text-[12px] text-[#1c1c1e]">{r.value}</span>
+                  <span className="text-[12px] text-[var(--secondary)] shrink-0">{r.label}:</span>
+                  <span className="text-[12px] text-[var(--fg)]">{r.value}</span>
                 </div>
               ))}
 
               {/* Description */}
               {info.description && (
                 <div className="bg-white rounded-xl px-3 py-3 shadow-sm">
-                  <p className="text-[12px] text-[#6c6c70] leading-relaxed">{info.description}</p>
+                  <p className="text-[12px] text-[var(--secondary)] leading-relaxed">{info.description}</p>
                 </div>
               )}
 
@@ -458,13 +458,13 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 
       return (
         <div
-          className="px-4 py-3 text-[13px] text-[#3c3c43] leading-relaxed label-content"
+          className="px-4 py-3 text-[13px] text-[var(--fg)] leading-relaxed label-content"
           dangerouslySetInnerHTML={{ __html: mod.description }}
         />
       );
     }
     return (
-      <div className="px-4 py-2 text-[13px] text-[#6c6c70] italic">
+      <div className="px-4 py-2 text-[13px] text-[var(--secondary)] italic">
         {mod.name}
       </div>
     );
@@ -493,7 +493,7 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
           if (isPreviewable) setOpen((o) => !o);
           else if (mod.url) window.open(mod.url, "_blank", "noopener,noreferrer");
         }}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#f2f2f7] active:bg-[#e5e5ea] transition-colors text-left"
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
       >
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
@@ -502,11 +502,11 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
           {badge}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[15px] text-[#1c1c1e] truncate">{mod.name}</p>
+          <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
         </div>
         {(isPreviewable || mod.url) && (
           <svg
-            className={`w-4 h-4 text-[#c7c7cc] shrink-0 transition-transform ${isPreviewable && open ? "rotate-90" : ""}`}
+            className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${isPreviewable && open ? "rotate-90" : ""}`}
             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
           >
             <polyline points="9,18 15,12 9,6" />
@@ -515,7 +515,7 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
       </button>
 
       {isPreviewable && open && (
-        <div className="border-t border-[rgba(60,60,67,0.08)] bg-[#fafafa] divide-y divide-[rgba(60,60,67,0.06)]">
+        <div className="border-t border-[rgba(60,60,67,0.08)] bg-[var(--surface2)] divide-y divide-[rgba(60,60,67,0.06)]">
           {mod.contents!.map((c, i) => <FileViewer key={i} content={c} />)}
         </div>
       )}
@@ -537,13 +537,13 @@ function SectionAccordion({ section, defaultOpen }: {
   const visibleMods = section.modules.filter((m) => isVisible(m) && m.modname !== "label");
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-[#f9f9f9] transition-colors">
+    <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-[var(--surface2)] transition-colors">
         <div>
-          <p className="text-[16px] font-semibold text-[#1c1c1e]">{section.name || "General"}</p>
-          <p className="text-[12px] text-[#8e8e93] mt-0.5">{visibleMods.length} elemento{visibleMods.length !== 1 ? "s" : ""}</p>
+          <p className="text-[16px] font-semibold text-[var(--fg)]">{section.name || "General"}</p>
+          <p className="text-[12px] text-[var(--secondary)] mt-0.5">{visibleMods.length} elemento{visibleMods.length !== 1 ? "s" : ""}</p>
         </div>
-        <svg className={`w-5 h-5 text-[#c7c7cc] transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+        <svg className={`w-5 h-5 text-[var(--secondary)] transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
           <polyline points="6,9 12,15 18,9" />
         </svg>
       </button>
@@ -551,14 +551,14 @@ function SectionAccordion({ section, defaultOpen }: {
         <div className="border-t border-[rgba(60,60,67,0.1)]">
           {section.summaryHtml && (
             <div
-              className="prose prose-sm max-w-none px-4 py-3 border-b border-[rgba(60,60,67,0.08)]
-                prose-p:text-[#3c3c43] prose-p:leading-relaxed prose-p:my-1
-                prose-a:text-[#007aff] prose-a:no-underline hover:prose-a:underline
-                prose-strong:text-[#1c1c1e] prose-strong:font-semibold
-                prose-ul:pl-4 prose-ol:pl-4 prose-li:text-[#3c3c43] prose-li:my-0.5
-                prose-headings:text-[#1c1c1e] prose-headings:font-semibold
+              className="prose prose-sm max-w-none dark:prose-invert px-4 py-3 border-b border-[var(--separator)]
+                prose-p:text-[var(--fg)] dark:prose-p:text-[var(--fg)] prose-p:leading-relaxed prose-p:my-1
+                prose-a:text-[var(--accent)] prose-a:no-underline hover:prose-a:underline
+                prose-strong:text-[var(--fg)] prose-strong:font-semibold
+                prose-ul:pl-4 prose-ol:pl-4 prose-li:text-[var(--fg)] dark:prose-li:text-[var(--fg)] prose-li:my-0.5
+                prose-headings:text-[var(--fg)] dark:prose-headings:text-[var(--fg)] prose-headings:font-semibold
                 prose-img:rounded-lg prose-img:my-2"
-              style={{ background: "#fafafa" }}
+              style={{ background: "var(--surface2)" }}
             >
               {parse(section.summaryHtml)}
             </div>
@@ -588,7 +588,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   const visible = sections.filter((s) => s.visible !== 0 && s.modules.length > 0);
 
   return (
-    <div className="min-h-screen bg-[#f2f2f7]">
+    <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
       {/*
         WorkspaceLayout manages the split-panel. It provides PdfPreviewContext
@@ -599,7 +599,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
       <WorkspaceLayout>
         <div className="py-6">
           {/* Back link */}
-          <Link href="/dashboard" className="inline-flex items-center gap-1 text-[15px] text-[#007aff] font-medium mb-5 hover:opacity-70 transition-opacity">
+          <Link href="/dashboard" className="inline-flex items-center gap-1 text-[15px] text-[var(--accent)] font-medium mb-5 hover:opacity-70 transition-opacity">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <polyline points="15,18 9,12 15,6" />
             </svg>
@@ -616,14 +616,14 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: "11px", fontWeight: "700", color: "#007aff", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
+                  <p style={{ fontSize: "11px", fontWeight: "700", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
                     Materia
                   </p>
-                  <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "#1c1c1e", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
+                  <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "var(--fg)", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
                     {courseName}
                   </h1>
                   {!loading && (
-                    <p style={{ fontSize: "13px", color: "#8e8e93", marginTop: "6px" }}>
+                    <p style={{ fontSize: "13px", color: "var(--secondary)", marginTop: "6px" }}>
                       {visible.length} sección{visible.length !== 1 ? "es" : ""}
                     </p>
                   )}
@@ -633,7 +633,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           )}
 
           {loading && (
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden">
               <SpinnerBlock label="Cargando secciones…" size={30} minHeight={200} />
             </div>
           )}
@@ -641,7 +641,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           {!loading && !error && (
             <div className="space-y-3">
               {visible.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
-              {visible.length === 0 && <p className="text-center py-16 text-[#6c6c70] text-[15px]">Sin contenido visible todavía.</p>}
+              {visible.length === 0 && <p className="text-center py-16 text-[var(--secondary)] text-[15px]">Sin contenido visible todavía.</p>}
             </div>
           )}
         </div>

@@ -1,15 +1,33 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Dark mode via class strategy — next-themes adds .dark to <html> */
+@variant dark (&:where(.dark, .dark *));
+
 :root {
-  --bg: #ffffff;
-  --surface: #f2f2f7;
+  --bg: #f2f2f7;
+  --surface: #ffffff;
   --surface2: #e5e5ea;
   --fg: #1c1c1e;
   --secondary: #6c6c70;
   --accent: #007aff;
   --accent-light: #eff6ff;
   --separator: rgba(60, 60, 67, 0.12);
+  --navbar-bg: rgba(255, 255, 255, 0.82);
+  --navbar-border: rgba(60, 60, 67, 0.12);
+}
+
+.dark {
+  --bg: #131314;
+  --surface: #1e1f20;
+  --surface2: #282a2c;
+  --fg: #e3e3e3;
+  --secondary: #c4c7c5;
+  --accent: #a8c7fa;
+  --accent-light: rgba(168, 199, 250, 0.12);
+  --separator: #444746;
+  --navbar-bg: rgba(19, 19, 20, 0.82);
+  --navbar-border: #333538;
 }
 
 * {
@@ -23,6 +41,7 @@ body {
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
     "Helvetica Neue", sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* Label / section-summary rendered HTML */
@@ -32,6 +51,7 @@ body {
 .label-content ol { list-style: decimal; padding-left: 1.25em; margin-bottom: 0.5em; }
 .label-content a  { color: #007aff; text-decoration: underline; }
 .label-content img { max-width: 100%; border-radius: 8px; margin-top: 4px; }
+.dark .label-content a { color: var(--accent); }
 
 /* iOS Activity Indicator — 12 discrete steps per revolution */
 @keyframes ios-spin {

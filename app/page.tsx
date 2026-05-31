@@ -51,10 +51,10 @@ export default function LoginPage() {
             <p className="text-xs font-semibold tracking-widest text-[#007aff] uppercase mb-1">
               UTN · FRSF
             </p>
-            <h1 className="text-[28px] font-bold text-[#1c1c1e] tracking-tight">
+            <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight">
               Campus Virtual
             </h1>
-            <p className="text-sm text-[#6c6c70] mt-0.5">
+            <p className="text-sm text-[var(--secondary)] mt-0.5">
               Facultad Regional San Francisco
             </p>
           </div>
@@ -62,9 +62,9 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleLogin} className="w-full max-w-[340px] flex flex-col gap-0">
-          <div className="bg-white rounded-2xl border border-[rgba(60,60,67,0.18)] overflow-hidden mb-4 shadow-sm">
-            <div className="flex items-center px-4 py-0 border-b border-[rgba(60,60,67,0.1)]">
-              <label className="text-sm font-medium text-[#1c1c1e] w-24 shrink-0 py-3.5">
+          <div className="bg-[var(--surface)] rounded-2xl border border-[var(--separator)] overflow-hidden mb-4 shadow-sm">
+            <div className="flex items-center px-4 py-0 border-b border-[var(--separator)]">
+              <label className="text-sm font-medium text-[var(--fg)] w-24 shrink-0 py-3.5">
                 Usuario
               </label>
               <input
@@ -76,11 +76,11 @@ export default function LoginPage() {
                 disabled={loading}
                 autoCapitalize="none"
                 autoCorrect="off"
-                className="flex-1 py-3.5 text-sm text-[#1c1c1e] placeholder:text-[#c7c7cc] outline-none bg-transparent disabled:opacity-50"
+                className="flex-1 py-3.5 text-sm text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none bg-transparent disabled:opacity-50"
               />
             </div>
             <div className="flex items-center px-4 py-0">
-              <label className="text-sm font-medium text-[#1c1c1e] w-24 shrink-0 py-3.5">
+              <label className="text-sm font-medium text-[var(--fg)] w-24 shrink-0 py-3.5">
                 Contraseña
               </label>
               <input
@@ -90,7 +90,7 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 required
                 disabled={loading}
-                className="flex-1 py-3.5 text-sm text-[#1c1c1e] placeholder:text-[#c7c7cc] outline-none bg-transparent disabled:opacity-50"
+                className="flex-1 py-3.5 text-sm text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none bg-transparent disabled:opacity-50"
               />
             </div>
           </div>
