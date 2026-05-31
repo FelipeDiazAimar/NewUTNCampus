@@ -63,7 +63,6 @@ function TBtn({ onClick, disabled, title, children, minW }: {
 
 export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio }: Props) {
   const [numPages, setNumPages] = useState(0);
-  const [page, setPage]         = useState(1);
   const [scale, setScale]       = useState(1.0);
   const [docError, setDocError] = useState<string | null>(null);
 
@@ -98,7 +97,6 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
 
   async function handleDocLoad(pdf: PDFDocumentProxy) {
     setNumPages(pdf.numPages);
-    setPage(1);
     if (onAspectRatio && !aspectReportedRef.current) {
       try {
         const pg = await pdf.getPage(1);
@@ -107,11 +105,6 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
         aspectReportedRef.current = true;
       } catch { /* ignore */ }
     }
-  }
-
-  function navigate(delta: number) {
-    setPage((p) => Math.max(1, Math.min(numPages, p + delta)));
-    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function zoom(delta: number) {
@@ -131,20 +124,10 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
       {/* ── Toolbar ────────────────────────────────────── */}
       <div className="flex items-center justify-between px-2 shrink-0 border-b border-black/30"
         style={{ background: "#38383d", height: 40 }}>
-        <div className="flex items-center gap-0.5">
-          <TBtn onClick={() => navigate(-1)} disabled={page <= 1} title="Página anterior">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="15,18 9,12 15,6" />
-            </svg>
-          </TBtn>
-          <span className="text-white/90 text-[13px] tabular-nums text-center select-none" style={{ minWidth: 72 }}>
-            {numPages > 0 ? `${page} / ${numPages}` : "—"}
+        <div className="flex items-center gap-2">
+          <span className="text-white/90 text-[13px] tabular-nums select-none">
+            {numPages > 0 ? `${numPages} pagina${numPages === 1 ? "" : "s"}` : "—"}
           </span>
-          <TBtn onClick={() => navigate(1)} disabled={page >= numPages} title="Página siguiente">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="9,18 15,12 9,6" />
-            </svg>
-          </TBtn>
         </div>
         <div className="flex items-center gap-0.5">
           <TBtn onClick={() => zoom(-0.25)} disabled={scale <= 0.25} title="Alejar">
@@ -164,7 +147,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
       </div>
 
       {/* ── Document area ──────────────────────────────── */}
-      <div ref={scrollRef} className="overflow-auto flex-1 flex justify-center p-4" style={{ background: "#525659" }}>
+      <div ref={scrollRef} className="overflow-y-auto flex-1 p-4" style={{ background: "#525659" }}>
         {docError ? (
           <div className="text-center py-16 px-6">
             <p className="text-[#ff6b6b] text-[14px] mb-2">No se pudo cargar el documento</p>
@@ -174,9 +157,13 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
           <Document file={file} onLoadSuccess={handleDocLoad}
             onLoadError={(e) => setDocError(e.message)}
             loading={<PageSkeleton />} error={<span />}>
-            <Page pageNumber={page} width={pageWidth}
-              loading={<PageSkeleton />} renderTextLayer renderAnnotationLayer
-              className="shadow-2xl" />
+            <div className="flex flex-col gap-4 items-center">
+              {Array.from({ length: numPages }, (_, i) => (
+                <Page key={`page_${i + 1}`} pageNumber={i + 1} width={pageWidth}
+                  loading={<PageSkeleton />} renderTextLayer renderAnnotationLayer
+                  className="shadow-2xl" />
+              ))}
+            </div>
           </Document>
         )}
       </div>

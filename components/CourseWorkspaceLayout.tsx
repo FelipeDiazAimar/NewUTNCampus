@@ -401,6 +401,8 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const [active, setActive] = useState<PanelEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(false);
+  const [isMobileOverlayOpen, setIsMobileOverlayOpen] = useState(false);
   const [xlsxMode, setXlsxMode] = useState<"pdf" | "excel">("excel");
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -411,7 +413,8 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       setXlsxMode("excel"); // siempre empieza en Excel al abrir un nuevo archivo
       return entry;
     });
-  }, []);
+    if (isMobileView) setIsMobileOverlayOpen(true);
+  }, [isMobileView]);
 
   const toggleXlsxMode = useCallback(() => {
     setXlsxMode((m) => {
@@ -429,6 +432,29 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const update = () => setIsMobileView(mq.matches);
+    update();
+    if (mq.addEventListener) mq.addEventListener("change", update);
+    else mq.addListener(update);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", update);
+      else mq.removeListener(update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileOverlayOpen) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = original; };
+  }, [isMobileOverlayOpen]);
+
+  useEffect(() => {
+    if (!active) setIsMobileOverlayOpen(false);
+  }, [active]);
+
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else panelRef.current?.requestFullscreen().catch(() => {});
@@ -441,83 +467,105 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
   const isPanelOpen = !!active;
 
+  const panelHeader = (isOverlay: boolean) => (
+    <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: "#2d2d30", height: 36 }}>
+      <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
+      <p className="flex-1 min-w-0 text-white/80 text-[12px] font-medium truncate" title={active?.name}>
+        {active?.name}
+      </p>
+      {active?.kind === "xlsx" && (
+        <IconBtn onClick={toggleXlsxMode} title={xlsxMode === "pdf" ? "Ver como tabla Excel" : "Ver como PDF"}>
+          {xlsxMode === "pdf" ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14,2 14,8 20,8" />
+            </svg>
+          )}
+        </IconBtn>
+      )}
+      {isOverlay ? (
+        <IconBtn onClick={() => setIsMobileOverlayOpen(false)} title="Minimizar visor">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <line x1="6" y1="12" x2="18" y2="12" />
+          </svg>
+        </IconBtn>
+      ) : (
+        <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
+          {isFullscreen ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
+              <polyline points="3,16 3,21 8,21" /><polyline points="16,21 21,21 21,16" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
+              <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+          )}
+        </IconBtn>
+      )}
+      <IconBtn onClick={closePanel} title="Cerrar visor">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </IconBtn>
+    </div>
+  );
+
+  const panelShell = (isOverlay: boolean) => (
+    <div className={isOverlay ? "flex flex-col h-full rounded-none overflow-hidden shadow-2xl" : "flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl"}>
+      {panelHeader(isOverlay)}
+      <PanelContent
+        key={active?.fileUrl}
+        entry={active as PanelEntry}
+        onAspectRatio={setAspectRatio}
+        xlsxMode={xlsxMode}
+      />
+    </div>
+  );
+
   return (
     <PanelContext.Provider value={{ openPanel, closePanel, activeKey: active?.fileUrl ?? null }}>
       <div className="max-w-[1600px] mx-auto px-4">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col lg:flex-row items-start gap-4">
 
           {/* Left: sections list */}
           <div className="min-w-0 shrink-0" style={{
             flex: 1,
-            ...(isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 } : {}),
+            ...(!isMobileView && isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 } : {}),
           }}>
-            <div style={{ maxWidth: isPanelOpen ? "none" : "42rem", margin: "0 auto" }}>
+            <div style={{ maxWidth: isPanelOpen || isMobileView ? "none" : "42rem", margin: "0 auto" }}>
               {children}
             </div>
           </div>
 
           {/* Right: viewer panel */}
-          <div style={{ flex: rightFlex, minWidth: 0, overflow: "hidden", transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)" }}>
-            {isPanelOpen && (
-              <div ref={panelRef} className="sticky" style={{ top: 72, height: "calc(100vh - 80px)" }}>
-                <div className="flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl">
-
-                  {/* Header bar */}
-                  <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: "#2d2d30", height: 36 }}>
-                    <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
-                    <p className="flex-1 min-w-0 text-white/80 text-[12px] font-medium truncate" title={active?.name}>
-                      {active?.name}
-                    </p>
-                    {active?.kind === "xlsx" && (
-                      <IconBtn onClick={toggleXlsxMode} title={xlsxMode === "pdf" ? "Ver como tabla Excel" : "Ver como PDF"}>
-                        {xlsxMode === "pdf" ? (
-                          // Tabla / grid icon
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
-                          </svg>
-                        ) : (
-                          // Documento / PDF icon
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/>
-                          </svg>
-                        )}
-                      </IconBtn>
-                    )}
-                    <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
-                      {isFullscreen ? (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                          <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
-                          <polyline points="3,16 3,21 8,21" /><polyline points="16,21 21,21 21,16" />
-                        </svg>
-                      ) : (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                          <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
-                          <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-                        </svg>
-                      )}
-                    </IconBtn>
-                    <IconBtn onClick={closePanel} title="Cerrar visor">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </IconBtn>
-                  </div>
-
-                  {/* Content area */}
-                  <PanelContent
-                    key={active.fileUrl}
-                    entry={active}
-                    onAspectRatio={setAspectRatio}
-                    xlsxMode={xlsxMode}
-                  />
-
-                </div>
+          {!isMobileView && (
+            <div style={{ flex: rightFlex, minWidth: 0, overflow: "hidden", transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)" }}>
+              {isPanelOpen && (
+              <div
+                ref={panelRef}
+                className="lg:sticky"
+                style={!isMobileView ? { top: 72, height: "calc(100vh - 80px)" } : undefined}
+              >
+                {panelShell(false)}
               </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
         </div>
       </div>
+      {isPanelOpen && isMobileView && isMobileOverlayOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/70">
+          <div className="absolute inset-3 rounded-2xl overflow-hidden bg-[#2d2d30]">
+            {panelShell(true)}
+          </div>
+        </div>
+      )}
     </PanelContext.Provider>
   );
 }

@@ -13,16 +13,9 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   }
 
   return (
-    <header
-      className="sticky top-0 z-50 w-full"
-      style={{
-        background: "var(--navbar-bg)",
-        backdropFilter: "saturate(180%) blur(20px)",
-        WebkitBackdropFilter: "saturate(180%) blur(20px)",
-        borderBottom: "1px solid var(--navbar-border)",
-      }}
-    >
-      <div className="max-w-2xl mx-auto px-4 h-12 flex items-center justify-between">
+    <header className="sticky top-4 z-50 w-full">
+      <div className="max-w-[1600px] mx-auto px-4">
+        <div className="h-12 flex items-center justify-between rounded-2xl backdrop-blur-xl backdrop-saturate-150 bg-[var(--navbar-bg)] border border-[var(--navbar-border)] shadow-sm px-4">
         <Link
           href="/dashboard"
           className="flex items-center gap-2 text-[15px] font-semibold text-[var(--fg)] hover:opacity-70 transition-opacity"
@@ -54,6 +47,7 @@ export default function Navbar({ fullname }: { fullname?: string }) {
           >
             Salir
           </button>
+        </div>
         </div>
       </div>
     </header>

@@ -94,7 +94,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
 
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      <main className="max-w-2xl mx-auto px-4 pt-16 pb-6">
         {/* Greeting */}
         <div className="mb-5">
           <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight">
