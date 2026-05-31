@@ -63,6 +63,7 @@ function DocxViewer({ buffer }: { buffer: ArrayBuffer }) {
   const ref = useRef<HTMLDivElement>(null);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
+  const [scale, setScale] = useState(1.0);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -79,15 +80,42 @@ function DocxViewer({ buffer }: { buffer: ArrayBuffer }) {
   }, [buffer]);
 
   return (
-    <div className="flex-1 overflow-auto" style={{ background: "#525659" }}>
-      {!done && !err && (
-        <div className="flex items-center justify-center gap-2 h-24">
-          <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
-          <span className="text-[12px] text-white/60">Renderizando documento…</span>
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#525659" }}>
+      <div className="flex items-center justify-end gap-0.5 px-2 shrink-0 border-b border-black/30" style={{ background: "#38383d", height: 36 }}>
+        <button
+          onClick={() => setScale((s) => Math.max(0.5, parseFloat((s - 0.1).toFixed(2))))}
+          className="flex items-center justify-center h-7 w-7 rounded text-white/90 hover:bg-white/[0.12]"
+          title="Alejar"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <span className="text-white/80 text-[12px] tabular-nums select-none" style={{ minWidth: 48, textAlign: "center" }}>
+          {Math.round(scale * 100)}%
+        </span>
+        <button
+          onClick={() => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))))}
+          className="flex items-center justify-center h-7 w-7 rounded text-white/90 hover:bg-white/[0.12]"
+          title="Acercar"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto p-4">
+        {!done && !err && (
+          <div className="flex items-center justify-center gap-2 h-24">
+            <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+            <span className="text-[12px] text-white/60">Renderizando documento…</span>
+          </div>
+        )}
+        {err && <p className="text-[#ff6b6b] text-[13px] p-4">{err}</p>}
+        <div className={done ? "" : "hidden"} style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
+          <div ref={ref} />
         </div>
-      )}
-      {err && <p className="text-[#ff6b6b] text-[13px] p-4">{err}</p>}
-      <div ref={ref} className={done ? "" : "hidden"} />
+      </div>
     </div>
   );
 }
@@ -401,7 +429,9 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const [active, setActive] = useState<PanelEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isMobileView, setIsMobileView] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false
+  );
   const [isMobileOverlayOpen, setIsMobileOverlayOpen] = useState(false);
   const [xlsxMode, setXlsxMode] = useState<"pdf" | "excel">("excel");
   const panelRef = useRef<HTMLDivElement>(null);
@@ -466,6 +496,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     : 0;
 
   const isPanelOpen = !!active;
+  const panelTop = 96;
 
   const panelHeader = (isOverlay: boolean) => (
     <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: "#2d2d30", height: 36 }}>
@@ -535,6 +566,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           {/* Left: sections list */}
           <div className="min-w-0 shrink-0" style={{
             flex: 1,
+            width: isMobileView ? "100%" : undefined,
             ...(!isMobileView && isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 } : {}),
           }}>
             <div style={{ maxWidth: isPanelOpen || isMobileView ? "none" : "42rem", margin: "0 auto" }}>
@@ -549,7 +581,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
               <div
                 ref={panelRef}
                 className="lg:sticky"
-                style={!isMobileView ? { top: 72, height: "calc(100vh - 80px)" } : undefined}
+                style={!isMobileView ? { top: panelTop, height: `calc(100vh - ${panelTop + 8}px)` } : undefined}
               >
                 {panelShell(false)}
               </div>

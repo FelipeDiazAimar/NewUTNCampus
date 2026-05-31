@@ -9,6 +9,7 @@ import type { MoodleModule, MoodleContent } from "@/lib/moodle";
 import type { AssignInfo } from "@/app/api/assign/route";
 import WorkspaceLayout, { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import parse from "html-react-parser";
+import type { Element } from "domhandler";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
 
 function getUserInfo() {
@@ -87,6 +88,28 @@ function stripHtml(html: string) {
     .replace(/&nbsp;|&amp;|&quot;|&#39;|&lt;|&gt;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function sanitizeHtml(html: string) {
+  return html
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<script\b[^>]*\/?>(?:\s*<\/script>)?/gi, "")
+    .replace(/\sstyle=("[^"]*"|'[^']*')/gi, (match) => {
+      const cleaned = match
+        .replace(/color\s*:\s*[^;"']+;?/gi, "")
+        .replace(/\s{2,}/g, " ");
+      return cleaned === " style=\"\"" || cleaned === " style=''" ? "" : cleaned;
+    });
+}
+
+function safeParseHtml(html: string) {
+  return parse(sanitizeHtml(html), {
+    replace: (node) => {
+      const el = node as Element;
+      if (el?.type === "script" || el?.name === "script") return null;
+      return undefined;
+    },
+  });
 }
 
 function moduleSearchText(mod: MoodleModule) {
@@ -479,8 +502,9 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
       return (
         <div
           className="px-4 py-3 text-[13px] text-[var(--fg)] leading-relaxed label-content"
-          dangerouslySetInnerHTML={{ __html: mod.description }}
-        />
+        >
+          {safeParseHtml(mod.description)}
+        </div>
       );
     }
     return (
@@ -557,13 +581,15 @@ function SectionAccordion({ section, defaultOpen }: {
   const visibleMods = section.modules.filter((m) => isVisible(m) && m.modname !== "label");
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-[var(--surface2)] transition-colors">
-        <div>
-          <p className="text-[16px] font-semibold text-[var(--fg)]">{section.name || "General"}</p>
+    <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm w-full">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-start justify-between gap-3 px-4 py-4 text-left hover:bg-[var(--surface2)] transition-colors">
+        <div className="min-w-0 flex-1">
+          <p className="text-[16px] font-semibold text-[var(--fg)] leading-snug break-words whitespace-normal">
+            {section.name || "General"}
+          </p>
           <p className="text-[12px] text-[var(--secondary)] mt-0.5">{visibleMods.length} elemento{visibleMods.length !== 1 ? "s" : ""}</p>
         </div>
-        <svg className={`w-5 h-5 text-[var(--secondary)] transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+        <svg className={`w-5 h-5 text-[var(--secondary)] transition-transform mt-0.5 shrink-0 ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
           <polyline points="6,9 12,15 18,9" />
         </svg>
       </button>
@@ -580,7 +606,7 @@ function SectionAccordion({ section, defaultOpen }: {
                 prose-img:rounded-lg prose-img:my-2"
               style={{ background: "var(--surface2)" }}
             >
-              {parse(section.summaryHtml)}
+              {safeParseHtml(section.summaryHtml)}
             </div>
           )}
           <div className="divide-y divide-[rgba(60,60,67,0.06)]">
@@ -686,13 +712,13 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           )}
 
           {loading && (
-            <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden w-full">
               <SpinnerBlock label="Cargando secciones…" size={30} minHeight={200} />
             </div>
           )}
           {error && <div className="bg-[#fff2f2] border border-[#ffcdd2] rounded-2xl p-5 text-[#ff3b30] text-sm">{error}</div>}
           {!loading && !error && (
-            <div className="space-y-3">
+            <div className="space-y-3 w-full">
               {filtered.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
               {filtered.length === 0 && (
                 <p className="text-center py-16 text-[var(--secondary)] text-[15px]">

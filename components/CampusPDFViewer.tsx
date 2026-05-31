@@ -93,7 +93,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     return () => ro.disconnect();
   }, []);
 
-  const pageWidth = containerWidth > 0 ? Math.floor((containerWidth - 32) * scale) : undefined;
+  const pageWidth = containerWidth > 0 ? Math.floor(containerWidth - 32) : undefined;
 
   async function handleDocLoad(pdf: PDFDocumentProxy) {
     setNumPages(pdf.numPages);
@@ -114,10 +114,13 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   if (!file) return null;
 
   // Fill parent (workspace mode) vs self-contained (standalone mode)
-  const containerStyle: React.CSSProperties =
-    maxHeight === "100%"
-      ? { height: "100%", display: "flex", flexDirection: "column" }
-      : { maxHeight, display: "flex", flexDirection: "column" };
+  const containerStyle: React.CSSProperties = {
+    height: maxHeight,
+    maxHeight,
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
+  };
 
   return (
     <div style={containerStyle}>
@@ -147,7 +150,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
       </div>
 
       {/* ── Document area ──────────────────────────────── */}
-      <div ref={scrollRef} className="overflow-y-auto flex-1 p-4" style={{ background: "#525659" }}>
+      <div ref={scrollRef} className="overflow-y-auto flex-1 min-h-0 p-4" style={{ background: "#525659" }}>
         {docError ? (
           <div className="text-center py-16 px-6">
             <p className="text-[#ff6b6b] text-[14px] mb-2">No se pudo cargar el documento</p>
@@ -159,7 +162,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
             loading={<PageSkeleton />} error={<span />}>
             <div className="flex flex-col gap-4 items-center">
               {Array.from({ length: numPages }, (_, i) => (
-                <Page key={`page_${i + 1}`} pageNumber={i + 1} width={pageWidth}
+                <Page key={`page_${i + 1}`} pageNumber={i + 1} width={pageWidth} scale={scale}
                   loading={<PageSkeleton />} renderTextLayer renderAnnotationLayer
                   className="shadow-2xl" />
               ))}

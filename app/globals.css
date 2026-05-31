@@ -52,6 +52,9 @@ body {
 .label-content a  { color: #007aff; text-decoration: underline; }
 .label-content img { max-width: 100%; border-radius: 8px; margin-top: 4px; }
 .dark .label-content a { color: var(--accent); }
+.dark .label-content * { color: var(--fg) !important; }
+.dark .label-content a { color: var(--accent) !important; }
+.dark .label-content [style] { color: var(--fg) !important; }
 
 /* iOS Activity Indicator — 12 discrete steps per revolution */
 @keyframes ios-spin {
