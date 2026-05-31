@@ -57,6 +57,7 @@ export default function NotificacionesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
+  const [openMaterias, setOpenMaterias] = useState<Record<string, boolean>>({});
 
   const courseNames = useMemo(
     () => courses.map((course) => course.fullname),
@@ -152,6 +153,10 @@ export default function NotificacionesPage() {
 
   async function handleLinkTelegram() {
     const res = await fetch("/api/telegram/link", { method: "POST" });
+    if (!res.ok) {
+      setError("No se pudo generar el enlace de Telegram.");
+      return;
+    }
     const data = await res.json();
     setLinkUrl(data.url ?? null);
   }
@@ -232,20 +237,33 @@ export default function NotificacionesPage() {
               )}
               <button
                 type="button"
-                className="self-start rounded-xl bg-[#007aff] px-4 py-2 text-[13px] font-semibold text-white"
+                className="self-start rounded-2xl bg-[#007aff] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
                 onClick={handleLinkTelegram}
               >
                 Generar enlace de Telegram
               </button>
               {linkUrl && (
-                <a
-                  href={linkUrl}
-                  className="text-[12px] text-[var(--accent)] underline"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Abrir bot para vincular
-                </a>
+                <div className="rounded-xl border border-[var(--separator)] bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--secondary)]">
+                  <p className="font-medium text-[var(--fg)]">Vincular Telegram</p>
+                  <p className="mt-0.5">Abrí el bot y enviá el codigo automaticamente.</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <a
+                      href={linkUrl}
+                      className="rounded-lg bg-[var(--surface2)] px-3 py-1.5 text-[12px] font-semibold text-[var(--fg)]"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir bot
+                    </a>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[var(--separator)] px-3 py-1.5 text-[12px] font-semibold text-[var(--fg)]"
+                      onClick={() => navigator.clipboard.writeText(linkUrl)}
+                    >
+                      Copiar enlace
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -254,12 +272,22 @@ export default function NotificacionesPage() {
         <div className="space-y-4">
           {materias.map((materia) => {
             const materiaActive = globalActive && materia.materia_activa;
+            const isOpen = openMaterias[materia.materia_nombre] ?? false;
             return (
               <div
                 key={materia.materia_nombre}
                 className="bg-[var(--surface)] rounded-2xl border border-[var(--separator)] p-4 shadow-sm"
               >
-                <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenMaterias((prev) => ({
+                      ...prev,
+                      [materia.materia_nombre]: !isOpen,
+                    }))
+                  }
+                  className="w-full flex items-center justify-between text-left"
+                >
                   <div>
                     <p className="text-[15px] font-semibold text-[var(--fg)]">
                       {materia.materia_nombre}
@@ -268,23 +296,39 @@ export default function NotificacionesPage() {
                       Controla los avisos de esta materia.
                     </p>
                   </div>
-                  <Toggle
-                    checked={materia.materia_activa}
-                    disabled={!globalActive}
-                    onChange={(next) => {
-                      const patch: Partial<MateriaConfig> = { materia_activa: next };
-                      if (next) {
-                        patch.notificar_nuevas = true;
-                        patch.notificar_cierre = true;
-                        patch.notificar_vencimiento = true;
-                        patch.dias_anticipacion_vencimiento = 1;
-                      }
-                      updateMateria(materia.materia_nombre, patch);
-                    }}
-                  />
-                </div>
+                  <div className="flex items-center gap-3">
+                    <Toggle
+                      checked={materia.materia_activa}
+                      disabled={!globalActive}
+                      onChange={(next) => {
+                        const patch: Partial<MateriaConfig> = { materia_activa: next };
+                        if (next) {
+                          patch.notificar_nuevas = true;
+                          patch.notificar_cierre = true;
+                          patch.notificar_vencimiento = true;
+                          patch.dias_anticipacion_vencimiento = 1;
+                        }
+                        updateMateria(materia.materia_nombre, patch);
+                      }}
+                    />
+                    <svg
+                      className={`w-4 h-4 text-[var(--secondary)] transition-transform ${
+                        isOpen ? "rotate-180" : ""
+                      }`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </div>
+                </button>
 
-                <div className={`mt-4 space-y-3 ${materiaActive ? "" : "opacity-50"}`}>
+                {isOpen && (
+                  <div className={`mt-4 space-y-3 ${materiaActive ? "" : "opacity-50"}`}>
                   <div className="flex items-center justify-between">
                     <span className="text-[13px] text-[var(--fg)]">Nuevas tareas</span>
                     <Toggle
@@ -325,6 +369,7 @@ export default function NotificacionesPage() {
                     />
                   </div>
                 </div>
+                )}
               </div>
             );
           })}
