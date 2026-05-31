@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #ffffff;
+  --surface: #f2f2f7;
+  --surface2: #e5e5ea;
+  --fg: #1c1c1e;
+  --secondary: #6c6c70;
+  --accent: #007aff;
+  --accent-light: #eff6ff;
+  --separator: rgba(60, 60, 67, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+    "Helvetica Neue", sans-serif;
+}
