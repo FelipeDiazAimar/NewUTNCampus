@@ -653,7 +653,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
         split mode expands to max-w-[1600px].
       */}
       <WorkspaceLayout>
-        <div className="pt-16 pb-6">
+        <div className="pt-6 pb-6">
           {/* Back link */}
           <Link href="/dashboard" className="inline-flex items-center gap-1 text-[15px] text-[var(--accent)] font-medium mb-5 hover:opacity-70 transition-opacity">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
