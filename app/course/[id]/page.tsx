@@ -74,6 +74,26 @@ function formatBytes(b: number) {
   return `${(b / 1048576).toFixed(1)} MB`;
 }
 
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripHtml(html: string) {
+  return html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;|&amp;|&quot;|&#39;|&lt;|&gt;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function moduleSearchText(mod: MoodleModule) {
+  const contentNames = mod.contents?.map((c) => `${c.filename} ${c.fileType ?? ""}`).join(" ") ?? "";
+  return [mod.name, mod.description ?? "", contentNames].join(" ");
+}
+
 // ─── File-kind detection ──────────────────────────────────────────────────────
 
 type ViewerKind = PanelKind | "image" | "video" | "audio" | "none";
@@ -579,6 +599,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   const router = useRouter();
   const { sections, courseName, loading, error } = useCourseContents(parseInt(id));
   const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     setUserInfo(getUserInfo());
@@ -586,6 +607,15 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   }, [router]);
 
   const visible = sections.filter((s) => s.visible !== 0 && s.modules.length > 0);
+  const searchTerm = normalizeText(search);
+  const filtered = searchTerm
+    ? visible.filter((section) => {
+        const summary = section.summaryHtml ? stripHtml(section.summaryHtml) : "";
+        const moduleText = section.modules.map(moduleSearchText).join(" ");
+        const haystack = normalizeText([section.name, summary, moduleText].join(" "));
+        return haystack.includes(searchTerm);
+      })
+    : visible;
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -624,11 +654,34 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                   </h1>
                   {!loading && (
                     <p style={{ fontSize: "13px", color: "var(--secondary)", marginTop: "6px" }}>
-                      {visible.length} sección{visible.length !== 1 ? "es" : ""}
+                      {filtered.length} sección{filtered.length !== 1 ? "es" : ""}
                     </p>
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {/* Search */}
+          {!loading && (
+            <div className="relative mb-4">
+              <svg
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--secondary)]"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar en esta materia…"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--separator)] text-[15px] text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none focus:border-[var(--accent)] transition-colors shadow-sm"
+              />
             </div>
           )}
 
@@ -640,8 +693,12 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           {error && <div className="bg-[#fff2f2] border border-[#ffcdd2] rounded-2xl p-5 text-[#ff3b30] text-sm">{error}</div>}
           {!loading && !error && (
             <div className="space-y-3">
-              {visible.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
-              {visible.length === 0 && <p className="text-center py-16 text-[var(--secondary)] text-[15px]">Sin contenido visible todavía.</p>}
+              {filtered.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
+              {filtered.length === 0 && (
+                <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
+                  {searchTerm ? "Sin resultados para esa busqueda." : "Sin contenido visible todavia."}
+                </p>
+              )}
             </div>
           )}
         </div>
