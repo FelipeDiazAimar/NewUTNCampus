@@ -92,15 +92,15 @@ export function SpinnerOverlay({ label, visible }: { label?: string; visible: bo
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4"
       style={{
-        background: "rgba(255,255,255,0.88)",
+        background: "var(--overlay)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
         animation: "fade-in 0.15s ease-out",
       }}
     >
-      <Spinner size={52} color="#1c1c1e" />
+      <Spinner size={52} color="var(--fg)" />
       {label && (
-        <p className="text-[15px] font-semibold tracking-tight" style={{ color: "#1c1c1e" }}>
+        <p className="text-[15px] font-semibold tracking-tight" style={{ color: "var(--fg)" }}>
           {label}
         </p>
       )}

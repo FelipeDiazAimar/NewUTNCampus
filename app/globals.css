@@ -15,6 +15,7 @@
   --separator: rgba(60, 60, 67, 0.12);
   --navbar-bg: rgba(255, 255, 255, 0.82);
   --navbar-border: rgba(60, 60, 67, 0.12);
+  --overlay: rgba(255, 255, 255, 0.88);
 }
 
 .dark {
@@ -28,6 +29,7 @@
   --separator: #444746;
   --navbar-bg: rgba(19, 19, 20, 0.82);
   --navbar-border: #333538;
+  --overlay: rgba(19, 19, 20, 0.88);
 }
 
 * {
@@ -42,6 +44,23 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
     "Helvetica Neue", sans-serif;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.login-input {
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  appearance: none;
+}
+
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus,
+.login-input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--fg);
+  -webkit-box-shadow: 0 0 0px 1000px var(--surface) inset;
+  box-shadow: 0 0 0px 1000px var(--surface) inset;
+  caret-color: var(--fg);
+  transition: background-color 9999s ease-out 0s;
 }
 
 /* Label / section-summary rendered HTML */
