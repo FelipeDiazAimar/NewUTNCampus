@@ -2,11 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
 import { clearCourseCache } from "@/lib/hooks";
 
 export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isDark = mounted && resolvedTheme === "dark";
 
   async function logout() {
     await fetch("/api/auth", { method: "DELETE" });
@@ -22,18 +32,21 @@ export default function Navbar({ fullname }: { fullname?: string }) {
           href="/dashboard"
           className="flex items-center gap-2 text-[15px] font-semibold text-[var(--fg)] hover:opacity-70 transition-opacity"
         >
-          <svg
-            className="w-5 h-5 text-[#007aff] dark:text-[#0a84ff]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-          </svg>
-          Campus UTN
+          {mounted && (
+            <>
+              <img
+                src={isDark ? "/UTNW.png" : "/UTN.png"}
+                alt="UTN"
+                className="hidden md:block w-[110px] h-6 object-contain"
+              />
+              <img
+                src={isDark ? "/LOGOUTNW.png" : "/LOGOUTNB.png"}
+                alt="UTN"
+                className="block md:hidden w-6 h-6 object-contain"
+              />
+            </>
+          )}
+          
         </Link>
 
         <div className="flex items-center gap-2">

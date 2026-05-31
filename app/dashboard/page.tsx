@@ -1,12 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  Bell,
+  BookOpen,
+  Box,
+  GraduationCap,
+  HelpCircle,
+  MessageSquare,
+  Settings,
+  UserCheck,
+  Video,
+} from "lucide-react";
 import Navbar from "@/components/Navbar";
-import { useCourses } from "@/lib/hooks";
-import type { MoodleCourse } from "@/lib/moodle";
-import { SpinnerBlock } from "@/components/Spinner";
+
+type HomeItem = {
+  type: "widget" | "app";
+  title: string;
+  href: string;
+  subtitle?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone?: string;
+  muted?: boolean;
+  row: number;
+  col: number;
+  rowSpan: number;
+  colSpan: number;
+};
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -19,148 +41,206 @@ function getUserInfo() {
   }
 }
 
-const ICON_COLORS: [string, string][] = [
-  ["#007aff", "#e8f4fd"],
-  ["#34c759", "#e8f8ed"],
-  ["#ff9500", "#fff3e0"],
-  ["#af52de", "#f3e8ff"],
-  ["#ff3b30", "#ffe8e7"],
-  ["#5ac8fa", "#e0f7ff"],
-];
-
-function CourseIcon({ name, index }: { name: string; index: number }) {
-  const [fg, bg] = ICON_COLORS[index % ICON_COLORS.length];
-  const initials =
-    name
-      .split(" ")
-      .filter((w) => w.length > 2)
-      .slice(0, 2)
-      .map((w) => w[0].toUpperCase())
-      .join("") || name.slice(0, 2).toUpperCase();
-  return (
-    <div
-      className="w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0 text-[13px] font-bold"
-      style={{ background: bg, color: fg }}
-    >
-      {initials}
-    </div>
-  );
-}
-
-function CourseRow({ course, index }: { course: MoodleCourse; index: number }) {
-  return (
-    <Link href={`/course/${course.id}`}>
-      <div className="flex items-center gap-3.5 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors cursor-pointer">
-        <CourseIcon name={course.fullname} index={index} />
-        <div className="flex-1 min-w-0">
-          <p className="text-[15px] font-medium text-[var(--fg)] truncate leading-snug">
-            {course.fullname}
-          </p>
-          <p className="text-[12px] text-[var(--secondary)] mt-0.5">
-            {course.coursecategory}
-          </p>
-        </div>
-        <svg
-          className="w-4 h-4 text-[#c7c7cc] dark:text-[var(--secondary)] shrink-0"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        >
-          <polyline points="9,18 15,12 9,6" />
-        </svg>
-      </div>
-    </Link>
-  );
-}
-
 export default function DashboardPage() {
   const router = useRouter();
-  const { courses, loading, error } = useCourses();
   const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
-  const [search, setSearch] = useState("");
 
   useEffect(() => {
     setUserInfo(getUserInfo());
     if (!document.cookie.includes("moodle_user")) router.push("/");
   }, [router]);
 
-  const filtered: MoodleCourse[] = courses.filter((c) =>
-    c.fullname.toLowerCase().includes(search.toLowerCase())
+  const items = useMemo<HomeItem[]>(
+    () => [
+      {
+        type: "widget",
+        title: "Materias",
+        subtitle: "Tus cursos, secciones y archivos",
+        href: "/materias",
+        icon: BookOpen,
+        tone: "#007aff",
+        row: 1,
+        col: 1,
+        rowSpan: 2,
+        colSpan: 2,
+      },
+      {
+        type: "app",
+        title: "Configuracion",
+        href: "#",
+        icon: Settings,
+        tone: "#8e8e93",
+        row: 1,
+        col: 3,
+        rowSpan: 1,
+        colSpan: 1,
+      },
+      {
+        type: "app",
+        title: "Notificaciones",
+        href: "#",
+        icon: Bell,
+        tone: "#ff9500",
+        row: 2,
+        col: 3,
+        rowSpan: 1,
+        colSpan: 1,
+      },
+      {
+        type: "app",
+        title: "Foro",
+        href: "#",
+        icon: MessageSquare,
+        tone: "#5ac8fa",
+        row: 3,
+        col: 1,
+        rowSpan: 1,
+        colSpan: 1,
+      },
+      {
+        type: "app",
+        title: "Preguntas Frecuentes",
+        href: "#",
+        icon: HelpCircle,
+        tone: "#34c759",
+        row: 4,
+        col: 1,
+        rowSpan: 1,
+        colSpan: 1,
+      },
+      {
+        type: "app",
+        title: "Tutoriales",
+        href: "#",
+        icon: Video,
+        tone: "#ff2d55",
+        row: 5,
+        col: 3,
+        rowSpan: 1,
+        colSpan: 1,
+      },
+      {
+        type: "app",
+        title: "Proximamente",
+        href: "#",
+        icon: Box,
+        muted: true,
+        row: 6,
+        col: 3,
+        rowSpan: 1,
+        colSpan: 1,
+      },
+      {
+        type: "widget",
+        title: "Asistencia",
+        subtitle: "Control rapido y constancias",
+        href: "#",
+        icon: UserCheck,
+        tone: "#34c759",
+        row: 3,
+        col: 2,
+        rowSpan: 2,
+        colSpan: 2,
+      },
+      {
+        type: "widget",
+        title: "Sysacad (Notas)",
+        subtitle: "Seguimiento de parciales",
+        href: "#",
+        icon: GraduationCap,
+        tone: "#af52de",
+        row: 5,
+        col: 1,
+        rowSpan: 2,
+        colSpan: 2,
+      },
+    ],
+    []
   );
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
 
-      <main className="max-w-2xl mx-auto px-4 pt-16 pb-6">
-        {/* Greeting */}
-        <div className="mb-5">
-          <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight">
-            {userInfo.fullname
-              ? `Hola, ${userInfo.fullname.split(" ")[0]}`
-              : "Mis materias"}
-          </h1>
-          {!loading && (
-            <p className="text-[14px] text-[var(--secondary)] mt-0.5">
-              {courses.length} materia{courses.length !== 1 ? "s" : ""} activa
-              {courses.length !== 1 ? "s" : ""}
+      <main
+        className="springboard-scroll relative w-full px-0 pt-16 pb-10 overflow-x-hidden overflow-y-auto"
+        style={{
+          "--cell": "min(110px, calc((100vw - 24px) / 3))",
+        } as CSSProperties}
+      >
+        <div className="pointer-events-none absolute -top-12 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl opacity-70" style={{ background: "radial-gradient(circle at 30% 30%, rgba(0,122,255,0.35), transparent 70%)" }} />
+        <div className="pointer-events-none absolute top-32 -right-10 h-56 w-56 rounded-full blur-3xl opacity-60" style={{ background: "radial-gradient(circle at 30% 30%, rgba(90,200,250,0.35), transparent 70%)" }} />
+        <div
+          className="mx-auto px-2 md:px-6"
+          style={{ width: "min(100%, calc(var(--cell) * 3 + 20px))" }}
+        >
+          <div className="mb-6">
+            <p className="text-[12px] uppercase tracking-[0.28em] text-[var(--secondary)]">
+              Inicio
             </p>
-          )}
-        </div>
+            <h1 className="text-[28px] font-bold text-[var(--fg)] tracking-tight mt-1">
+              {userInfo.fullname
+                ? `Hola, ${userInfo.fullname.split(" ")[0]}`
+                : "Campus UTN"}
+            </h1>
+            <p className="text-[14px] text-[var(--secondary)] mt-1">
+              Organiza tus recursos como en tu iPhone.
+            </p>
+          </div>
 
-        {/* Search */}
-        <div className="relative mb-4">
-          <svg
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--secondary)]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
+          <div
+            className="relative grid gap-2.5 md:gap-3"
+            style={{
+              gridTemplateColumns: "repeat(3, var(--cell))",
+              gridAutoRows: "var(--cell)",
+            } as CSSProperties}
           >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar materia…"
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--separator)] text-[15px] text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none focus:border-[var(--accent)] transition-colors shadow-sm"
-          />
+          {items.map((item) => {
+            const Icon = item.icon;
+            const isWidget = item.type === "widget";
+            const baseClass =
+              "group relative overflow-hidden border border-[var(--navbar-border)] shadow-sm backdrop-blur-md transition-transform duration-200 active:scale-95";
+            const sizeClass = isWidget
+              ? "col-span-2 row-span-2 rounded-3xl p-4"
+              : "col-span-1 row-span-1 rounded-[22%] p-3";
+            const mutedClass = item.muted
+              ? "bg-transparent border-2 border-dashed border-[var(--separator)]"
+              : "bg-[var(--surface)]";
+
+            return (
+              <Link
+                key={`${item.type}-${item.title}`}
+                href={item.href}
+                className={`${baseClass} ${sizeClass} ${mutedClass}`}
+                style={{
+                  gridRow: `${item.row} / span ${item.rowSpan}`,
+                  gridColumn: `${item.col} / span ${item.colSpan}`,
+                }}
+              >
+                <div className={isWidget ? "flex flex-col h-full" : "flex flex-col items-center justify-center h-full"}>
+                  <div
+                    className={isWidget ? "mb-auto" : "mb-2"}
+                    style={{ color: item.tone ?? "var(--accent)" }}
+                  >
+                    <Icon className={isWidget ? "w-[34px] h-[34px]" : "w-5 h-5"} />
+                  </div>
+
+                  <div className={isWidget ? "mt-auto" : "text-center"}>
+                    <p className={isWidget ? "text-[15px] font-semibold text-[var(--fg)]" : "text-[11px] font-semibold text-[var(--fg)]"}>
+                      {item.title}
+                    </p>
+                    {isWidget && item.subtitle && (
+                      <p className="text-[12px] text-[var(--secondary)] mt-1">
+                        {item.subtitle}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
-
-        {/* Loading */}
-        {loading && (
-          <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden">
-            <SpinnerBlock label="Cargando materias…" size={30} minHeight={180} />
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-[#fff2f2] dark:bg-[rgba(255,59,48,0.08)] border border-[#ffcdd2] dark:border-[rgba(255,59,48,0.25)] rounded-2xl p-5 text-[#ff3b30] text-sm">
-            Error al cargar materias: {error}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <>
-            {filtered.length === 0 ? (
-              <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
-                {search
-                  ? "Sin resultados para esa búsqueda."
-                  : "No tenés materias inscriptas."}
-              </p>
-            ) : (
-              <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm divide-y divide-[var(--separator)]">
-                {filtered.map((course, i) => (
-                  <CourseRow key={course.id} course={course} index={i} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
+        </div>
       </main>
     </div>
   );
