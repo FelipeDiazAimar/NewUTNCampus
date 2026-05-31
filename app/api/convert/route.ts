@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
+import { google, drive_v3 } from "googleapis";
+import { Readable } from "stream";
+
+export const maxDuration = 60;
 
 const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
@@ -86,6 +90,106 @@ async function convertBuffer(buf: Buffer, filename: string, contentType: string)
   // ── Plain text / HTML / Markdown ────────────────────────────────────────────
   return { kind: "text", text: buf.toString("utf-8") };
 }
+
+// ── Google Drive PDF conversion ─────────────────────────────────────────────
+
+const SUPPORTED_EXTS = new Set(["xlsx", "pptx"]);
+
+const SOURCE_MIME: Record<string, string> = {
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+const GOOGLE_MIME: Record<string, string> = {
+  xlsx: "application/vnd.google-apps.spreadsheet",
+  pptx: "application/vnd.google-apps.presentation",
+};
+
+export async function POST(req: NextRequest) {
+  // Validación temprana — sin Drive, falla rápido
+  const clientId     = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const folderId     = process.env.GOOGLE_DRIVE_FOLDER_ID; // opcional pero recomendado
+
+  if (!clientId || !clientSecret || !refreshToken)
+    return NextResponse.json({ error: "Google OAuth credentials not configured" }, { status: 500 });
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "FormData inválido" }, { status: 400 });
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File))
+    return NextResponse.json({ error: "Campo 'file' requerido" }, { status: 400 });
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!SUPPORTED_EXTS.has(ext))
+    return NextResponse.json(
+      { error: `Formato .${ext} no soportado. Use .xlsx o .pptx.` },
+      { status: 400 }
+    );
+
+  // Operaciones con Drive — la limpieza en finally es garantizada
+  let fileId: string | null = null;
+  let drive: drive_v3.Drive | null = null;
+
+  try {
+    // Autenticar como el usuario real (usa su quota de 15 GB, no la de la SA)
+    const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
+    oauth2.setCredentials({ refresh_token: refreshToken });
+    drive = google.drive({ version: "v3", auth: oauth2 });
+
+    // Subir con conversión a formato Google Workspace
+    const uploadRes = await drive.files.create({
+      requestBody: {
+        name: `campus-convert-${Date.now()}.${ext}`,
+        mimeType: GOOGLE_MIME[ext],
+        ...(folderId ? { parents: [folderId] } : {}),
+      },
+      media: {
+        mimeType: SOURCE_MIME[ext],
+        body: Readable.from(Buffer.from(await file.arrayBuffer())),
+      },
+      fields: "id",
+    });
+
+    fileId = uploadRes.data.id ?? null;
+    if (!fileId) throw new Error("Drive no retornó un ID de archivo tras la subida");
+
+    // Exportar a PDF
+    const exportRes = await drive.files.export(
+      { fileId, mimeType: "application/pdf" },
+      { responseType: "arraybuffer" }
+    );
+
+    const pdfBuffer = Buffer.from(exportRes.data as unknown as ArrayBuffer);
+
+    return new NextResponse(pdfBuffer, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${file.name.replace(/\.[^.]+$/, ".pdf")}"`,
+        "Content-Length": String(pdfBuffer.length),
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error interno";
+    console.error("[convert/pdf]", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    // Borrado garantizado: evita acumulación en el Drive de la Service Account
+    if (fileId && drive) {
+      await drive.files
+        .delete({ fileId })
+        .catch((e) => console.error(`[convert/pdf] delete ${fileId}:`, e.message));
+    }
+  }
+}
+
+// ── Moodle file conversion (HTML/slides/table) ───────────────────────────────
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;

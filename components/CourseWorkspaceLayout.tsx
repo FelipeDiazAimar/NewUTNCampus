@@ -260,10 +260,20 @@ function TextViewer({ text }: { text: string }) {
 
 // ─── Panel content loader ─────────────────────────────────────────────────────
 
-function PanelContent({ entry, onAspectRatio }: { entry: PanelEntry; onAspectRatio: (r: number) => void }) {
+function PanelContent({ entry, onAspectRatio, xlsxMode }: {
+  entry: PanelEntry;
+  onAspectRatio: (r: number) => void;
+  xlsxMode: "pdf" | "excel";
+}) {
   const [ps, setPs] = useState<PanelState>({ phase: "loading", label: "Cargando…" });
+  const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+
     setPs({ phase: "loading", label: "Cargando…" });
     let cancelled = false;
 
@@ -283,8 +293,9 @@ function PanelContent({ entry, onAspectRatio }: { entry: PanelEntry; onAspectRat
           return;
         }
 
-        if (entry.kind === "xlsx") {
-          setPs({ phase: "loading", label: "Descargando hoja de cálculo…" });
+        // Modo tabla nativa para XLSX
+        if (entry.kind === "xlsx" && xlsxMode === "excel") {
+          setPs({ phase: "loading", label: "Cargando hoja de cálculo…" });
           const res = await fetch(entry.proxyUrl);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const buf = await res.arrayBuffer();
@@ -292,16 +303,25 @@ function PanelContent({ entry, onAspectRatio }: { entry: PanelEntry; onAspectRat
           return;
         }
 
-        if (entry.kind === "pptx") {
-          setPs({ phase: "loading", label: "Convirtiendo presentación…" });
-          const r = await fetch(`/api/convert?url=${encodeURIComponent(entry.fileUrl)}&type=pptx`);
-          if (!r.ok) throw new Error(await r.text());
-          const data = await r.json();
-          if (!cancelled) {
-            if (data.kind === "slides") setPs({ phase: "slides", slides: data.slides });
-            else if (data.kind === "text")  setPs({ phase: "text", text: data.text });
-            else throw new Error("Respuesta inesperada");
+        if (entry.kind === "xlsx" || entry.kind === "pptx") {
+          setPs({ phase: "loading", label: "Descargando archivo…" });
+          const fileRes = await fetch(entry.proxyUrl);
+          if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
+          const fileBlob = await fileRes.blob();
+
+          setPs({ phase: "loading", label: "Convirtiendo a PDF…" });
+          const fd = new FormData();
+          fd.append("file", new File([fileBlob], `file.${entry.kind}`));
+          const r = await fetch("/api/convert", { method: "POST", body: fd });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+            throw new Error(err.error ?? `HTTP ${r.status}`);
           }
+          const pdfBlob = await r.blob();
+          const url = URL.createObjectURL(pdfBlob);
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          blobUrlRef.current = url;
+          setPs({ phase: "pdf", url });
           return;
         }
 
@@ -319,8 +339,14 @@ function PanelContent({ entry, onAspectRatio }: { entry: PanelEntry; onAspectRat
     }
 
     load();
-    return () => { cancelled = true; };
-  }, [entry.kind, entry.proxyUrl, entry.fileUrl]);
+    return () => {
+      cancelled = true;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [entry.kind, entry.proxyUrl, entry.fileUrl, xlsxMode]);
 
   if (ps.phase === "loading") {
     return (
@@ -375,13 +401,23 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const [active, setActive] = useState<PanelEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [xlsxMode, setXlsxMode] = useState<"pdf" | "excel">("excel");
   const panelRef = useRef<HTMLDivElement>(null);
 
   const openPanel = useCallback((entry: PanelEntry) => {
     setActive((prev) => {
       if (prev?.fileUrl === entry.fileUrl) return null; // toggle
       setAspectRatio(KIND_RATIOS[entry.kind]);
+      setXlsxMode("excel"); // siempre empieza en Excel al abrir un nuevo archivo
       return entry;
+    });
+  }, []);
+
+  const toggleXlsxMode = useCallback(() => {
+    setXlsxMode((m) => {
+      const next = m === "pdf" ? "excel" : "pdf";
+      if (next === "excel") setAspectRatio(KIND_RATIOS.xlsx);
+      return next;
     });
   }, []);
 
@@ -432,6 +468,21 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
                     <p className="flex-1 min-w-0 text-white/80 text-[12px] font-medium truncate" title={active?.name}>
                       {active?.name}
                     </p>
+                    {active?.kind === "xlsx" && (
+                      <IconBtn onClick={toggleXlsxMode} title={xlsxMode === "pdf" ? "Ver como tabla Excel" : "Ver como PDF"}>
+                        {xlsxMode === "pdf" ? (
+                          // Tabla / grid icon
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
+                          </svg>
+                        ) : (
+                          // Documento / PDF icon
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/>
+                          </svg>
+                        )}
+                      </IconBtn>
+                    )}
                     <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
                       {isFullscreen ? (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -457,6 +508,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
                     key={active.fileUrl}
                     entry={active}
                     onAspectRatio={setAspectRatio}
+                    xlsxMode={xlsxMode}
                   />
 
                 </div>
