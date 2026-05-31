@@ -163,7 +163,7 @@ export default function DashboardPage() {
       <Navbar fullname={userInfo.fullname} />
 
       <main
-        className="springboard-scroll relative w-full px-0 pt-16 pb-10 overflow-x-hidden overflow-y-auto"
+        className="springboard-scroll relative w-full px-0 pt-16 pb-10 -mt-16 overflow-x-hidden overflow-y-auto"
         style={{
           "--cell": "min(110px, calc((100vw - 24px) / 3))",
         } as CSSProperties}
@@ -174,7 +174,7 @@ export default function DashboardPage() {
           className="mx-auto px-2 md:px-6"
           style={{ width: "min(100%, calc(var(--cell) * 3 + 20px))" }}
         >
-          <div className="mb-6">
+          <div className="mb-6 mt-4">
             <p className="text-[12px] uppercase tracking-[0.28em] text-[var(--secondary)]">
               Inicio
             </p>
@@ -184,7 +184,7 @@ export default function DashboardPage() {
                 : "Campus UTN"}
             </h1>
             <p className="text-[14px] text-[var(--secondary)] mt-1">
-              Organiza tus recursos como en tu iPhone.
+              Todo al alcance de tu mano.
             </p>
           </div>
 
@@ -199,7 +199,7 @@ export default function DashboardPage() {
             const Icon = item.icon;
             const isWidget = item.type === "widget";
             const baseClass =
-              "group relative overflow-hidden border border-[var(--navbar-border)] shadow-sm backdrop-blur-md transition-transform duration-200 active:scale-95";
+              "group relative overflow-hidden border border-[var(--navbar-border)] shadow-sm backdrop-blur-md transition-transform duration-200 active:scale-95 hover:bg-[rgba(0,0,0,0.04)] dark:hover:bg-[rgba(255,255,255,0.06)]";
             const sizeClass = isWidget
               ? "col-span-2 row-span-2 rounded-3xl p-4"
               : "col-span-1 row-span-1 rounded-[22%] p-3";
