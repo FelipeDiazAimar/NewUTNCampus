@@ -26,6 +26,65 @@ function uniqueById(courses: MoodleCourse[]) {
   });
 }
 
+function parseSesskey(html: string) {
+  return html.match(/"sesskey"\s*:\s*"([^"]+)"/i)?.[1] ?? "";
+}
+
+async function fetchAjaxCourses(sessionToken: string, sesskey: string) {
+  const endpoint = `${MOODLE_BASE}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}`;
+  const baseArgs = {
+    limit: 0,
+    offset: 0,
+    sort: "fullname",
+    customfieldname: "",
+    customfieldvalue: "",
+  };
+
+  const payloads = [
+    {
+      index: 0,
+      methodname: "core_course_get_enrolled_courses_by_timeline_classification",
+      args: { ...baseArgs, classification: "all" },
+    },
+    {
+      index: 0,
+      methodname: "core_course_get_enrolled_courses_by_timeline_classification",
+      args: { ...baseArgs, classification: "inprogress" },
+    },
+    {
+      index: 0,
+      methodname: "block_myoverview_get_courses",
+      args: {
+        sort: "fullname",
+        limit: 0,
+        offset: 0,
+        classification: "inprogress",
+        searchvalue: "",
+        categoryid: 0,
+        courseids: [],
+      },
+    },
+  ];
+
+  for (const payload of payloads) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `MoodleSession=${sessionToken}`,
+      },
+      body: JSON.stringify([payload]),
+    });
+
+    if (!res.ok) continue;
+    const json = (await res.json()) as Array<{ error?: string; data?: { courses?: MoodleCourse[] } }>;
+    const courses = json?.[0]?.data?.courses ?? [];
+    if (courses.length > 0) return courses;
+  }
+
+  return [] as MoodleCourse[];
+}
+
 function parseCourses(html: string): MoodleCourse[] {
   const matches = [...html.matchAll(/href=['"][^'"]*\/course\/view\.php\?id=(\d+)[^'"]*['"][^>]*>([\s\S]*?)<\/a>/gi)];
   const results: MoodleCourse[] = matches.map((match) => {
@@ -128,7 +187,13 @@ export async function GET(req: NextRequest) {
     if (res.url.includes("/login/") || html.includes("logintoken")) {
       return NextResponse.json({ error: "Sesion expirada" }, { status: 401 });
     }
-    const courses = parseCourses(html);
+    let courses = parseCourses(html);
+    if (courses.length === 0) {
+      const sesskey = parseSesskey(html);
+      if (sesskey) {
+        courses = await fetchAjaxCourses(sessionToken, sesskey);
+      }
+    }
     return NextResponse.json({ data: courses });
   } catch (err) {
     return NextResponse.json(
