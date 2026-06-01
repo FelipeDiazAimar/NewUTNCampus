@@ -19,6 +19,14 @@ function getUserInfo() {
   }
 }
 
+function formatGreetingName(value?: string) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const normalized = trimmed.includes("@") ? trimmed.split("@")[0] : trimmed;
+  return normalized.split(" ")[0];
+}
+
 const ICON_COLORS: [string, string][] = [
   ["#007aff", "#e8f4fd"],
   ["#34c759", "#e8f8ed"],
@@ -78,7 +86,7 @@ function CourseRow({ course, index }: { course: MoodleCourse; index: number }) {
 export default function MateriasPage() {
   const router = useRouter();
   const { courses, loading, error } = useCourses();
-  const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
+  const [userInfo, setUserInfo] = useState<{ fullname?: string; username?: string }>({});
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -101,8 +109,8 @@ export default function MateriasPage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h1 className="text-[26px] font-bold text-[var(--fg)] tracking-tight">
-                  {userInfo.fullname
-                    ? `Bienvenido, ${userInfo.fullname.split(" ")[0]}`
+                  {formatGreetingName(userInfo.fullname || userInfo.username)
+                    ? `Bienvenido, ${formatGreetingName(userInfo.fullname || userInfo.username)}`
                     : "Mis materias"}
                 </h1>
                 <p className="text-[14px] text-[var(--secondary)] mt-0.5">
