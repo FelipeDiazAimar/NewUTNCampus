@@ -27,7 +27,7 @@ function uniqueById(courses: MoodleCourse[]) {
 }
 
 function parseCourses(html: string): MoodleCourse[] {
-  const matches = [...html.matchAll(/href="[^"]*\/course\/view\.php\?id=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)];
+  const matches = [...html.matchAll(/href=['"][^'"]*\/course\/view\.php\?id=(\d+)[^'"]*['"][^>]*>([\s\S]*?)<\/a>/gi)];
   const results: MoodleCourse[] = matches.map((match) => {
     const id = parseInt(match[1]);
     const name = stripTags(match[2]) || `Curso ${id}`;
@@ -46,6 +46,40 @@ function parseCourses(html: string): MoodleCourse[] {
   });
 
   if (results.length > 0) return uniqueById(results);
+
+  const cardIdMatches = [...html.matchAll(/data-course(?:-id|id)=["'](\d+)["']/gi)];
+  const cardResults: MoodleCourse[] = cardIdMatches.map((match) => {
+    const id = parseInt(match[1]);
+    const start = Math.max(0, (match.index ?? 0) - 200);
+    const chunk = html.slice(start, start + 3000);
+
+    const nameRaw =
+      chunk.match(/data-course-name=["']([^"']+)["']/i)?.[1] ??
+      chunk.match(/data-course-title=["']([^"']+)["']/i)?.[1] ??
+      chunk.match(/data-coursefullname=["']([^"']+)["']/i)?.[1] ??
+      chunk.match(/class=["'][^"']*multiline[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ??
+      chunk.match(/class=["'][^"']*coursename[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i)?.[1] ??
+      chunk.match(/class=["'][^"']*card-title[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i)?.[1] ??
+      chunk.match(/aria-label=["']([^"']+)["']/i)?.[1] ??
+      "";
+
+    const name = stripTags(nameRaw.replace(/^Ir a\s+/i, "")) || `Curso ${id}`;
+
+    return {
+      id,
+      fullname: name,
+      shortname: name,
+      courseimage: "",
+      viewurl: `${MOODLE_BASE}/course/view.php?id=${id}`,
+      progress: 0,
+      hasprogress: false,
+      coursecategory: "",
+      startdate: 0,
+      enddate: 0,
+    };
+  });
+
+  if (cardResults.length > 0) return uniqueById(cardResults);
 
   const courseIdMatches = [...html.matchAll(/data-courseid="(\d+)"/gi)];
   const fallbackResults: MoodleCourse[] = courseIdMatches.map((match) => {
