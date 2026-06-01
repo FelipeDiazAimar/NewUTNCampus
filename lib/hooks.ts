@@ -11,39 +11,53 @@ type CourseContentsCache = {
 let cachedCourses: MoodleCourse[] | null = null;
 const cachedCourseContents = new Map<number, CourseContentsCache>();
 
-async function fetchCoursesFromApi(userId?: number): Promise<MoodleCourse[]> {
-  const res = await fetch("/api/moodle", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      methodname:
-        "core_course_get_enrolled_courses_by_timeline_classification",
-      args: {
-        offset: 0,
-        limit: 0,
-        classification: "all",
-        customfieldname: "",
-        customfieldvalue: "",
-        searchvalue: "",
-      },
-    }),
-  });
+async function fetchCoursesFromScrape(): Promise<MoodleCourse[]> {
+  const res = await fetch("/api/courses");
   const json = await res.json();
   if (!res.ok) throw new Error(json.error);
-  const courses = json.data.courses ?? [];
-  if (courses.length > 0 || !userId) return courses;
+  return Array.isArray(json.data) ? json.data : [];
+}
 
-  const fallback = await fetch("/api/moodle", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      methodname: "core_enrol_get_users_courses",
-      args: { userid: userId },
-    }),
-  });
-  const fallbackJson = await fallback.json();
-  if (!fallback.ok) throw new Error(fallbackJson.error);
-  return Array.isArray(fallbackJson.data) ? fallbackJson.data : [];
+async function fetchCoursesFromApi(userId?: number): Promise<MoodleCourse[]> {
+  try {
+    const res = await fetch("/api/moodle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        methodname:
+          "core_course_get_enrolled_courses_by_timeline_classification",
+        args: {
+          offset: 0,
+          limit: 0,
+          classification: "all",
+          customfieldname: "",
+          customfieldvalue: "",
+          searchvalue: "",
+        },
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+    const courses = json.data.courses ?? [];
+    if (courses.length > 0 || !userId) return courses;
+
+    const fallback = await fetch("/api/moodle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        methodname: "core_enrol_get_users_courses",
+        args: { userid: userId },
+      }),
+    });
+    const fallbackJson = await fallback.json();
+    if (!fallback.ok) throw new Error(fallbackJson.error);
+    const fallbackCourses = Array.isArray(fallbackJson.data) ? fallbackJson.data : [];
+    if (fallbackCourses.length > 0) return fallbackCourses;
+  } catch {
+    // Ignore and fall back to HTML scrape.
+  }
+
+  return fetchCoursesFromScrape();
 }
 
 async function fetchCourseContentsFromApi(courseId: number): Promise<CourseContentsCache> {
