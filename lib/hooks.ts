@@ -11,7 +11,7 @@ type CourseContentsCache = {
 let cachedCourses: MoodleCourse[] | null = null;
 const cachedCourseContents = new Map<number, CourseContentsCache>();
 
-async function fetchCoursesFromApi(): Promise<MoodleCourse[]> {
+async function fetchCoursesFromApi(userId?: number): Promise<MoodleCourse[]> {
   const res = await fetch("/api/moodle", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -30,7 +30,20 @@ async function fetchCoursesFromApi(): Promise<MoodleCourse[]> {
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error);
-  return json.data.courses ?? [];
+  const courses = json.data.courses ?? [];
+  if (courses.length > 0 || !userId) return courses;
+
+  const fallback = await fetch("/api/moodle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      methodname: "core_enrol_get_users_courses",
+      args: { userid: userId },
+    }),
+  });
+  const fallbackJson = await fallback.json();
+  if (!fallback.ok) throw new Error(fallbackJson.error);
+  return Array.isArray(fallbackJson.data) ? fallbackJson.data : [];
 }
 
 async function fetchCourseContentsFromApi(courseId: number): Promise<CourseContentsCache> {
@@ -53,11 +66,23 @@ export function useCourses() {
   const [loading, setLoading] = useState(!cachedCourses);
   const [error, setError] = useState<string | null>(null);
 
+  const getUserId = useCallback((): number | undefined => {
+    if (typeof document === "undefined") return undefined;
+    const match = document.cookie.match(/moodle_user=([^;]+)/);
+    if (!match) return undefined;
+    try {
+      const parsed = JSON.parse(decodeURIComponent(match[1])) as { userid?: number };
+      return parsed.userid;
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   const fetch_ = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true);
     setError(null);
     try {
-      const nextCourses = await fetchCoursesFromApi();
+      const nextCourses = await fetchCoursesFromApi(getUserId());
       cachedCourses = nextCourses;
       setCourses(nextCourses);
     } catch (e) {
