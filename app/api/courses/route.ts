@@ -31,9 +31,10 @@ function parseSesskey(html: string) {
 }
 
 async function fetchAjaxCourses(sessionToken: string, sesskey: string) {
-  const endpoint = `${MOODLE_BASE}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}`;
+  const method = "core_course_get_enrolled_courses_by_timeline_classification";
+  const endpoint = `${MOODLE_BASE}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}&info=${encodeURIComponent(method)}`;
   const baseArgs = {
-    limit: 0,
+    limit: 24,
     offset: 0,
     sort: "fullname",
     customfieldname: "",
@@ -43,13 +44,13 @@ async function fetchAjaxCourses(sessionToken: string, sesskey: string) {
   const payloads = [
     {
       index: 0,
-      methodname: "core_course_get_enrolled_courses_by_timeline_classification",
-      args: { ...baseArgs, classification: "all" },
+      methodname: method,
+      args: { ...baseArgs, classification: "inprogress" },
     },
     {
       index: 0,
-      methodname: "core_course_get_enrolled_courses_by_timeline_classification",
-      args: { ...baseArgs, classification: "inprogress" },
+      methodname: method,
+      args: { ...baseArgs, classification: "all" },
     },
     {
       index: 0,
