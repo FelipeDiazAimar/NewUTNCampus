@@ -40,50 +40,80 @@ async function fetchAjaxCourses(sessionToken: string, sesskey: string) {
     customfieldname: "",
     customfieldvalue: "",
   };
+  const collected: MoodleCourse[] = [];
+  const classifications = ["inprogress", "all"];
 
-  const payloads = [
-    {
-      index: 0,
-      methodname: method,
-      args: { ...baseArgs, classification: "inprogress" },
-    },
-    {
-      index: 0,
-      methodname: method,
-      args: { ...baseArgs, classification: "all" },
-    },
-    {
-      index: 0,
-      methodname: "block_myoverview_get_courses",
-      args: {
-        sort: "fullname",
-        limit: 0,
-        offset: 0,
-        classification: "inprogress",
-        searchvalue: "",
-        categoryid: 0,
-        courseids: [],
-      },
-    },
-  ];
+  for (const classification of classifications) {
+    let offset = 0;
+    let guard = 0;
 
-  for (const payload of payloads) {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: `MoodleSession=${sessionToken}`,
-      },
-      body: JSON.stringify([payload]),
-    });
+    while (guard < 10) {
+      const payload = {
+        index: 0,
+        methodname: method,
+        args: { ...baseArgs, classification, offset },
+      };
 
-    if (!res.ok) continue;
-    const json = (await res.json()) as Array<{ error?: string; data?: { courses?: MoodleCourse[] } }>;
-    const courses = json?.[0]?.data?.courses ?? [];
-    if (courses.length > 0) return courses;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `MoodleSession=${sessionToken}`,
+        },
+        body: JSON.stringify([payload]),
+      });
+
+      if (!res.ok) break;
+      const json = (await res.json()) as Array<{
+        error?: string;
+        data?: { courses?: MoodleCourse[]; nextoffset?: number };
+      }>;
+      const courses = json?.[0]?.data?.courses ?? [];
+      if (courses.length > 0) {
+        collected.push(...courses);
+      }
+
+      const nextOffset = json?.[0]?.data?.nextoffset;
+      if (typeof nextOffset === "number" && nextOffset > offset) {
+        offset = nextOffset;
+        guard += 1;
+        continue;
+      }
+      break;
+    }
   }
 
-  return [] as MoodleCourse[];
+  if (collected.length > 0) return uniqueById(collected);
+
+  const fallbackPayload = {
+    index: 0,
+    methodname: "block_myoverview_get_courses",
+    args: {
+      sort: "fullname",
+      limit: 0,
+      offset: 0,
+      classification: "inprogress",
+      searchvalue: "",
+      categoryid: 0,
+      courseids: [],
+    },
+  };
+
+  const fallbackRes = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: `MoodleSession=${sessionToken}`,
+    },
+    body: JSON.stringify([fallbackPayload]),
+  });
+
+  if (!fallbackRes.ok) return [] as MoodleCourse[];
+  const fallbackJson = (await fallbackRes.json()) as Array<{
+    error?: string;
+    data?: { courses?: MoodleCourse[] };
+  }>;
+  return fallbackJson?.[0]?.data?.courses ?? [];
 }
 
 function parseCourses(html: string): MoodleCourse[] {
