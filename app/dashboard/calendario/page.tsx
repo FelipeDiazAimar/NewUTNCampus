@@ -51,6 +51,12 @@ const DAY_STYLE: Record<DayType, DayStyle> = {
 
 type Layer = { type: DayType; runLeft: boolean; runRight: boolean };
 
+/** Fecha de hoy en formato YYYY-MM-DD (local). */
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** Cuadrito de muestra del estilo (para leyenda, tooltip y popup). */
 function Swatch({ type, size = 16 }: { type: DayType; size?: number }) {
   const s = DAY_STYLE[type];
@@ -132,6 +138,7 @@ function DayCell({
   // (así un cierre rojo en sábado/domingo no queda rojo-sobre-rojo). Si no hay
   // evento, los fines de semana van en rojo.
   const numberColor = top ? DAY_STYLE[top.type].text : weekend ? "#FF3B30" : "var(--fg)";
+  const isToday = iso === todayIso();
 
   return (
     <button
@@ -139,7 +146,7 @@ function DayCell({
       onMouseEnter={(e) => onEnter(iso, e.currentTarget)}
       onMouseLeave={onLeave}
       onClick={() => onTap(iso)}
-      className="relative aspect-square flex items-center justify-center rounded-full text-[13px] transition-transform active:scale-90 hover:ring-2 hover:ring-[var(--accent)]/40"
+      className={`relative aspect-square flex items-center justify-center rounded-full text-[13px] transition-transform active:scale-90 ${isToday ? "today-ring z-20" : "hover:ring-2 hover:ring-[var(--accent)]/40"}`}
       aria-label={iso}
     >
       {layers.map((L, k) => {
