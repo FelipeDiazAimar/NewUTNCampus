@@ -5,17 +5,19 @@ import { ChevronLeft } from "lucide-react";
 
 export interface Crumb {
   label: string;
-  /** Si se omite, el segmento es el actual (no navegable). */
+  /** Si se omite, el segmento es la página actual (no navegable). */
   href?: string;
 }
 
 /**
  * Migas de pan globales estilo iOS: `‹ Dashboard / Sysacad / Correlatividades`.
- * Cada segmento con `href` es clickeable; el último es la página actual.
- * El chevron lleva al segmento anterior (volver rápido).
+ * TODO segmento con `href` es clickeable (tanto el nombre como el chevron);
+ * solo los segmentos SIN `href` se muestran como página actual (en gris).
+ * El chevron lleva al último segmento navegable (volver rápido).
  */
 export default function Breadcrumb({ items }: { items: Crumb[] }) {
-  const parentHref = [...items].reverse().find((c, i) => i > 0 && c.href)?.href;
+  // Parent = último segmento navegable (el más cercano hacia atrás).
+  const parentHref = [...items].reverse().find((c) => c.href)?.href;
 
   return (
     <nav className="flex items-center gap-1.5 mb-4 text-[15px] flex-wrap">
@@ -31,16 +33,12 @@ export default function Breadcrumb({ items }: { items: Crumb[] }) {
         const last = i === items.length - 1;
         return (
           <span key={`${c.label}-${i}`} className="flex items-center gap-1.5 min-w-0">
-            {c.href && !last ? (
+            {c.href ? (
               <Link href={c.href} className="text-[#007aff] font-medium active:opacity-70 truncate">
                 {c.label}
               </Link>
             ) : (
-              <span
-                className={`truncate ${last ? "text-[var(--secondary)] font-medium" : "text-[#007aff] font-medium"}`}
-              >
-                {c.label}
-              </span>
+              <span className="text-[var(--secondary)] font-medium truncate">{c.label}</span>
             )}
             {!last && <span className="text-[var(--secondary)]">/</span>}
           </span>
