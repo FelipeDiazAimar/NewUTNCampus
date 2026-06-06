@@ -3,41 +3,8 @@
 import { useState } from "react";
 import Spinner from "@/components/Spinner";
 
-/** Regionales de la UTN — code = valor que espera Sysacad, name = etiqueta visible. */
-const FACULTADES: { code: number; name: string }[] = [
-  { code: 1, name: "Avellaneda" },
-  { code: 2, name: "Bahía Blanca" },
-  { code: 3, name: "Resistencia" },
-  { code: 4, name: "Córdoba" },
-  { code: 5, name: "La Plata" },
-  { code: 6, name: "Mendoza" },
-  { code: 7, name: "Buenos Aires" },
-  { code: 8, name: "Rosario" },
-  { code: 9, name: "San Nicolás" },
-  { code: 10, name: "Santa Fe" },
-  { code: 11, name: "Tucumán" },
-  { code: 12, name: "San Francisco" },
-  { code: 13, name: "Paraná" },
-  { code: 14, name: "C. del Uruguay" },
-  { code: 15, name: "Haedo" },
-  { code: 17, name: "Villa María" },
-  { code: 18, name: "Gral. Pacheco" },
-  { code: 19, name: "San Rafael" },
-  { code: 20, name: "Rafaela" },
-  { code: 21, name: "Trenque Lauquen" },
-  { code: 23, name: "Delta" },
-  { code: 24, name: "Venado Tuerto" },
-  { code: 25, name: "Tierra d. Fuego" },
-  { code: 27, name: "Santa Cruz" },
-  { code: 28, name: "Neuquén" },
-  { code: 29, name: "Concordia" },
-  { code: 30, name: "La Rioja" },
-  { code: 32, name: "Reconquista" },
-  { code: 33, name: "Rectorado" },
-  { code: 34, name: "Chubut" },
-  { code: 35, name: "I.N.S.Prof.Tec." },
-  { code: 36, name: "Mar del Plata" },
-];
+/** Regional fija: San Francisco (code 12). El widget solo se usa para FRSF. */
+const FACULTAD_SAN_FRANCISCO = 12;
 
 const OFICINA_ALUMNOS = "oficinaestudiantes@fr.sanfrancisco.utn.edu.ar";
 
@@ -61,14 +28,13 @@ export default function SysacadWidget({
   loading = false,
   error,
 }: SysacadWidgetProps) {
-  const [facultad, setFacultad] = useState(12); // San Francisco por defecto
   const [legajo, setLegajo] = useState("");
   const [password, setPassword] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
-    await onSubmit?.({ facultad, legajo, password });
+    await onSubmit?.({ facultad: FACULTAD_SAN_FRANCISCO, legajo, password });
   }
 
   return (
@@ -90,30 +56,6 @@ export default function SysacadWidget({
 
       {/* Tarjeta agrupada estilo iOS: filas separadas por hairlines */}
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--separator)] overflow-hidden mb-4 shadow-sm">
-        {/* Facultad / Regional */}
-        <div className="flex items-center px-4 py-0 border-b border-[var(--separator)]">
-          <label
-            htmlFor="sysacad-facultad"
-            className="text-sm font-medium text-[var(--fg)] w-24 shrink-0 py-3.5"
-          >
-            Facultad
-          </label>
-          <select
-            id="sysacad-facultad"
-            name="facultad"
-            value={facultad}
-            onChange={(e) => setFacultad(Number(e.target.value))}
-            disabled={loading}
-            className="login-input flex-1 py-3.5 text-sm text-[var(--fg)] outline-none bg-transparent disabled:opacity-50 cursor-pointer"
-          >
-            {FACULTADES.map((f) => (
-              <option key={f.code} value={f.code}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
         {/* Legajo */}
         <div className="flex items-center px-4 py-0 border-b border-[var(--separator)]">
           <label

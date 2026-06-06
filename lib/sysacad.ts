@@ -88,6 +88,10 @@ function parseMenu(body: string, baseUrl: string): SysacadMenuLink[] {
 
 /** Try to pull the student's name from the authenticated menu page. */
 function parseAlumno(body: string): string {
+  // Página de menú: el nombre va en <td class="titulo-tabla-menu">Apellido, Nombre</td>.
+  const fromMenu = body.match(/titulo-tabla-menu[^>]*>\s*([^<]+?)\s*</i)?.[1];
+  if (fromMenu && fromMenu.trim()) return decodeHtmlEntities(fromMenu).trim();
+  // Fallbacks por si cambia el markup.
   const text = decodeEntities(body);
   const m =
     text.match(/Bienvenid[oa],?\s+([^()\d]{3,60}?)(?:\s+Legajo|\s*\(|\s+Men[uú])/i) ??

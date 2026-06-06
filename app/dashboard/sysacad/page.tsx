@@ -11,7 +11,6 @@ import {
   GraduationCap,
   KeyRound,
   ListChecks,
-  LogOut,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -84,13 +83,6 @@ export default function SysacadPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  async function handleLogout() {
-    await fetch("/api/sysacad", { method: "DELETE" });
-    setUser(null);
-    setMenu([]);
-    setError("");
   }
 
   if (!ready) {
@@ -182,15 +174,6 @@ export default function SysacadPage() {
                 </div>
               </>
             )}
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="w-full py-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--separator)] text-[#ff3b30] font-semibold text-[15px] active:opacity-80 transition-opacity shadow-sm flex items-center justify-center gap-2"
-            >
-              <LogOut className="w-[18px] h-[18px]" />
-              Cerrar sesión de Sysacad
-            </button>
           </>
         ) : (
           // ── Login state ──────────────────────────────────────────────────

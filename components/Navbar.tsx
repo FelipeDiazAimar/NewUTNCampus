@@ -19,7 +19,11 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   const isDark = mounted && resolvedTheme === "dark";
 
   async function logout() {
-    await fetch("/api/auth", { method: "DELETE" });
+    // Cierre de sesión centralizado: limpia el campus (Moodle) y Sysacad a la vez.
+    await Promise.all([
+      fetch("/api/auth", { method: "DELETE" }),
+      fetch("/api/sysacad", { method: "DELETE" }),
+    ]);
     clearCourseCache();
     router.push("/");
   }
@@ -58,9 +62,9 @@ export default function Navbar({ fullname }: { fullname?: string }) {
           <ThemeToggle />
           <button
             onClick={logout}
-            className="text-[14px] text-[#007aff] dark:text-[#0a84ff] font-medium hover:opacity-70 transition-opacity"
+            className="text-[14px] text-[#007aff] dark:text-[#0a84ff] font-medium hover:opacity-70 transition-opacity whitespace-nowrap"
           >
-            Salir
+            Cerrar sesión
           </button>
         </div>
         </div>

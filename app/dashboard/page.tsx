@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Bell,
   BookOpen,
-  Box,
+  CalendarDays,
   GraduationCap,
   HelpCircle,
   MessageSquare,
@@ -25,6 +25,7 @@ type HomeItem = {
   tone?: string;
   muted?: boolean;
   popup?: boolean;
+  calendar?: boolean; // abre el selector de calendario académico
   row: number;
   col: number;
   rowSpan: number;
@@ -58,6 +59,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [userInfo, setUserInfo] = useState<{ fullname?: string; username?: string }>({});
   const [popupItem, setPopupItem] = useState<HomeItem | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   useEffect(() => {
     setUserInfo(getUserInfo());
@@ -164,11 +166,11 @@ export default function DashboardPage() {
       },
       {
         type: "app",
-        title: "Proximamente",
+        title: "Calendario",
         href: "#",
-        icon: Box,
-        muted: true,
-        popup: true,
+        icon: CalendarDays,
+        tone: "#ff2d55",
+        calendar: true,
         row: 6,
         col: 3,
         rowSpan: 1,
@@ -279,6 +281,11 @@ export default function DashboardPage() {
                   "--col-span-md": item.colSpanMd ?? item.colSpan,
                 } as CSSProperties}
                 onClick={(event) => {
+                  if (item.calendar) {
+                    event.preventDefault();
+                    setCalendarOpen(true);
+                    return;
+                  }
                   if (!item.popup) return;
                   event.preventDefault();
                   setPopupItem(item);
@@ -340,6 +347,45 @@ export default function DashboardPage() {
             >
               Entendido
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Selector de calendario académico */}
+      {calendarOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button type="button" className="absolute inset-0" aria-label="Cerrar" onClick={() => setCalendarOpen(false)} />
+          <div className="relative w-full max-w-sm rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-6 shadow-2xl">
+            <div className="flex items-center justify-center mb-3 text-[#ff2d55]">
+              <CalendarDays className="w-8 h-8" />
+            </div>
+            <h2 className="text-[18px] font-bold text-[var(--fg)] text-center">
+              Calendario académico 2026
+            </h2>
+            <p className="text-[14px] text-[var(--secondary)] text-center mt-1.5 mb-5">
+              ¿Qué calendario querés ver?
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <Link
+                href="/dashboard/calendario?plan=ingenierias"
+                onClick={() => setCalendarOpen(false)}
+                className="w-full rounded-2xl bg-[#007aff] py-3 text-center text-[15px] font-semibold text-white active:opacity-80 transition-opacity"
+              >
+                Ingenierías
+              </Link>
+              <Link
+                href="/dashboard/calendario?plan=tecnicaturas"
+                onClick={() => setCalendarOpen(false)}
+                className="w-full rounded-2xl bg-[var(--surface2)] py-3 text-center text-[15px] font-semibold text-[var(--fg)] active:opacity-80 transition-opacity"
+              >
+                Tecnicaturas y Licenciaturas
+              </Link>
+            </div>
           </div>
         </div>
       )}
