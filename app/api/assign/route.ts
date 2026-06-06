@@ -11,11 +11,44 @@ function decode(s: string) {
 
 export interface AssignDate { label: string; value: string }
 export interface AssignRow  { label: string; value: string }
+export interface SubmittedFile {
+  name: string;
+  url: string;
+  time: string;
+  fileType: string; // "spreadsheet" | "pdf" | "document" | … (del ícono de Moodle)
+}
+export interface AssignComments {
+  itemid: string;
+  contextid: string;
+  component: string;
+  area: string;
+  courseid: string;
+}
 export interface AssignInfo {
   title: string;
   dates: AssignDate[];
   rows: AssignRow[];
   description: string;
+  cmid: string;
+  submitted: boolean;
+  files: SubmittedFile[];
+  comments: AssignComments | null;
+}
+
+/** Extrae los archivos entregados de la fila "Archivos enviados". */
+function parseSubmittedFiles(html: string): SubmittedFile[] {
+  const files: SubmittedFile[] = [];
+  for (const block of html.matchAll(/<div class="fileuploadsubmission">([\s\S]*?)<\/div>\s*(?:<div class="fileuploadsubmissiontime">([\s\S]*?)<\/div>)?/gi)) {
+    const inner = block[1];
+    const time = decode(stripTags(block[2] ?? "")).trim();
+    const link = inner.match(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!link) continue;
+    const url = decode(link[1]);
+    const name = decode(stripTags(link[2])).trim();
+    const fileType = inner.match(/\/f\/([a-z]+)/i)?.[1]?.toLowerCase() ?? "file";
+    if (name) files.push({ name, url, time, fileType });
+  }
+  return files;
 }
 
 export async function GET(req: NextRequest) {
@@ -72,7 +105,32 @@ export async function GET(req: NextRequest) {
       description = decode(stripTags(inner)).trim();
     }
 
-    return NextResponse.json({ title, dates, rows, description } satisfies AssignInfo);
+    // Archivos entregados + meta de comentarios + ids.
+    const files = parseSubmittedFiles(html);
+
+    const cmid = url.match(/[?&]id=(\d+)/)?.[1] ?? "";
+    const courseid =
+      html.match(/"courseId":(\d+)/)?.[1] ??
+      html.match(/[?&]course=(\d+)/)?.[1] ?? "";
+
+    const commentsHref = html.match(/class="showcommentsnonjs"\s+href="([^"]+)"/i)?.[1] ?? "";
+    const comments: AssignComments | null = commentsHref
+      ? {
+          itemid: commentsHref.match(/comment_itemid=(\d+)/)?.[1] ?? "",
+          contextid: commentsHref.match(/comment_context=(\d+)/)?.[1] ?? "",
+          component: commentsHref.match(/comment_component=([\w]+)/)?.[1] ?? "assignsubmission_comments",
+          area: commentsHref.match(/comment_area=([\w]+)/)?.[1] ?? "submission_comments",
+          courseid,
+        }
+      : null;
+
+    const submitted =
+      files.length > 0 ||
+      rows.some((r) => /estado de (la )?entrega/i.test(r.label) && /enviado/i.test(r.value));
+
+    return NextResponse.json({
+      title, dates, rows, description, cmid, submitted, files, comments,
+    } satisfies AssignInfo);
   } catch (err) {
     console.error("[assign]", (err as Error).message);
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

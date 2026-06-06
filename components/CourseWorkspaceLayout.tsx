@@ -5,6 +5,7 @@ import React, {
 } from "react";
 import dynamic from "next/dynamic";
 import type { Slide } from "@/app/api/convert/route";
+import AssignmentViewer from "./AssignmentViewer";
 
 const PDFViewer = dynamic(() => import("./CampusPDFViewer"), { ssr: false });
 
@@ -19,16 +20,29 @@ export interface PanelEntry {
   name: string;
 }
 
+/** Tarea abierta en el panel derecho (en paralelo al visor de archivos). */
+export interface AssignmentEntry {
+  url: string;   // mod/assign/view.php?id=…
+  name: string;
+  key: string;   // identidad para toggle (la url del módulo)
+}
+
 export interface PanelCtx {
   openPanel: (entry: PanelEntry) => void;
   closePanel: () => void;
   activeKey: string | null; // fileUrl of the currently open file
+  openAssignment: (entry: AssignmentEntry) => void;
+  closeAssignment: () => void;
+  activeAssignmentKey: string | null;
 }
 
 export const PanelContext = createContext<PanelCtx>({
   openPanel: () => {},
   closePanel: () => {},
   activeKey: null,
+  openAssignment: () => {},
+  closeAssignment: () => {},
+  activeAssignmentKey: null,
 });
 
 /** Hook for any FileViewer nested inside WorkspaceLayout */
@@ -427,6 +441,7 @@ function IconBtn({ onClick, title, children }: { onClick: () => void; title: str
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState<PanelEntry | null>(null);
+  const [assignment, setAssignment] = useState<AssignmentEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(() =>
@@ -437,6 +452,8 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const panelRef = useRef<HTMLDivElement>(null);
 
   const openPanel = useCallback((entry: PanelEntry) => {
+    // Abrir un archivo NO cierra la tarea: si hay tarea abierta, se pasa al
+    // modo dividido (tarea a la izquierda, preview a la derecha).
     setActive((prev) => {
       if (prev?.fileUrl === entry.fileUrl) return null; // toggle
       setAspectRatio(KIND_RATIOS[entry.kind]);
@@ -445,6 +462,15 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     });
     if (isMobileView) setIsMobileOverlayOpen(true);
   }, [isMobileView]);
+
+  const openAssignment = useCallback((entry: AssignmentEntry) => {
+    setActive(null); // abrir una tarea cierra el visor de archivos
+    setAspectRatio(null);
+    setAssignment((prev) => (prev?.key === entry.key ? null : entry)); // toggle
+    if (isMobileView) setIsMobileOverlayOpen(true);
+  }, [isMobileView]);
+
+  const closeAssignment = useCallback(() => setAssignment(null), []);
 
   const toggleXlsxMode = useCallback(() => {
     setXlsxMode((m) => {
@@ -482,21 +508,33 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   }, [isMobileOverlayOpen]);
 
   useEffect(() => {
-    if (!active) setIsMobileOverlayOpen(false);
-  }, [active]);
+    if (!active && !assignment) setIsMobileOverlayOpen(false);
+  }, [active, assignment]);
 
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else panelRef.current?.requestFullscreen().catch(() => {});
   }
 
-  // Right column flex: portrait docs get less space, landscape/slides get more
-  const rightFlex = active
-    ? Math.max(0.6, Math.min(1.8, aspectRatio ?? KIND_RATIOS[active.kind]))
-    : 0;
+  const taskOpen = !!assignment;
+  const fileOpen = !!active;
+  const splitTaskFile = taskOpen && fileOpen; // tarea a la izquierda + preview a la derecha
 
-  const isPanelOpen = !!active;
+  // Ancho del visor de archivo según relación de aspecto del documento.
+  const rightFlexFile = active
+    ? Math.max(0.6, Math.min(1.8, aspectRatio ?? KIND_RATIOS[active.kind]))
+    : 0.9;
+
+  const isPanelOpen = taskOpen || fileOpen;
   const panelTop = 96;
+
+  const assignmentShell = (
+    <AssignmentViewer
+      url={assignment?.url ?? ""}
+      name={assignment?.name ?? ""}
+      onClose={closeAssignment}
+    />
+  );
 
   const panelHeader = (isOverlay: boolean) => (
     <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: "#2d2d30", height: 36 }}>
@@ -559,42 +597,84 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   );
 
   return (
-    <PanelContext.Provider value={{ openPanel, closePanel, activeKey: active?.fileUrl ?? null }}>
+    <PanelContext.Provider
+      value={{
+        openPanel,
+        closePanel,
+        activeKey: active?.fileUrl ?? null,
+        openAssignment,
+        closeAssignment,
+        activeAssignmentKey: assignment?.key ?? null,
+      }}
+    >
       <div className="max-w-[1600px] mx-auto px-4">
         <div className="flex flex-col lg:flex-row items-start gap-4">
 
-          {/* Left: sections list */}
-          <div className="min-w-0 shrink-0" style={{
-            flex: 1,
-            width: isMobileView ? "100%" : undefined,
-            ...(!isMobileView && isPanelOpen ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 } : {}),
-          }}>
+          {/* Índice del curso — se colapsa cuando hay tarea + preview a la vez */}
+          <div
+            className="min-w-0"
+            style={{
+              order: 1,
+              flex: splitTaskFile ? "0 0 0px" : 1,
+              width: isMobileView ? "100%" : undefined,
+              transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)",
+              ...(splitTaskFile
+                ? { overflow: "hidden", padding: 0, pointerEvents: "none", opacity: 0 }
+                : !isMobileView && isPanelOpen
+                ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 }
+                : {}),
+            }}
+          >
             <div style={{ maxWidth: isPanelOpen || isMobileView ? "none" : "42rem", margin: "0 auto" }}>
               {children}
             </div>
           </div>
 
-          {/* Right: viewer panel */}
-          {!isMobileView && (
-            <div style={{ flex: rightFlex, minWidth: 0, overflow: "hidden", transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)" }}>
-              {isPanelOpen && (
+          {/* Tarea — derecha en [Índice|Tarea], izquierda en [Tarea|Preview] */}
+          {!isMobileView && taskOpen && (
+            <div
+              style={{
+                order: splitTaskFile ? 0 : 2,
+                flex: splitTaskFile ? 1 : 0.95,
+                minWidth: 0,
+                overflow: "hidden",
+                transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)",
+              }}
+            >
+              <div className="lg:sticky" style={{ top: panelTop, height: `calc(100vh - ${panelTop + 8}px)` }}>
+                {assignmentShell}
+              </div>
+            </div>
+          )}
+
+          {/* Preview de archivo — siempre a la derecha (order 3) */}
+          {!isMobileView && fileOpen && (
+            <div
+              style={{
+                order: 3,
+                flex: splitTaskFile ? 1 : rightFlexFile,
+                minWidth: 0,
+                overflow: "hidden",
+                transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)",
+              }}
+            >
               <div
                 ref={panelRef}
                 className="lg:sticky"
-                style={!isMobileView ? { top: panelTop, height: `calc(100vh - ${panelTop + 8}px)` } : undefined}
+                style={{ top: panelTop, height: `calc(100vh - ${panelTop + 8}px)` }}
               >
                 {panelShell(false)}
               </div>
-              )}
             </div>
           )}
 
         </div>
       </div>
+      {/* Móvil: overlay en primer plano (el preview de archivo tiene prioridad) */}
       {isPanelOpen && isMobileView && isMobileOverlayOpen && (
         <div className="fixed inset-0 z-[100] bg-black/70">
-          <div className="absolute inset-3 rounded-2xl overflow-hidden bg-[#2d2d30]">
-            {panelShell(true)}
+          <div className={`absolute inset-3 rounded-2xl overflow-hidden ${fileOpen ? "bg-[#2d2d30]" : ""}`}>
+            {fileOpen ? panelShell(true) : assignmentShell}
           </div>
         </div>
       )}

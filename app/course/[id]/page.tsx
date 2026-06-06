@@ -2,12 +2,11 @@
 
 import { use, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useCourseContents } from "@/lib/hooks";
 import type { MoodleModule, MoodleContent } from "@/lib/moodle";
-import type { AssignInfo } from "@/app/api/assign/route";
 import WorkspaceLayout, { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
+import Breadcrumb from "@/components/Breadcrumb";
 import parse from "html-react-parser";
 import type { Element } from "domhandler";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
@@ -350,140 +349,36 @@ function UrlModuleRow({ mod }: { mod: MoodleModule }) {
 // ─── AssignModuleRow — shows assignment details inline ─────────────────────────
 
 function AssignModuleRow({ mod }: { mod: MoodleModule }) {
-  const [open, setOpen] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [info, setInfo] = useState<AssignInfo | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  function toggle() {
-    if (!open && !info && mod.url) {
-      setFetching(true);
-      setErr(null);
-      fetch(`/api/assign?url=${encodeURIComponent(mod.url)}`)
-        .then((r) => r.json())
-        .then((d) => { if (d.error) throw new Error(d.error); setInfo(d); })
-        .catch((e) => setErr((e as Error).message))
-        .finally(() => setFetching(false));
-    }
-    setOpen((o) => !o);
-  }
-
-  const submissionRow = info?.rows.find((r) => /estado de entrega/i.test(r.label));
-  const gradeRow      = info?.rows.find((r) => /calificaci/i.test(r.label));
-  const timeRow       = info?.rows.find((r) => /tiempo restante/i.test(r.label));
-  const otherRows     = info?.rows.filter((r) => r !== submissionRow && r !== gradeRow && r !== timeRow) ?? [];
-
-  const submissionVal = submissionRow?.value ?? "";
-  const isSubmitted = /entregado/i.test(submissionVal);
-  const isOverdue   = /venc/i.test(submissionVal) || /venc/i.test(timeRow?.value ?? "");
-  const statusColor = isSubmitted ? "#34c759" : isOverdue ? "#ff9500" : "#ff3b30";
-  const statusBg    = isSubmitted ? "#e8f8ed"  : isOverdue ? "#fff3e0" : "#fff2f2";
+  const { openAssignment, activeAssignmentKey } = usePdfPreview();
+  const isActive = !!mod.url && activeAssignmentKey === mod.url;
 
   return (
-    <div>
-      <button
-        onClick={toggle}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
+    <button
+      onClick={() => mod.url && openAssignment({ url: mod.url, name: mod.name, key: mod.url })}
+      className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${
+        isActive ? "bg-[var(--surface2)]" : "hover:bg-[var(--surface2)] active:bg-[var(--surface2)]"
+      }`}
+    >
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
+        style={{ background: "#34c75922", color: "#34c759", fontSize: "7px" }}
       >
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold" style={{ background: "#e8f8ed", color: "#34c759", fontSize: "7px" }}>
-          Tarea
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
-        </div>
-        <svg className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <polyline points="9,18 15,12 9,6" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="border-t border-[rgba(60,60,67,0.08)]" style={{ background: "#fafafa" }}>
-          {fetching && (
-            <div className="flex items-center justify-center gap-2.5 h-20">
-              <Spinner size={20} color="#34c759" />
-              <span className="text-[13px] font-medium text-[var(--secondary)]">Cargando tarea…</span>
-            </div>
-          )}
-          {err && <p className="text-sm text-[#ff3b30] px-4 py-4">{err}</p>}
-          {info && !fetching && (
-            <div className="px-4 py-4 space-y-3">
-              {/* Dates */}
-              {info.dates.length > 0 && (
-                <div className="bg-white rounded-xl px-3 py-3 shadow-sm space-y-2.5">
-                  {info.dates.map((d, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <p className="text-[11px] font-semibold text-[var(--secondary)] uppercase tracking-wide w-16 shrink-0 pt-0.5">{d.label}</p>
-                      <p className="text-[13px] text-[var(--fg)] font-medium">{d.value}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Submission status */}
-              {submissionVal && (
-                <div className="rounded-xl px-3 py-2.5" style={{ background: statusBg }}>
-                  <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: statusColor }}>
-                    Estado de entrega
-                  </p>
-                  <p className="text-[14px] font-semibold text-[var(--fg)]">{submissionVal}</p>
-                </div>
-              )}
-
-              {/* Time remaining */}
-              {timeRow && (
-                <div className="flex items-center gap-2 px-1">
-                  <span className="text-[12px] text-[var(--secondary)]">{timeRow.label}:</span>
-                  <span className={`text-[12px] font-medium ${isOverdue ? "text-[#ff9500]" : "text-[var(--fg)]"}`}>
-                    {timeRow.value}
-                  </span>
-                </div>
-              )}
-
-              {/* Grade */}
-              {gradeRow && (
-                <div className="flex items-center gap-2 px-1">
-                  <span className="text-[12px] text-[var(--secondary)]">{gradeRow.label}:</span>
-                  <span className="text-[12px] font-medium text-[var(--fg)]">{gradeRow.value}</span>
-                </div>
-              )}
-
-              {/* Other status rows */}
-              {otherRows.map((r, i) => (
-                <div key={i} className="flex items-start gap-2 px-1">
-                  <span className="text-[12px] text-[var(--secondary)] shrink-0">{r.label}:</span>
-                  <span className="text-[12px] text-[var(--fg)]">{r.value}</span>
-                </div>
-              ))}
-
-              {/* Description */}
-              {info.description && (
-                <div className="bg-white rounded-xl px-3 py-3 shadow-sm">
-                  <p className="text-[12px] text-[var(--secondary)] leading-relaxed">{info.description}</p>
-                </div>
-              )}
-
-              {/* Open in campus */}
-              {mod.url && (
-                <a
-                  href={mod.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-2xl text-[14px] font-semibold text-white"
-                  style={{ background: "#34c759" }}
-                >
-                  Ver en Campus
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                    <polyline points="15 3 21 3 21 9"/>
-                    <line x1="10" y1="14" x2="21" y2="3"/>
-                  </svg>
-                </a>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        Tarea
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
+      </div>
+      <svg
+        className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "rotate-90 text-[var(--accent)]" : "text-[var(--secondary)]"}`}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      >
+        <polyline points="9,18 15,12 9,6" />
+      </svg>
+    </button>
   );
 }
 
@@ -654,13 +549,13 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
       */}
       <WorkspaceLayout>
         <div className="pt-6 pb-6">
-          {/* Back link */}
-          <Link href="/dashboard" className="inline-flex items-center gap-1 text-[15px] text-[var(--accent)] font-medium mb-5 hover:opacity-70 transition-opacity">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="15,18 9,12 15,6" />
-            </svg>
-            Materias
-          </Link>
+          {/* Breadcrumb */}
+          <Breadcrumb
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Materias", href: "/materias" },
+            ]}
+          />
 
           {/* Course header — iOS Large Title style */}
           {(courseName || loading) && (

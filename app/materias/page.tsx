@@ -27,6 +27,29 @@ function formatGreetingName(value?: string) {
   return normalized.split(" ")[0];
 }
 
+/** Extrae el año de una materia: del título/shortname (ej. "…-2026") o del startdate. */
+function extractYear(course: MoodleCourse): string {
+  const fromTitle = `${course.fullname} ${course.shortname}`.match(/\b(20\d{2})\b/)?.[1];
+  if (fromTitle) return fromTitle;
+  if (course.startdate) return String(new Date(course.startdate * 1000).getFullYear());
+  return "Otras";
+}
+
+/** Agrupa materias por año, en orden descendente ("Otras" al final). */
+function groupByYear(courses: MoodleCourse[]): [string, MoodleCourse[]][] {
+  const map = new Map<string, MoodleCourse[]>();
+  for (const c of courses) {
+    const year = extractYear(c);
+    if (!map.has(year)) map.set(year, []);
+    map.get(year)!.push(c);
+  }
+  return [...map.entries()].sort((a, b) => {
+    if (a[0] === "Otras") return 1;
+    if (b[0] === "Otras") return -1;
+    return b[0].localeCompare(a[0], "es", { numeric: true });
+  });
+}
+
 const ICON_COLORS: [string, string][] = [
   ["#007aff", "#e8f4fd"],
   ["#34c759", "#e8f8ed"],
@@ -192,9 +215,18 @@ export default function MateriasPage() {
                   : "No tenés materias inscriptas."}
               </p>
             ) : (
-              <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm divide-y divide-[var(--separator)]">
-                {filtered.map((course, i) => (
-                  <CourseRow key={course.id} course={course} index={i} />
+              <div className="space-y-6">
+                {groupByYear(filtered).map(([year, list]) => (
+                  <section key={year}>
+                    <p className="px-1 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                      {year}
+                    </p>
+                    <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm divide-y divide-[var(--separator)] border border-[var(--separator)]">
+                      {list.map((course, i) => (
+                        <CourseRow key={course.id} course={course} index={i} />
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             )}
