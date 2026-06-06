@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import { useCourses } from "@/lib/hooks";
 
@@ -186,6 +187,12 @@ export default function NotificacionesPage() {
       <Navbar />
 
       <main className="max-w-xl mx-auto px-4 pt-20 pb-10">
+        <Breadcrumb
+          items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Notificaciones" },
+          ]}
+        />
         {error && (
           <div className="mb-5 rounded-2xl border border-[#ffcdd2] bg-[#fff2f2] p-4 text-sm text-[#ff3b30] dark:border-[rgba(255,59,48,0.25)] dark:bg-[rgba(255,59,48,0.08)]">
             {error}
@@ -285,25 +292,25 @@ export default function NotificacionesPage() {
                 key={materia.materia_nombre}
                 className="bg-[var(--surface)] rounded-2xl border border-[var(--separator)] p-4 shadow-sm"
               >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenMaterias((prev) => ({
-                      ...prev,
-                      [materia.materia_nombre]: !isOpen,
-                    }))
-                  }
-                  className="w-full flex items-center justify-between text-left"
-                >
-                  <div>
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenMaterias((prev) => ({
+                        ...prev,
+                        [materia.materia_nombre]: !isOpen,
+                      }))
+                    }
+                    className="flex-1 min-w-0 text-left active:opacity-70"
+                  >
                     <p className="text-[15px] font-semibold text-[var(--fg)]">
                       {materia.materia_nombre}
                     </p>
                     <p className="text-[12px] text-[var(--secondary)]">
                       Controla los avisos de esta materia.
                     </p>
-                  </div>
-                  <div className="flex items-center gap-3">
+                  </button>
+                  <div className="flex items-center gap-3 shrink-0">
                     <Toggle
                       checked={materia.materia_activa}
                       disabled={!globalActive}
@@ -318,21 +325,33 @@ export default function NotificacionesPage() {
                         updateMateria(materia.materia_nombre, patch);
                       }}
                     />
-                    <svg
-                      className={`w-4 h-4 text-[var(--secondary)] transition-transform ${
-                        isOpen ? "rotate-180" : ""
-                      }`}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                    <button
+                      type="button"
+                      aria-label={isOpen ? "Contraer" : "Expandir"}
+                      onClick={() =>
+                        setOpenMaterias((prev) => ({
+                          ...prev,
+                          [materia.materia_nombre]: !isOpen,
+                        }))
+                      }
+                      className="active:opacity-70"
                     >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
+                      <svg
+                        className={`w-4 h-4 text-[var(--secondary)] transition-transform ${
+                          isOpen ? "rotate-180" : ""
+                        }`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
                   </div>
-                </button>
+                </div>
 
                 {isOpen && (
                   <div className={`mt-4 space-y-3 ${materiaActive ? "" : "opacity-50"}`}>
