@@ -105,14 +105,10 @@ export async function moodleLogin(
     console.log("[moodle] after cookie test →", location);
   }
 
-  // A redirect back to the login page without any of the success params = bad credentials.
-  if (
-    location.includes("/login/index.php") &&
-    !location.includes("loginredirect=1") &&
-    !location.includes("testsession=")
-  ) {
-    throw new Error("Usuario o contraseña incorrectos.");
-  }
+  // NOTE: A failed login on this instance redirects to /login/index.php?loginredirect=1
+  // (the SAME URL a fresh-login cookie-test can use), so the redirect target alone is
+  // NOT a reliable success/failure signal. Authentication is verified authoritatively
+  // below (Step 2.5) by re-requesting the login page.
 
   // Some Moodle versions don't issue a new session on the POST / testsession step;
   // the session is upgraded in-place.  Follow loginredirect=1 once to trigger it.
@@ -136,6 +132,26 @@ export async function moodleLogin(
   }
 
   let cookie = `MoodleSession=${moodleSession}`;
+
+  // Step 2.5: AUTHORITATIVE auth check.
+  // This Moodle serves /my/courses.php to UNAUTHENTICATED sessions as a guest
+  // (HTTP 200, with a throwaway sesskey and even a guest userId), so a protected
+  // page cannot confirm login. Instead, re-request the login page: Moodle redirects
+  // authenticated users away from it, while a failed login still renders the form
+  // (logintoken present). This is the reliable wrong-credentials signal.
+  console.log("[moodle] Step 2.5: verifying authentication...");
+  const verifyRes = await fetch(`${MOODLE_BASE}/login/index.php`, {
+    headers: { Cookie: cookie },
+    redirect: "manual",
+  });
+  const verifyHtml = verifyRes.status === 200 ? await verifyRes.text() : "";
+  if (verifyHtml.includes('name="logintoken"')) {
+    console.log("[moodle] verification FAILED — login form still shown → bad credentials");
+    // Moodle returns one generic error for both a wrong password and a
+    // non-existent user (anti username-enumeration), so we cannot tell which.
+    throw new Error("Usuario o contraseña incorrectos.");
+  }
+  console.log("[moodle] verification OK — session is authenticated");
 
   // Step 3: fetch a protected page to verify auth and extract sesskey + user info.
   console.log("[moodle] Step 3: fetching dashboard...");
@@ -193,6 +209,32 @@ export async function moodleLogin(
 
   if (!sesskey) {
     throw new Error("No se pudo obtener la sesión. Intentá de nuevo.");
+  }
+
+  // Extra guard: an enrolled student always has at least one course; a guest /
+  // throwaway session resolves to zero. If the user has NO courses, treat it as
+  // invalid credentials (usuario inexistente o contraseña incorrecta).
+  // Only reject on a CONFIRMED empty result (primary API + enrol fallback);
+  // transient service errors are ignored so a valid login is never blocked.
+  console.log("[moodle] Step 4: course-count guard...");
+  let courseCount = -1;
+  try {
+    courseCount = (await getCourses(cookie, sesskey)).length;
+    if (courseCount === 0 && userid) {
+      const fallback = (await callMoodleService(
+        cookie,
+        sesskey,
+        "core_enrol_get_users_courses",
+        { userid }
+      )) as unknown;
+      courseCount = Array.isArray(fallback) ? fallback.length : 0;
+    }
+  } catch (err) {
+    console.log("[moodle] course-count guard skipped:", (err as Error).message);
+  }
+  console.log("[moodle] course count:", courseCount);
+  if (courseCount === 0) {
+    throw new Error("Usuario o contraseña incorrectos.");
   }
 
   return {
