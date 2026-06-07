@@ -3,20 +3,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import CustomEventModal from "@/components/horarios/CustomEventModal";
+import MateriaSettingsModal from "@/components/horarios/MateriaSettingsModal";
 import { buildSchedule, colorMap, DAY_LABELS, DAY_SHORT, fmtRemaining } from "@/lib/horarios";
 import { hhmmToMin, type CustomScheduleEvent } from "@/lib/customEvents";
+import { getAllMateriaSettings, type MateriaSettings } from "@/lib/materiaSettings";
 import type { MateriaCursando } from "@/lib/sysacad";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0]; // Lunes a Domingo
 
 type DayItem = {
   key: string;
-  id?: string; // presente solo en eventos personalizados
+  id?: string;
   startMin: number;
   endMin: number;
   start: string;
@@ -33,13 +35,25 @@ const evFetcher = async (u: string): Promise<{ data: CustomScheduleEvent[] }> =>
   return r.json();
 };
 
+const notasFetcher = async (url: string): Promise<MateriaCursando[]> => {
+  let res = await fetch(url, { cache: "no-store" });
+  if (res.status === 401) {
+    const healed = await fetch("/api/sysacad/ping", { cache: "no-store" });
+    if (healed.ok) res = await fetch(url, { cache: "no-store" });
+  }
+  if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "No se pudo cargar el cursado.");
+  return json.data ?? [];
+};
+
 export default function HorariosPage() {
   const router = useRouter();
-  const [notas, setNotas] = useState<MateriaCursando[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingMateria, setEditingMateria] = useState<string | null>(null);
+  const [materiaSettings, setMateriaSettings] = useState<Record<string, MateriaSettings>>({});
 
   const today = now.getDay();
   const [day, setDay] = useState(() => {
@@ -47,38 +61,26 @@ export default function HorariosPage() {
     return DAYS.includes(d) ? d : 1;
   });
 
-  const { data: customRes, mutate } = useSWR("/api/schedule-events", evFetcher, { revalidateOnFocus: false });
+  useEffect(() => {
+    if (!document.cookie.includes("moodle_user")) { router.replace("/"); return; }
+    if (!document.cookie.includes("sysacad_user")) { router.replace("/sysacad/login"); return; }
+    setAuthed(true);
+    setMateriaSettings(getAllMateriaSettings());
+  }, [router]);
+
+  const { data: notas, error: notasError, isLoading: loading } = useSWR(
+    authed ? "/api/sysacad/notas" : null,
+    notasFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5 * 60_000, keepPreviousData: true }
+  );
 
   useEffect(() => {
-    if (!document.cookie.includes("moodle_user")) {
-      router.replace("/");
-      return;
-    }
-    if (!document.cookie.includes("sysacad_user")) {
+    if ((notasError as { status?: number } | undefined)?.status === 401) {
       router.replace("/sysacad/login");
-      return;
     }
-    (async () => {
-      try {
-        let res = await fetch("/api/sysacad/notas", { cache: "no-store" });
-        if (res.status === 401) {
-          const healed = await fetch("/api/sysacad/ping", { cache: "no-store" });
-          if (healed.ok) res = await fetch("/api/sysacad/notas", { cache: "no-store" });
-        }
-        if (res.status === 401) {
-          router.replace("/sysacad/login");
-          return;
-        }
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "No se pudo cargar el cursado.");
-        setNotas(json.data ?? []);
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [router]);
+  }, [notasError, router]);
+
+  const { data: customRes, mutate } = useSWR("/api/schedule-events", evFetcher, { revalidateOnFocus: false });
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -86,23 +88,27 @@ export default function HorariosPage() {
   }, []);
 
   const slots = useMemo(() => buildSchedule(notas ?? []), [notas]);
-  const colors = useMemo(() => colorMap(slots), [slots]);
+  const defaultColors = useMemo(() => colorMap(slots), [slots]);
 
-  // Fusiona clases + eventos personalizados del día seleccionado, ordenados por hora.
   const items = useMemo<DayItem[]>(() => {
     const classItems: DayItem[] = slots
       .filter((s) => s.day === day)
-      .map((s, i) => ({
-        key: `cls-${i}`,
-        startMin: s.startMin,
-        endMin: s.endMin,
-        start: s.start,
-        end: s.end,
-        title: s.materia,
-        subtitle: [s.aula, s.faltas > 0 ? `${s.faltas} ${s.faltas === 1 ? "falta" : "faltas"}` : ""].filter(Boolean).join(" · "),
-        color: colors.get(s.materia) ?? "#8e8e93",
-        custom: false,
-      }));
+      .map((s, i) => {
+        const saved = materiaSettings[s.materia] ?? {};
+        const color = saved.color ?? defaultColors.get(s.materia) ?? "#8e8e93";
+        const aulaText = saved.aula ?? s.aula;
+        return {
+          key: `cls-${i}`,
+          startMin: s.startMin,
+          endMin: s.endMin,
+          start: s.start,
+          end: s.end,
+          title: s.materia,
+          subtitle: [aulaText, s.faltas > 0 ? `${s.faltas} ${s.faltas === 1 ? "falta" : "faltas"}` : ""].filter(Boolean).join(" · "),
+          color,
+          custom: false,
+        };
+      });
     const customItems: DayItem[] = (customRes?.data ?? [])
       .filter((e) => e.day_of_week === day)
       .map((e) => ({
@@ -118,7 +124,7 @@ export default function HorariosPage() {
         custom: true,
       }));
     return [...classItems, ...customItems].sort((a, b) => a.startMin - b.startMin);
-  }, [slots, colors, customRes, day]);
+  }, [slots, defaultColors, materiaSettings, customRes, day]);
 
   const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -131,11 +137,8 @@ export default function HorariosPage() {
     nextIdx = items.findIndex((s) => s.startMin > nowMin);
   }
 
-  // Swipe lateral entre días (respeta el orden de DAYS, con Domingo al final).
   const touchX = useRef<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => {
-    touchX.current = e.touches[0].clientX;
-  };
+  const onTouchStart = (e: React.TouchEvent) => { touchX.current = e.touches[0].clientX; };
   const onTouchEnd = (e: React.TouchEvent) => {
     if (touchX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchX.current;
@@ -150,6 +153,13 @@ export default function HorariosPage() {
     await fetch(`/api/schedule-events?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     mutate();
   }
+
+  const errorMsg = notasError?.message !== "UNAUTHORIZED" ? notasError?.message : "";
+
+  // Para el modal de edición
+  const editingDefaultColor = editingMateria ? (defaultColors.get(editingMateria) ?? "#007aff") : "#007aff";
+  const editingCurrent = editingMateria ? (materiaSettings[editingMateria] ?? {}) : {};
+  const editingRawAula = editingMateria ? (slots.find((s) => s.materia === editingMateria)?.aula ?? "") : "";
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -191,15 +201,15 @@ export default function HorariosPage() {
           })}
         </div>
 
-        {loading && <SpinnerBlock label="Cargando horarios…" />}
+        {loading && !notas && <SpinnerBlock label="Cargando horarios…" />}
 
-        {!loading && error && (
+        {!loading && errorMsg && (
           <div className="rounded-2xl border border-[#ffcdd2] bg-[#fff2f2] p-4 text-sm text-[#ff3b30] dark:border-[rgba(255,59,48,0.25)] dark:bg-[rgba(255,59,48,0.08)]">
-            {error}
+            {errorMsg}
           </div>
         )}
 
-        {!loading && !error && (
+        {(!loading || notas) && !errorMsg && (
           <div
             className="rounded-3xl border border-[var(--navbar-border)] overflow-hidden shadow-sm"
             onTouchStart={onTouchStart}
@@ -234,6 +244,7 @@ export default function HorariosPage() {
                         </p>
                       )}
                     </div>
+
                     {i === currentIdx ? (
                       <span className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-[12px] font-bold tabular-nums text-[#1c1c1e]">
                         {fmtRemaining(s.endMin * 60 - nowSec)}
@@ -243,7 +254,18 @@ export default function HorariosPage() {
                         Siguiente
                       </span>
                     ) : null}
-                    {s.custom && s.id && (
+
+                    {!s.custom ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingMateria(s.title)}
+                        className="shrink-0 p-1.5 rounded-full active:bg-black/10"
+                        style={{ color: "rgba(0,0,0,0.55)" }}
+                        aria-label="Editar materia"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    ) : s.id ? (
                       <button
                         type="button"
                         onClick={() => deleteEvent(s.id!)}
@@ -253,7 +275,7 @@ export default function HorariosPage() {
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -262,7 +284,21 @@ export default function HorariosPage() {
         )}
       </main>
 
-      <CustomEventModal open={modalOpen} defaultDay={day} onClose={() => setModalOpen(false)} onCreated={() => mutate()} />
+      <CustomEventModal
+        open={modalOpen}
+        defaultDay={day}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => mutate()}
+      />
+
+      <MateriaSettingsModal
+        materia={editingMateria}
+        current={editingCurrent}
+        defaultColor={editingDefaultColor}
+        rawAula={editingRawAula}
+        onClose={() => setEditingMateria(null)}
+        onSaved={(name, s) => setMateriaSettings((prev) => ({ ...prev, [name]: s }))}
+      />
     </div>
   );
 }
