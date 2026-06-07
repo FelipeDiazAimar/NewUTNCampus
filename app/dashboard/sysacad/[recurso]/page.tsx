@@ -73,9 +73,15 @@ export default function SysacadRecursoPage({
     if (!document.cookie.includes("moodle_user")) router.push("/");
   }, [router]);
 
-  // Sesión Sysacad expirada → volver al login de Sysacad.
+  // Correlatividades se movió a un desplegable dentro de /sysacad.
   useEffect(() => {
-    if (expired) router.push("/dashboard/sysacad");
+    if (recurso === "correlatividades") router.replace("/sysacad");
+  }, [recurso, router]);
+
+  // Sesión Sysacad (scraping) expirada → limpiar y volver al login.
+  useEffect(() => {
+    if (!expired) return;
+    fetch("/api/sysacad", { method: "DELETE" }).finally(() => router.replace("/sysacad/login"));
   }, [expired, router]);
 
   // Agrupar por nivel (estado, materias, correlatividades) preservando el orden.
@@ -96,7 +102,7 @@ export default function SysacadRecursoPage({
         <Navbar />
         <main className="max-w-xl mx-auto px-4 pt-24 text-center">
           <p className="text-[var(--secondary)]">Recurso no encontrado.</p>
-          <Link href="/dashboard/sysacad" className="text-[#007aff] font-semibold mt-2 inline-block">
+          <Link href="/sysacad" className="text-[#007aff] font-semibold mt-2 inline-block">
             Volver a Sysacad
           </Link>
         </main>
@@ -114,7 +120,7 @@ export default function SysacadRecursoPage({
         <Breadcrumb
           items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Sysacad", href: "/dashboard/sysacad" },
+            { label: "Sysacad", href: "/sysacad" },
             { label: cfg!.title },
           ]}
         />

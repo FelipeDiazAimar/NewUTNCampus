@@ -12,6 +12,7 @@ export interface SysacadCredentials {
   facultad: number;
   legajo: string;
   password: string;
+  remember: boolean;
 }
 
 interface SysacadWidgetProps {
@@ -30,11 +31,12 @@ export default function SysacadWidget({
 }: SysacadWidgetProps) {
   const [legajo, setLegajo] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
-    await onSubmit?.({ facultad: FACULTAD_SAN_FRANCISCO, legajo, password });
+    await onSubmit?.({ facultad: FACULTAD_SAN_FRANCISCO, legajo, password, remember });
   }
 
   return (
@@ -108,6 +110,19 @@ export default function SysacadWidget({
           />
         </div>
       </div>
+
+      <label className="flex items-center gap-2.5 mb-4 px-1 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(e) => setRemember(e.target.checked)}
+          disabled={loading}
+          className="w-[18px] h-[18px] accent-[#007aff] rounded disabled:opacity-50"
+        />
+        <span className="text-[13px] text-[var(--fg)]">
+          Mantener sesión iniciada en este dispositivo
+        </span>
+      </label>
 
       {error && (
         <p className="text-[13px] text-[#ff3b30] text-center mb-4 px-2">

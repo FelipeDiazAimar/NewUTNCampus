@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionCookieOptions } from "@/lib/cookies";
 
 export async function POST(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
@@ -7,6 +8,8 @@ export async function POST(req: NextRequest) {
   if (!sessionToken || !sesskey) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
+
+  const keep = req.cookies.get("moodle_remember")?.value === "1";
 
   // Reconstruct the Cookie header from the raw token (avoids encoding issues)
   const moodleCookie = `MoodleSession=${sessionToken}`;
@@ -32,6 +35,11 @@ export async function POST(req: NextRequest) {
       }
     );
     console.log("[moodle proxy] Moodle HTTP status:", raw.status);
+
+    // Moodle puede regenerar la sesión en cualquier request: capturamos el token
+    // rotado para que las llamadas siguientes no fallen por sesión vencida.
+    const rotated = raw.headers.get("set-cookie")?.match(/MoodleSession=([^;]+)/)?.[1];
+
     const text = await raw.text();
     console.log("[moodle proxy] Moodle raw response:", text.slice(0, 500));
     let json: unknown;
@@ -47,7 +55,12 @@ export async function POST(req: NextRequest) {
       console.error("[moodle proxy] Moodle error:", msg, arr[0].exception);
       return NextResponse.json({ error: msg }, { status: 500 });
     }
-    return NextResponse.json({ data: arr[0]?.data ?? arr[0] ?? {} });
+    const response = NextResponse.json({ data: arr[0]?.data ?? arr[0] ?? {} });
+    // Persistir el token rotado + deslizar la expiración de la sesión con la actividad.
+    if (rotated && rotated !== sessionToken) {
+      response.cookies.set("moodle_session_token", rotated, sessionCookieOptions(keep, true));
+    }
+    return response;
   } catch (err) {
     console.error("[moodle proxy] fetch error:", (err as Error).message);
     return NextResponse.json(

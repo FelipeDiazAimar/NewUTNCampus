@@ -20,7 +20,7 @@ export default function SysacadLoginPage() {
     }
     // Si ya hay sesión de Sysacad, saltar directo al hub.
     if (document.cookie.includes("sysacad_user")) {
-      router.replace("/dashboard/sysacad");
+      router.replace("/sysacad");
       return;
     }
     setReady(true);
@@ -40,7 +40,7 @@ export default function SysacadLoginPage() {
         setError(json.error ?? "No se pudo iniciar sesión.");
         return;
       }
-      router.push("/dashboard/sysacad");
+      router.push("/sysacad");
     } catch {
       setError("Error de conexión con Sysacad.");
     } finally {

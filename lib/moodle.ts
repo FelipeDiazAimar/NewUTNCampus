@@ -246,6 +246,27 @@ export async function moodleLogin(
   };
 }
 
+/**
+ * Mantiene viva la sesión de Moodle. Pide una página protegida con el token
+ * actual; si Moodle regeneró la sesión devuelve el nuevo token (para guardarlo),
+ * de lo contrario devuelve el mismo. Best-effort: cualquier error se propaga al
+ * llamador, que decide si seguir usando el token previo.
+ */
+export async function refreshMoodleSession(
+  sessionToken: string
+): Promise<{ token: string; alive: boolean }> {
+  const res = await fetch(`${MOODLE_BASE}/my/`, {
+    headers: { Cookie: `MoodleSession=${sessionToken}` },
+    redirect: "manual",
+  });
+  const rotated = res.headers.get("set-cookie")?.match(/MoodleSession=([^;]+)/)?.[1];
+  const loc = res.headers.get("location") ?? "";
+  // Sesión viva: /my/ responde 200 o redirige dentro de /my/. Si rebota al login
+  // o al front (?redirect=0), la sesión murió.
+  const alive = res.status === 200 || loc.includes("/my/");
+  return { token: rotated || sessionToken, alive };
+}
+
 export async function callMoodleService(
   cookie: string,
   sesskey: string,

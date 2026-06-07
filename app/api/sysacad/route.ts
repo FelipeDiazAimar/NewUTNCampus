@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sysacadLogin } from "@/lib/sysacad";
+import { sessionCookieOptions } from "@/lib/cookies";
+import { encryptCred } from "@/lib/crypto";
 
 export async function POST(req: NextRequest) {
-  const { facultad, legajo, password } = await req.json();
+  const { facultad, legajo, password, remember } = await req.json();
 
   if (!facultad || !legajo || !password) {
     return NextResponse.json({ error: "Campos requeridos" }, { status: 400 });
   }
+
+  const keep = remember === true;
 
   console.log("[sysacad-api] Login attempt:", { facultad, legajo });
   try {
@@ -25,12 +29,7 @@ export async function POST(req: NextRequest) {
     response.cookies.set(
       "sysacad_session",
       JSON.stringify({ cookie: session.cookie, baseUrl: session.baseUrl }),
-      {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 4,
-      }
+      sessionCookieOptions(keep, true)
     );
 
     // client-readable: name/legajo to gate the UI, mirrors `moodle_user`.
@@ -41,13 +40,18 @@ export async function POST(req: NextRequest) {
         alumno: session.alumno,
         facultad: session.facultad,
       }),
-      {
-        httpOnly: false,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 4,
-      }
+      sessionCookieOptions(keep, false)
     );
+    // "Mantener sesión": credenciales cifradas para re-login automático al vencer el ASP.
+    if (keep) {
+      response.cookies.set(
+        "sysacad_cred",
+        encryptCred(JSON.stringify({ facultad: Number(facultad), legajo: String(legajo), password: String(password) })),
+        sessionCookieOptions(true, true)
+      );
+    } else {
+      response.cookies.delete("sysacad_cred");
+    }
     return response;
   } catch (err) {
     console.error("[sysacad-api] Login error:", (err as Error).message);
@@ -59,5 +63,6 @@ export async function DELETE() {
   const response = NextResponse.json({ ok: true });
   response.cookies.delete("sysacad_session");
   response.cookies.delete("sysacad_user");
+  response.cookies.delete("sysacad_cred");
   return response;
 }

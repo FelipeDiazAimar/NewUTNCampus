@@ -36,7 +36,8 @@ export default function CambioPasswordPage() {
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 401) {
-          router.push("/dashboard/sysacad");
+          await fetch("/api/sysacad", { method: "DELETE" });
+          router.replace("/sysacad/login");
           return;
         }
         setMsg({ ok: false, text: json.error ?? json.mensaje ?? "No se pudo cambiar la contraseña." });
@@ -64,7 +65,7 @@ export default function CambioPasswordPage() {
         <Breadcrumb
           items={[
             { label: "Dashboard", href: "/dashboard" },
-            { label: "Sysacad", href: "/dashboard/sysacad" },
+            { label: "Sysacad", href: "/sysacad" },
             { label: "Cambiar contraseña" },
           ]}
         />

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
+import SessionGuard from "./SessionGuard";
 import { clearCourseCache } from "@/lib/hooks";
 
 export default function Navbar({ fullname }: { fullname?: string }) {
@@ -19,10 +20,11 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   const isDark = mounted && resolvedTheme === "dark";
 
   async function logout() {
-    // Cierre de sesión centralizado: limpia el campus (Moodle) y Sysacad a la vez.
+    // Cierre de sesión centralizado: campus (Moodle) + Sysacad (scraping y web service).
     await Promise.all([
       fetch("/api/auth", { method: "DELETE" }),
       fetch("/api/sysacad", { method: "DELETE" }),
+      fetch("/api/sysacadws/login", { method: "DELETE" }),
     ]);
     clearCourseCache();
     router.push("/");
@@ -69,6 +71,7 @@ export default function Navbar({ fullname }: { fullname?: string }) {
         </div>
         </div>
       </div>
+      <SessionGuard />
     </header>
   );
 }

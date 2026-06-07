@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import Breadcrumb from "@/components/Breadcrumb";
 import { useCourses } from "@/lib/hooks";
 import type { MoodleCourse } from "@/lib/moodle";
 import { SpinnerBlock } from "@/components/Spinner";
@@ -125,7 +126,9 @@ export default function MateriasPage() {
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
 
-      <main className="max-w-2xl mx-auto px-4 pt-16 pb-6">
+      <main className="max-w-2xl mx-auto px-4 pt-20 pb-6">
+        <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Materias" }]} />
+
         {/* Greeting */}
         <div className="mb-5">
           <div className="bg-[var(--surface)] border border-[var(--separator)] rounded-3xl px-5 py-4 shadow-sm">
