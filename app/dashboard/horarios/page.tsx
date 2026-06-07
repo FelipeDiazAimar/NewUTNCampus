@@ -33,21 +33,11 @@ const evFetcher = async (u: string): Promise<{ data: CustomScheduleEvent[] }> =>
   return r.json();
 };
 
-const notasFetcher = async (url: string): Promise<MateriaCursando[]> => {
-  let res = await fetch(url, { cache: "no-store" });
-  if (res.status === 401) {
-    const healed = await fetch("/api/sysacad/ping", { cache: "no-store" });
-    if (healed.ok) res = await fetch(url, { cache: "no-store" });
-  }
-  if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? "No se pudo cargar el cursado.");
-  return json.data ?? [];
-};
-
 export default function HorariosPage() {
   const router = useRouter();
-  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [notas, setNotas] = useState<MateriaCursando[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -57,25 +47,38 @@ export default function HorariosPage() {
     return DAYS.includes(d) ? d : 1;
   });
 
-  useEffect(() => {
-    if (!document.cookie.includes("moodle_user")) { router.replace("/"); return; }
-    if (!document.cookie.includes("sysacad_user")) { router.replace("/sysacad/login"); return; }
-    setAuthed(true);
-  }, [router]);
-
-  const { data: notas, error: notasError, isLoading: loading } = useSWR(
-    authed ? "/api/sysacad/notas" : null,
-    notasFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5 * 60_000, keepPreviousData: true }
-  );
-
-  useEffect(() => {
-    if ((notasError as { status?: number } | undefined)?.status === 401) {
-      router.replace("/sysacad/login");
-    }
-  }, [notasError, router]);
-
   const { data: customRes, mutate } = useSWR("/api/schedule-events", evFetcher, { revalidateOnFocus: false });
+
+  useEffect(() => {
+    if (!document.cookie.includes("moodle_user")) {
+      router.replace("/");
+      return;
+    }
+    if (!document.cookie.includes("sysacad_user")) {
+      router.replace("/sysacad/login");
+      return;
+    }
+    (async () => {
+      try {
+        let res = await fetch("/api/sysacad/notas", { cache: "no-store" });
+        if (res.status === 401) {
+          const healed = await fetch("/api/sysacad/ping", { cache: "no-store" });
+          if (healed.ok) res = await fetch("/api/sysacad/notas", { cache: "no-store" });
+        }
+        if (res.status === 401) {
+          router.replace("/sysacad/login");
+          return;
+        }
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "No se pudo cargar el cursado.");
+        setNotas(json.data ?? []);
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [router]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
