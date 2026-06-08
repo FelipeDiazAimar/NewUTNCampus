@@ -18,6 +18,8 @@ interface Props {
   maxHeight?: string;
   /** Called once after page 1 loads with width/height ratio of the PDF */
   onAspectRatio?: (ratio: number) => void;
+  /** Initial zoom level — defaults to 1.0 (100%) */
+  initialScale?: number;
 }
 
 // ─── Page skeleton ────────────────────────────────────────────────────────────
@@ -61,9 +63,9 @@ function TBtn({ onClick, disabled, title, children, minW }: {
 
 // ─── CampusPDFViewer ──────────────────────────────────────────────────────────
 
-export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio }: Props) {
+export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio, initialScale = 1.0 }: Props) {
   const [numPages, setNumPages] = useState(0);
-  const [scale, setScale]       = useState(1.0);
+  const [scale, setScale]       = useState(initialScale);
   const [docError, setDocError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);

@@ -73,11 +73,11 @@ type PanelState =
 
 // ─── DOCX viewer (docx-preview client-side) ───────────────────────────────────
 
-function DocxViewer({ buffer }: { buffer: ArrayBuffer }) {
+function DocxViewer({ buffer, initialScale = 1.0 }: { buffer: ArrayBuffer; initialScale?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
-  const [scale, setScale] = useState(1.0);
+  const [scale, setScale] = useState(initialScale);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -302,10 +302,11 @@ function TextViewer({ text }: { text: string }) {
 
 // ─── Panel content loader ─────────────────────────────────────────────────────
 
-function PanelContent({ entry, onAspectRatio, xlsxMode }: {
+function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
   entry: PanelEntry;
   onAspectRatio: (r: number) => void;
   xlsxMode: "pdf" | "excel";
+  initialScale?: number;
 }) {
   const [ps, setPs] = useState<PanelState>({ phase: "loading", label: "Cargando…" });
   const blobUrlRef = useRef<string | null>(null);
@@ -414,11 +415,11 @@ function PanelContent({ entry, onAspectRatio, xlsxMode }: {
 
   if (ps.phase === "pdf") return (
     <div className="flex-1 overflow-hidden">
-      <PDFViewer src={ps.url} maxHeight="100%" onAspectRatio={onAspectRatio} />
+      <PDFViewer src={ps.url} maxHeight="100%" onAspectRatio={onAspectRatio} initialScale={initialScale} />
     </div>
   );
 
-  if (ps.phase === "docx") return <DocxViewer buffer={ps.buffer} />;
+  if (ps.phase === "docx") return <DocxViewer buffer={ps.buffer} initialScale={initialScale} />;
   if (ps.phase === "xlsx") return <XlsxViewer buffer={ps.buffer} />;
   if (ps.phase === "slides") return <SlideViewer slides={ps.slides} />;
   if (ps.phase === "text") return <TextViewer text={ps.text} />;
@@ -592,6 +593,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
         entry={active as PanelEntry}
         onAspectRatio={setAspectRatio}
         xlsxMode={xlsxMode}
+        initialScale={isMobileView ? 0.75 : 1.0}
       />
     </div>
   );
