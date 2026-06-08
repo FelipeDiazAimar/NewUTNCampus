@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import {
   Bell,
   BookOpen,
+  Box,
   CalendarDays,
   Clock,
   GraduationCap,
   HelpCircle,
   MessageSquare,
   Settings,
+  Sparkles,
   UserCheck,
   Video,
 } from "lucide-react";
@@ -160,8 +162,8 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 3,
-        colMd: 5,
+        rowMd: 4,
+        colMd: 1,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -176,8 +178,8 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 3,
-        colMd: 6,
+        rowMd: 4,
+        colMd: 2,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -227,10 +229,41 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 2,
         colSpan: 2,
-        rowMd: 4,
-        colMd: 1,
+        // Desktop: a la derecha de las aplicaciones (columnas 5-6, filas 3-4)
+        rowMd: 3,
+        colMd: 5,
         rowSpanMd: 2,
         colSpanMd: 2,
+      },
+      {
+        type: "app",
+        title: "Próximamente",
+        href: "#",
+        icon: Sparkles,
+        muted: true,
+        row: 7,
+        col: 3,
+        rowSpan: 1,
+        colSpan: 1,
+        rowMd: 4,
+        colMd: 3,
+        rowSpanMd: 1,
+        colSpanMd: 1,
+      },
+      {
+        type: "app",
+        title: "Próximamente",
+        href: "#",
+        icon: Box,
+        muted: true,
+        row: 8,
+        col: 3,
+        rowSpan: 1,
+        colSpan: 1,
+        rowMd: 4,
+        colMd: 4,
+        rowSpanMd: 1,
+        colSpanMd: 1,
       },
     ],
     []
@@ -299,6 +332,10 @@ export default function DashboardPage() {
                   "--col-span-md": item.colSpanMd ?? item.colSpan,
                 } as CSSProperties}
                 onClick={(event) => {
+                  if (item.muted) {
+                    event.preventDefault();
+                    return;
+                  }
                   if (item.calendar) {
                     event.preventDefault();
                     setCalendarOpen(true);
@@ -312,13 +349,17 @@ export default function DashboardPage() {
                 <div className={isWidget ? "flex flex-col h-full" : "flex flex-col items-center justify-center h-full"}>
                   <div
                     className={isWidget ? "mb-auto" : "mb-2"}
-                    style={{ color: item.tone ?? "var(--accent)" }}
+                    style={{ color: item.muted ? "var(--secondary)" : item.tone ?? "var(--accent)" }}
                   >
                     <Icon className={isWidget ? "w-[34px] h-[34px]" : "w-5 h-5"} />
                   </div>
 
                   <div className={isWidget ? "mt-auto" : "text-center"}>
-                    <p className={isWidget ? "text-[15px] font-semibold text-[var(--fg)]" : "text-[11px] font-semibold text-[var(--fg)]"}>
+                    <p
+                      className={`${isWidget ? "text-[15px]" : "text-[11px]"} font-semibold ${
+                        item.muted ? "text-[var(--secondary)]" : "text-[var(--fg)]"
+                      }`}
+                    >
                       {item.title}
                     </p>
                     {isWidget && item.subtitle && (

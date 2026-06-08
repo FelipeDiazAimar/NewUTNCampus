@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,6 +26,16 @@ function formatGreetingName(value?: string) {
   if (!trimmed) return "";
   const normalized = trimmed.includes("@") ? trimmed.split("@")[0] : trimmed;
   return normalized.split(" ")[0];
+}
+
+/** Normaliza texto para búsquedas: sin acentos/diacríticos y en minúsculas.
+ *  Así "matematica" encuentra "Matemática" y viceversa. */
+function foldText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 /** Extrae el año de una materia: del título/shortname (ej. "…-2026") o del startdate. */
@@ -118,9 +128,12 @@ export default function MateriasPage() {
     if (!document.cookie.includes("moodle_user")) router.push("/");
   }, [router]);
 
-  const filtered: MoodleCourse[] = courses.filter((c) =>
-    c.fullname.toLowerCase().includes(search.toLowerCase())
-  );
+  const needle = foldText(search);
+  const filtered: MoodleCourse[] = needle
+    ? courses.filter((c) =>
+        foldText(`${c.fullname} ${c.shortname} ${c.coursecategory}`).includes(needle)
+      )
+    : courses;
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">

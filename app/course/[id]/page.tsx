@@ -10,6 +10,9 @@ import Breadcrumb from "@/components/Breadcrumb";
 import parse from "html-react-parser";
 import type { Element } from "domhandler";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
+import FolderViewer from "@/components/FolderViewer";
+
+const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -101,11 +104,39 @@ function sanitizeHtml(html: string) {
     });
 }
 
+/** Route Moodle-protected images (pluginfile.php) through the authenticated
+ *  proxy so the session cookie is attached; leave external images untouched. */
+function proxyImageSrc(src?: string): string | undefined {
+  if (!src) return undefined;
+  if (src.startsWith("/api/")) return src; // already proxied
+  let abs = src;
+  if (src.startsWith("//")) abs = `https:${src}`;
+  else if (src.startsWith("/")) abs = `${MOODLE_BASE}${src}`;
+  if (abs.includes("pluginfile.php") || abs.includes("frsfco.cvg.utn.edu.ar")) {
+    return `/api/files?url=${encodeURIComponent(abs)}&inline=1`;
+  }
+  return abs;
+}
+
 function safeParseHtml(html: string) {
   return parse(sanitizeHtml(html), {
     replace: (node) => {
       const el = node as Element;
       if (el?.type === "script" || el?.name === "script") return null;
+      // Intercept <img>: proxy protected URLs and apply iOS-friendly styling.
+      if (el?.name === "img") {
+        const src = proxyImageSrc(el.attribs?.src);
+        if (!src) return <></>;
+        return (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt={el.attribs?.alt ?? ""}
+            loading="lazy"
+            className="max-w-full h-auto object-contain rounded-xl my-2 mx-auto block shadow-sm"
+          />
+        );
+      }
       return undefined;
     },
   });
@@ -414,6 +445,12 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
     return <AssignModuleRow mod={mod} />;
   }
 
+  // Folder → expand an iOS accordion that lazy-loads the folder's inner files
+  // instead of trying to download the folder module itself.
+  if (mod.modname === "folder") {
+    return <FolderViewer mod={mod} />;
+  }
+
   // URL-type content → resolve external URL and open in new tab
   if (mod.contents?.[0]?.type === "url") {
     return <UrlModuleRow mod={mod} />;
@@ -421,7 +458,7 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 
   const [color, bg] = MOD_COLORS[mod.modname] ?? ["#8e8e93", "#f2f2f7"];
   const hasFiles = (mod.contents?.length ?? 0) > 0;
-  const isPreviewable = hasFiles && (mod.modname === "resource" || mod.modname === "folder");
+  const isPreviewable = hasFiles && mod.modname === "resource";
   const badge = getModBadge(mod);
   const badgeFontSize = badge.length >= 5 ? "7px" : badge.length === 4 ? "9px" : "11px";
 
@@ -468,6 +505,75 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 const INSTITUTIONAL_LINKS = new Set(["RIA", "eLibro", "Biblioteca", "Estudiantes", "Docentes"]);
 const isVisible = (m: MoodleModule) => m.visible !== 0 && !INSTITUTIONAL_LINKS.has(m.name);
 
+// ─── Subsection detection ──────────────────────────────────────────────────────
+// Teachers commonly use a Label as a sub-heading to group the resources that
+// follow it. Detect those "header labels" so we can render the modules beneath
+// them as an indented subsection.
+function headerLabelText(mod: MoodleModule): string | null {
+  if (mod.modname !== "label" || !mod.description) return null;
+  const html = mod.description;
+  // Labels with links or images are real content, not headers.
+  if (/<a\b|<img\b/i.test(html)) return null;
+  const text = stripHtml(html).trim();
+  if (!text || text.length > 70) return null;
+  // An explicit heading element is the clearest signal of intent.
+  if (/<h[1-6]\b/i.test(html)) return text;
+  // …or a single short line that is entirely bold.
+  const stripped = html.replace(/<\/?(p|div|br|span)[^>]*>/gi, "").trim();
+  if (/^(<strong>|<b>)[\s\S]*(<\/strong>|<\/b>)$/i.test(stripped) && text.split(/\s+/).length <= 10) {
+    return text;
+  }
+  return null;
+}
+
+type RenderGroup =
+  | { kind: "loose"; mods: MoodleModule[] }
+  | { kind: "subsection"; title: string; mods: MoodleModule[] };
+
+/** Split a section's modules into loose top-level items and indented subsections. */
+function groupModules(mods: MoodleModule[]): RenderGroup[] {
+  const groups: RenderGroup[] = [{ kind: "loose", mods: [] }];
+  for (const mod of mods) {
+    const header = headerLabelText(mod);
+    if (header) {
+      groups.push({ kind: "subsection", title: header, mods: [] });
+    } else {
+      groups[groups.length - 1].mods.push(mod);
+    }
+  }
+  // Drop the leading loose group if it ended up empty.
+  return groups.filter((g) => g.mods.length > 0 || g.kind === "subsection");
+}
+
+/** Renders a section's module list, with label-headers becoming indented subsections. */
+function SectionModules({ mods }: { mods: MoodleModule[] }) {
+  const groups = groupModules(mods);
+  return (
+    <>
+      {groups.map((group, i) =>
+        group.kind === "loose" ? (
+          <div key={`loose-${i}`} className="divide-y divide-[rgba(60,60,67,0.06)]">
+            {group.mods.map((mod) => <ModuleRow key={mod.id} mod={mod} />)}
+          </div>
+        ) : (
+          <div key={`sub-${i}`} className="border-t border-[var(--separator)]">
+            <p className="px-4 pt-3 pb-1.5 text-[12px] font-semibold uppercase tracking-wide text-[var(--secondary)]">
+              {group.title}
+            </p>
+            <div className="ml-4 pl-4 border-l-2 border-[var(--separator)] divide-y divide-[rgba(60,60,67,0.06)]">
+              {group.mods.length > 0 ? (
+                group.mods.map((mod) => <ModuleRow key={mod.id} mod={mod} />)
+              ) : (
+                <p className="px-4 py-3 text-[13px] text-[var(--secondary)] italic">Sin elementos</p>
+              )}
+            </div>
+          </div>
+        )
+      )}
+    </>
+  );
+}
+
 function SectionAccordion({ section, defaultOpen }: {
   section: { id: number; name: string; summaryHtml?: string; modules: MoodleModule[] };
   defaultOpen?: boolean;
@@ -504,9 +610,7 @@ function SectionAccordion({ section, defaultOpen }: {
               {safeParseHtml(section.summaryHtml)}
             </div>
           )}
-          <div className="divide-y divide-[rgba(60,60,67,0.06)]">
-            {section.modules.filter(isVisible).map((mod) => <ModuleRow key={mod.id} mod={mod} />)}
-          </div>
+          <SectionModules mods={section.modules.filter(isVisible)} />
         </div>
       )}
     </div>
