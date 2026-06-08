@@ -24,10 +24,19 @@ function parseModules(html: string): MoodleModule[] {
   const modules: MoodleModule[] = [];
   const positions = [...html.matchAll(/id="module-(\d+)"/g)];
 
+  // Each module's `modtype_X` class lives on the opening <li>, which sits *before*
+  // its id="module-N". Start each chunk at that <li> so the type is always inside
+  // the chunk — otherwise header labels (which have no inner modtype_) get
+  // misclassified as the following activity's type.
+  const starts = positions.map((p) => {
+    const li = html.lastIndexOf("<li", p.index!);
+    return li !== -1 && p.index! - li < 600 ? li : p.index!;
+  });
+
   for (let i = 0; i < positions.length; i++) {
     const modId = parseInt(positions[i][1]);
-    const start = positions[i].index!;
-    const end = positions[i + 1]?.index ?? html.length;
+    const start = starts[i];
+    const end = starts[i + 1] ?? html.length;
     const chunk = html.slice(start, end);
 
     const modname = chunk.match(/\bmodtype_(\w+)\b/)?.[1]?.toLowerCase() ?? "resource";

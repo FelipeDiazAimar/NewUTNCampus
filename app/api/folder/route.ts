@@ -83,8 +83,9 @@ function parseList(ulInner: string): FolderNode[] {
     );
 
     if (linkMatch) {
-      // A real file: <a href="…pluginfile.php/…">name</a>
-      const url = decodeEntities(linkMatch[1]);
+      // A real file: <a href="…pluginfile.php/…?forcedownload=1">name</a>.
+      // Drop forcedownload so the proxy can serve it inline for previewing.
+      const url = decodeEntities(linkMatch[1]).replace(/[?&]forcedownload=1\b/g, "");
       const name = stripTags(linkMatch[2]) || nameFromSpan || "Archivo";
       nodes.push({ type: "file", name, url, fileType });
     } else if (nestedUlIdx !== -1) {

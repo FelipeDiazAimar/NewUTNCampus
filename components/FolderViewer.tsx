@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import Spinner from "@/components/Spinner";
-import type { MoodleModule } from "@/lib/moodle";
+import { FileViewer } from "@/components/CourseFileViewer";
+import type { MoodleContent, MoodleModule } from "@/lib/moodle";
 
 // Mirrors the shape returned by GET /api/folder (see app/api/folder/route.ts).
 export type FolderNode =
@@ -15,24 +16,6 @@ type FolderData = {
   downloadUrl: string;
   entries: FolderNode[];
 };
-
-const FILE_TONES: Record<string, [string, string]> = {
-  PDF: ["#ff3b30", "#ffe8e7"],
-  DOCX: ["#007aff", "#e8f4fd"],
-  XLSX: ["#34c759", "#e8f8ed"],
-  PPTX: ["#ff9500", "#fff3e0"],
-  ZIP: ["#8e8e93", "#f2f2f7"],
-  IMG: ["#af52de", "#f3e8ff"],
-  MP3: ["#5ac8fa", "#e0f7ff"],
-  MP4: ["#ff2d55", "#ffe8ed"],
-  TXT: ["#8e8e93", "#f2f2f7"],
-};
-
-function fileBadge(node: Extract<FolderNode, { type: "file" }>): string {
-  if (node.fileType) return node.fileType.slice(0, 4);
-  const ext = node.name.split(".").pop()?.toUpperCase() ?? "";
-  return /^[A-Z0-9]{2,5}$/.test(ext) ? ext.slice(0, 4) : "FILE";
-}
 
 function folderIdFromUrl(url?: string): string | null {
   if (!url) return null;
@@ -48,38 +31,21 @@ const DownloadIcon = ({ className }: { className?: string }) => (
 );
 
 // ─── A single file row inside the folder ────────────────────────────────────
+// Reuses the shared FileViewer so folder files preview (PDF/DOCX/XLSX/PPTX in the
+// workspace panel, images/video/audio inline) exactly like course resources.
 function FileNodeRow({ node, depth }: { node: Extract<FolderNode, { type: "file" }>; depth: number }) {
-  const badge = fileBadge(node);
-  const [color, bg] = FILE_TONES[badge] ?? ["#8e8e93", "#f2f2f7"];
-  const downloadUrl = `/api/files?url=${encodeURIComponent(node.url)}`;
-  const viewUrl = `/api/files?url=${encodeURIComponent(node.url)}&inline=1`;
-
+  const content: MoodleContent = {
+    type: "file",
+    filename: node.name,
+    filesize: 0,
+    fileurl: node.url,
+    timemodified: 0,
+    fileType: node.fileType,
+  };
+  if (depth === 0) return <FileViewer content={content} />;
   return (
-    <div
-      className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] transition-colors"
-      style={{ paddingLeft: `${16 + depth * 16}px` }}
-    >
-      <div
-        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
-        style={{ background: bg, color, fontSize: badge.length >= 4 ? "8px" : "10px" }}
-      >
-        {badge}
-      </div>
-      <a
-        href={viewUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex-1 min-w-0 text-left active:opacity-70"
-      >
-        <p className="text-[14px] text-[var(--fg)] truncate">{node.name}</p>
-      </a>
-      <a
-        href={downloadUrl}
-        title="Descargar"
-        className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors shrink-0"
-      >
-        <DownloadIcon className="w-4 h-4" />
-      </a>
+    <div style={{ paddingLeft: `${depth * 16}px` }}>
+      <FileViewer content={content} />
     </div>
   );
 }
