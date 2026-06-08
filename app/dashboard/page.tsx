@@ -98,8 +98,9 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 3,
-        colMd: 1,
+        // Desktop: col 1 grupo 2 (col 3), fila 1
+        rowMd: 1,
+        colMd: 3,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -114,8 +115,9 @@ export default function DashboardPage() {
         rowSpan: 1,
         colSpan: 1,
         popup: false,
-        rowMd: 4,
-        colMd: 1,
+        // Desktop: debajo de Materias (col 2, fila 3)
+        rowMd: 3,
+        colMd: 2,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -130,8 +132,9 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 4,
-        colMd: 5,
+        // Desktop: col 2 grupo 2 (col 4), fila 1
+        rowMd: 1,
+        colMd: 4,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -146,8 +149,9 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 4,
-        colMd: 6,
+        // Desktop: debajo de Sysacad (col 5, fila 3)
+        rowMd: 3,
+        colMd: 5,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -162,9 +166,9 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        // Desktop: debajo del widget de Sysacad (columna 5, fila 3)
+        // Desktop: debajo de Sysacad (col 6, fila 3)
         rowMd: 3,
-        colMd: 5,
+        colMd: 6,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -179,9 +183,9 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        // Desktop: debajo del widget de Sysacad (columna 6, fila 3)
+        // Desktop: debajo de Materias (col 1, fila 3)
         rowMd: 3,
-        colMd: 6,
+        colMd: 1,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -197,7 +201,8 @@ export default function DashboardPage() {
         col: 2,
         rowSpan: 2,
         colSpan: 2,
-        rowMd: 1,
+        // Desktop: grupo 2 (cols 3-4), filas 2-3
+        rowMd: 2,
         colMd: 3,
         rowSpanMd: 2,
         colSpanMd: 2,
@@ -214,6 +219,7 @@ export default function DashboardPage() {
         col: 1,
         rowSpan: 2,
         colSpan: 2,
+        // Desktop: grupo 3 (cols 5-6), filas 1-2
         rowMd: 1,
         colMd: 5,
         rowSpanMd: 2,
@@ -227,14 +233,13 @@ export default function DashboardPage() {
         icon: Clock,
         tone: "#ff9500",
         popup: false,
-        // Celular: cols 2-3 para dejar las apps "Próximamente" a su izquierda
         row: 7,
         col: 2,
         rowSpan: 2,
         colSpan: 2,
-        // Desktop: en el centro, con Próximamente a su izquierda (cols 3-4, filas 3-4)
-        rowMd: 3,
-        colMd: 3,
+        // Desktop: grupo 4 (cols 7-8), filas 2-3
+        rowMd: 2,
+        colMd: 7,
         rowSpanMd: 2,
         colSpanMd: 2,
       },
@@ -244,13 +249,13 @@ export default function DashboardPage() {
         href: "#",
         icon: Sparkles,
         muted: true,
-        // A la izquierda del widget de Horarios (celular: col 1; desktop: col 2)
         row: 7,
         col: 1,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 3,
-        colMd: 2,
+        // Desktop: grupo 4 col 7, fila 1
+        rowMd: 1,
+        colMd: 7,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -260,13 +265,13 @@ export default function DashboardPage() {
         href: "#",
         icon: Box,
         muted: true,
-        // A la izquierda del widget de Horarios (celular: col 1; desktop: col 2)
         row: 8,
         col: 1,
         rowSpan: 1,
         colSpan: 1,
-        rowMd: 4,
-        colMd: 2,
+        // Desktop: grupo 4 col 8, fila 1
+        rowMd: 1,
+        colMd: 8,
         rowSpanMd: 1,
         colSpanMd: 1,
       },
@@ -286,7 +291,7 @@ export default function DashboardPage() {
           "--gap": "10px",
           "--gap-md": "12px",
           "--cols": "3",
-          "--cols-md": "6",
+          "--cols-md": "8",
         } as CSSProperties}
       >
         <div className="pointer-events-none absolute -top-12 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl opacity-70" style={{ background: "radial-gradient(circle at 30% 30%, rgba(0,122,255,0.35), transparent 70%)" }} />
@@ -309,7 +314,7 @@ export default function DashboardPage() {
           <div
             className="springboard-grid relative"
           >
-          {items.map((item) => {
+          {items.map((item, i) => {
             const Icon = item.icon;
             const isWidget = item.type === "widget";
             const baseClass =
@@ -323,7 +328,7 @@ export default function DashboardPage() {
 
             return (
               <Link
-                key={`${item.type}-${item.title}`}
+                key={`${i}-${item.type}-${item.title}`}
                 href={item.href}
                 className={`springboard-item ${baseClass} ${sizeClass} ${mutedClass}`}
                 style={{

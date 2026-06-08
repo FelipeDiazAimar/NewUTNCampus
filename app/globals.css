@@ -52,6 +52,13 @@ body {
   appearance: none;
 }
 
+/* Safari iOS auto-zooms when input font-size < 16px; force 16px on mobile */
+@media screen and (max-width: 767px) {
+  .login-input {
+    font-size: 16px;
+  }
+}
+
 .login-input:-webkit-autofill,
 .login-input:-webkit-autofill:hover,
 .login-input:-webkit-autofill:focus,
