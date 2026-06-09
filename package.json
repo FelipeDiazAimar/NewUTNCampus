@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
+    "axios": "^1.17.0",
+    "axios-cookiejar-support": "^7.0.0",
+    "cheerio": "^1.2.0",
     "docx-preview": "^0.3.7",
     "googleapis": "^173.0.0",
     "html-react-parser": "^6.1.2",
@@ -24,13 +27,16 @@
     "react-pdf": "^10.4.1",
     "recharts": "^3.8.1",
     "swr": "^2.4.1",
+    "tough-cookie": "^6.0.1",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",

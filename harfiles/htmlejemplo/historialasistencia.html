@@ -1,0 +1,285 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <title>Estudiantes | Historial de Asistencias</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <meta charset="UTF-8">
+
+    <!-- Styles -->
+    <link type="text/css" rel="stylesheet" href="assets/plugins/materialize/css/materialize.min.css"/>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="assets/plugins/material-preloader/css/materialPreloader.min.css" rel="stylesheet">
+    <link href="assets/plugins/datatables/css/jquery.dataTables.min.css" rel="stylesheet">
+    <link href="assets/css/alpha.min.css" rel="stylesheet" type="text/css"/>
+    <link href="assets/css/custom.css" rel="stylesheet" type="text/css"/>
+
+    <style>
+        .errorWrap {
+            padding: 10px;
+            margin: 0 0 20px 0;
+            background: #fff;
+            border-left: 4px solid #dd3d36;
+            -webkit-box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+            box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+        }
+        .succWrap {
+            padding: 10px;
+            margin: 0 0 20px 0;
+            background: #fff;
+            border-left: 4px solid #5cb85c;
+            -webkit-box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+            box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+        }
+    </style>
+</head>
+<body>
+    <link rel="icon" type="image/x-icon" href="../favicon.ico">
+       <div class="loader-bg"></div>
+        <div class="loader">
+            <div class="preloader-wrapper big active">
+                <div class="spinner-layer spinner-blue">
+                    <div class="circle-clipper left">
+                        <div class="circle"></div>
+                    </div><div class="gap-patch">
+                    <div class="circle"></div>
+                    </div><div class="circle-clipper right">
+                    <div class="circle"></div>
+                    </div>
+                </div>
+                <div class="spinner-layer spinner-spinner-teal lighten-1">
+                    <div class="circle-clipper left">
+                        <div class="circle"></div>
+                    </div><div class="gap-patch">
+                    <div class="circle"></div>
+                    </div><div class="circle-clipper right">
+                    <div class="circle"></div>
+                    </div>
+                </div>
+                <div class="spinner-layer spinner-yellow">
+                    <div class="circle-clipper left">
+                        <div class="circle"></div>
+                    </div><div class="gap-patch">
+                    <div class="circle"></div>
+                    </div><div class="circle-clipper right">
+                    <div class="circle"></div>
+                    </div>
+                </div>
+                <div class="spinner-layer spinner-green">
+                    <div class="circle-clipper left">
+                        <div class="circle"></div>
+                    </div><div class="gap-patch">
+                    <div class="circle"></div>
+                    </div><div class="circle-clipper right">
+                    <div class="circle"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mn-content fixed-sidebar">
+            <header class="mn-header navbar-fixed">
+                <nav class="cyan darken-1">
+                    <div class="nav-wrapper row">
+                        <section class="material-design-hamburger navigation-toggle">
+                            <a href="#" data-activates="slide-out" class="button-collapse show-on-large material-design-hamburger__icon">
+                                <span class="material-design-hamburger__layer"></span>
+                            </a>
+                        </section>
+                       <div class="header-title col">      
+							<span class="chapter-title"><img src="./assets/images/logo_utnb.png" ></span>
+                        </div>
+                    </div>
+                </nav>
+            </header>    <aside id="slide-out" class="side-nav white fixed">
+    <div class="side-nav-wrapper">
+        <div class="sidebar-profile">
+                <div class="sidebar-profile-image">
+            <img src="https://ui-avatars.com/api/?name=Diaz+Aimar+Felipe&background=ECEFF1&size=128&rounded=true" 
+                class="circle" 
+                alt="Foto de Diaz Aimar Felipe">
+        </div>
+            <div class="sidebar-profile-info">
+                                        <p>Diaz Aimar, Felipe</p>
+                        <span>16841</span>
+                                </div>
+        </div>
+
+    <ul class="sidebar-menu collapsible collapsible-accordion" data-collapsible="accordion">
+        <!--
+        <li class="no-padding"><a class="waves-effect waves-grey" href="myprofile.php"><i class="material-icons">account_box</i>Mi Perfil</a></li> 
+        <li class="no-padding"><a class="waves-effect waves-grey" href="emp-changepassword.php"><i class="material-icons">settings_input_svideo</i>Cambiar Contrase&ntilde;a</a></li>-->
+        
+            <li><a href="apply-leave.php" class="waves-effect waves-grey"><i class="material-icons">check_circle</i> Dar Asistencia</a></li>
+            <li><a href="leavehistory.php" class="waves-effect waves-grey"><i class="material-icons">history</i> Historial Asistencias</a></li>
+            <li><a href="leavehistory_inasistencia.php" class="waves-effect waves-grey"><i class="material-icons">alarm_off</i> Historial Inasistencias</a></li>
+            <li class="no-padding">
+                <a class="waves-effect waves-grey" href="logout.php"><i class="material-icons">exit_to_app</i>Cerrar Sesión</a>
+            </li>        
+
+    </ul> 
+    </div>
+</aside>
+
+    <main class="mn-inner">
+        <div class="row">
+            <div class="col s12">
+                <div class="page-title">Historial de Asistencias</div>
+            </div>
+
+            <div class="col s12 m12 l12">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">Historial de Asistencias para el Año Lectivo</span>
+                        
+                        <!-- Selector de Año Académico -->
+                        <form method="POST">
+                            <div class="input-field">
+                                <select id="anio_academico" name="anio_academico">
+                                <option value='2026' selected>2026</option><option value='2025' >2025</option>                                </select>
+                            </div>
+
+                            <button type="submit" id="buscar" name="buscar" class="btn">Buscar</button>
+                        </form>
+
+                        <table id="materias" class="display">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Materia</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                                                        <tr>
+                                                <td>1</td>
+                                                <td>Administraci&oacute;n de Sistemas de Informaci&oacute;n</td>
+                                                <td>
+                                                <button class="btn waves-effect waves-light col s12 m6 l4 ver-detalle" 
+                                                    data-materia="Administraci&oacute;n de Sistemas de Informaci&oacute;n"
+                                                    data-legajo="16841"
+                                                    data-anio="2026">
+                                                    Ver Detalles
+                                                </button>
+                                                </td>
+                                            </tr>
+                                                                                    <tr>
+                                                <td>2</td>
+                                                <td>Ingenier&iacute;a y Calidad de Software</td>
+                                                <td>
+                                                <button class="btn waves-effect waves-light col s12 m6 l4 ver-detalle" 
+                                                    data-materia="Ingenier&iacute;a y Calidad de Software"
+                                                    data-legajo="16841"
+                                                    data-anio="2026">
+                                                    Ver Detalles
+                                                </button>
+                                                </td>
+                                            </tr>
+                                                                                    <tr>
+                                                <td>3</td>
+                                                <td>Investigaci&oacute;n Operativa</td>
+                                                <td>
+                                                <button class="btn waves-effect waves-light col s12 m6 l4 ver-detalle" 
+                                                    data-materia="Investigaci&oacute;n Operativa"
+                                                    data-legajo="16841"
+                                                    data-anio="2026">
+                                                    Ver Detalles
+                                                </button>
+                                                </td>
+                                            </tr>
+                                                                                    <tr>
+                                                <td>4</td>
+                                                <td>Prospectiva Profesional (Elec.)</td>
+                                                <td>
+                                                <button class="btn waves-effect waves-light col s12 m6 l4 ver-detalle" 
+                                                    data-materia="Prospectiva Profesional (Elec.)"
+                                                    data-legajo="16841"
+                                                    data-anio="2026">
+                                                    Ver Detalles
+                                                </button>
+                                                </td>
+                                            </tr>
+                                                                                    <tr>
+                                                <td>5</td>
+                                                <td>Redes de Datos</td>
+                                                <td>
+                                                <button class="btn waves-effect waves-light col s12 m6 l4 ver-detalle" 
+                                                    data-materia="Redes de Datos"
+                                                    data-legajo="16841"
+                                                    data-anio="2026">
+                                                    Ver Detalles
+                                                </button>
+                                                </td>
+                                            </tr>
+                                                                    </tbody>
+                        </table>
+
+                        <div id="detalle-materia">
+                            <!-- Aquí se cargarán los detalles cuando se haga clic en una materia -->
+                        </div>
+
+                        <!-- Cargar jQuery primero -->
+                        <script src="assets/plugins/jquery/jquery-2.2.0.min.js"></script> <!-- Asegúrate de que este archivo exista en la ruta indicada -->
+
+                        <!-- Cargar Materialize y otros scripts que dependen de jQuery -->
+                        <script src="assets/plugins/materialize/js/materialize.min.js"></script>
+                        <script src="assets/plugins/datatables/js/jquery.dataTables.min.js"></script>
+
+                        <script>
+                            $(document).ready(function() {
+                                $('#materias').DataTable({
+                                    "order": [[1, "asc"]],
+                                    "lengthChange": false,
+                                    "searching": false,
+                                    "info": false,
+                                });
+
+                                // Capturar el clic en el botón "Ver Detalles"
+                                $('.ver-detalle').click(function() {
+                                    let materia = $(this).data('materia'); // Obtener el nombre de la materia
+                                    let legajo = $(this).data('legajo'); // Obtener el legajo
+                                    let anio_academico = $(this).data('anio'); // Obtener el año académico
+
+                                    // Mostrar mensaje de carga antes de la petición AJAX
+                                    $('#detalle-materia').html('<h5>Detalles de: ' + materia + '</h5><p>Cargando detalles...</p>');
+
+                                    // Hacer scroll suave al div detalle-materia
+                                    $('html, body').animate({
+                                        scrollTop: $('#detalle-materia').offset().top
+                                    }, 800);
+
+                                    // Petición AJAX para obtener detalles
+                                    $.ajax({
+                                        url: 'obtener_detalle_asistencias.php',
+                                        type: 'GET',
+                                        data: { materia: materia, legajo: legajo, anio_academico: anio_academico },
+                                        success: function(data) {
+                                            $('#detalle-materia').html(data);
+                                        },
+                                        error: function(xhr, status, error) {
+                                            $('#detalle-materia').html('<p>Error al cargar los detalles. Intente nuevamente.</p>');
+                                        }
+                                    });
+                                });
+                            });
+                        </script>
+
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="left-sidebar-hover"></div>
+
+    <!-- Javascripts -->
+    <script src="assets/plugins/jquery/jquery-2.2.0.min.js"></script> <!-- Cargar jQuery primero -->
+    <script src="assets/plugins/materialize/js/materialize.min.js"></script>
+    <script src="assets/plugins/material-preloader/js/materialPreloader.min.js"></script>
+    <script src="assets/plugins/jquery-blockui/jquery.blockui.js"></script>
+    <script src="assets/plugins/datatables/js/jquery.dataTables.min.js"></script>
+    <script src="assets/js/alpha.min.js"></script>
+    <script src="assets/js/pages/table-data.js"></script>
+    
+</body>
+</html>
