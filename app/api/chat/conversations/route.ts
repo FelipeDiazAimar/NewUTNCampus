@@ -37,9 +37,15 @@ export async function GET(req: NextRequest) {
       mergeself: true,
     })) as unknown as GetConversationsData;
 
+    // Orden: primero los no leídos, y dentro de cada grupo, el más reciente arriba.
     const conversations = (data.conversations ?? [])
       .map((c) => mapConversation(c, auth.userid))
-      .sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+      .sort((a, b) => {
+        const ua = a.unread > 0 ? 1 : 0;
+        const ub = b.unread > 0 ? 1 : 0;
+        if (ua !== ub) return ub - ua;
+        return b.lastTimestamp - a.lastTimestamp;
+      });
 
     return NextResponse.json({ conversations, meId: auth.userid });
   } catch (err) {

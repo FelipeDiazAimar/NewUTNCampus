@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { ArrowLeft, ArrowUp, MessageCircle, Search } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -178,7 +178,9 @@ export default function ChatPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ convid: selectedId }),
-    }).catch(() => {});
+    })
+      .then(() => globalMutate("/api/chat/unread")) // refresca el badge del Navbar
+      .catch(() => {});
   }, [selectedId, conversations, mutateConvs]);
 
   // Scroll automático al último mensaje cuando se abre o cambia el hilo.

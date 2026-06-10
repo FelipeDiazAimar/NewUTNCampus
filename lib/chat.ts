@@ -118,7 +118,9 @@ export function mapConversation(c: MoodleConversation, meId: number): Conversati
     },
     lastMessage: last ? stripHtml(last.text) : "",
     lastTimestamp: last ? last.timecreated * 1000 : 0,
-    unread: c.unreadcount ?? 0,
+    // Moodle a veces deja unreadcount en null aunque el chat esté sin leer:
+    // usamos isread como respaldo para no perder el indicador.
+    unread: c.unreadcount ?? (c.isread === false ? 1 : 0),
     favourite: c.isfavourite,
   };
 }

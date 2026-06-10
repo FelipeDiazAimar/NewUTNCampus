@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import useSWR from "swr";
 import ThemeToggle from "./ThemeToggle";
 import SessionGuard from "./SessionGuard";
 import { clearCourseCache } from "@/lib/hooks";
@@ -18,6 +19,15 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   }, []);
 
   const isDark = mounted && resolvedTheme === "dark";
+
+  // Mensajes sin leer → badge rojo en el logo. Solo si hay sesión de Campus.
+  const loggedIn = mounted && typeof document !== "undefined" && document.cookie.includes("moodle_user");
+  const { data: unread } = useSWR(
+    loggedIn ? "/api/chat/unread" : null,
+    (url: string) => fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : { count: 0 })),
+    { refreshInterval: 60_000, revalidateOnFocus: true, dedupingInterval: 30_000 }
+  );
+  const unreadCount: number = unread?.count ?? 0;
 
   async function logout() {
     // Cierre de sesión centralizado: campus (Moodle) + Sysacad (web service).
@@ -35,8 +45,9 @@ export default function Navbar({ fullname }: { fullname?: string }) {
       <div className="max-w-[1600px] mx-auto px-4 mb-6">
         <div className="w-full h-12 flex items-center justify-between rounded-2xl backdrop-blur-xl backdrop-saturate-150 bg-[var(--navbar-bg)] border border-[var(--navbar-border)] shadow-sm px-4">
         <Link
-          href="/dashboard"
-          className="flex items-center gap-2 text-[15px] font-semibold text-[var(--fg)] hover:opacity-70 transition-opacity"
+          href="/chat"
+          aria-label={unreadCount > 0 ? `Chat · ${unreadCount} sin leer` : "Chat"}
+          className="relative flex items-center gap-2 text-[15px] font-semibold text-[var(--fg)] hover:opacity-70 transition-opacity"
         >
           {mounted && (
             <>
@@ -52,7 +63,11 @@ export default function Navbar({ fullname }: { fullname?: string }) {
               />
             </>
           )}
-          
+          {unreadCount > 0 && (
+            <span className="absolute -top-1.5 -right-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#ff3b30] px-1 text-[10px] font-bold leading-none text-white ring-2 ring-[var(--navbar-bg)]">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </Link>
 
         <div className="flex items-center gap-2">
