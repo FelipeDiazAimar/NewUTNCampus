@@ -1,6 +1,6 @@
 import { GraduationCap } from "lucide-react";
 import { parseNota, type SysacadExamen, type SysacadPlanMateria } from "@/lib/sysacadws";
-import type { MateriaEstado } from "@/lib/sysacad";
+import type { MateriaEstado } from "@/lib/sysacadTypes";
 import CollapsibleCard from "./CollapsibleCard";
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];

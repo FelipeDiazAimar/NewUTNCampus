@@ -1,6 +1,6 @@
 import { ClipboardCheck } from "lucide-react";
 import { sumField, type SysacadAvance, type SysacadExamen } from "@/lib/sysacadws";
-import type { MateriaEstado } from "@/lib/sysacad";
+import type { MateriaEstado } from "@/lib/sysacadTypes";
 import CollapsibleCard from "./CollapsibleCard";
 import InscripcionesChart from "./charts/InscripcionesChart";
 import ExamenesChart from "./charts/ExamenesChart";

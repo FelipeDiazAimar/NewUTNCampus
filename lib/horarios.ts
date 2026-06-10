@@ -3,7 +3,7 @@
  * la app de Horarios. Cada materia trae un string como
  * "Miércoles 21:30-23:45" o "Jueves 20:15-23:15, Viernes 18:00-21:00".
  */
-import type { MateriaCursando } from "@/lib/sysacad";
+import type { MateriaCursando } from "@/lib/sysacadTypes";
 
 export interface ClassSlot {
   day: number; // 0=domingo … 6=sábado
@@ -38,6 +38,7 @@ function parseAula(modalidad: string): string {
 /** Construye todos los slots de clase a partir del cursado. */
 export function buildSchedule(notas: MateriaCursando[]): ClassSlot[] {
   const slots: ClassSlot[] = [];
+  if (!Array.isArray(notas)) return slots;
   for (const m of notas) {
     const aula = parseAula(m.modalidad);
     for (const part of (m.horario ?? "").split(",")) {

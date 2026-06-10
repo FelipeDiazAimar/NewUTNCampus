@@ -30,10 +30,48 @@ export interface SysacadDatosPersonales {
 /** Una materia que el alumno está cursando (con inasistencias). */
 export interface SysacadComision {
   AñoAcademico: string;
+  Año?: string;
   CodMateria: string;
   NombreMateria: string;
-  Horarios: string;
+  NombreComision?: string;
+  Aula?: string;          // "0 MODALIDAD PRESENCIAL"
+  Horarios: string;       // "Miércoles 21:30-23:45, Jueves 18:00-21:00"
+  Parciales?: string;
   CantidadInasistencias: string;
+  CantidadJustificadas?: string;
+  ClaveCampusVirtual?: string;
+}
+
+/** Una materia del estado académico (/cursado/estadoacademico/{legajo}). */
+export interface SysacadResultadoAcademico {
+  Año: string;
+  Plan: string;
+  Materia: string;
+  Nombre: string;
+  EstadoAcademico: string;     // "Aprobada con 8 (5 hs.) Tomo…" | "Cursa en 4K…" | ""
+  CorrelatividadExamen: string;
+  CorrelatividadCursado: string;
+}
+
+/** /cursado/estadoacademico/{legajo} */
+export interface SysacadEstadoAcademico {
+  Estado: string;
+  resultadosAcademicos: SysacadResultadoAcademico[];
+}
+
+/** Una materia de correlatividades de cursado. */
+export interface SysacadCorrelatividad {
+  Año: string;
+  Plan: string;
+  Materia: string;
+  Nombre: string;
+  CorrelatividadACumplir: string; // "Puede cursar" | "No regularizó X (Ord. 1878) || …"
+}
+
+/** /cursado/correlatividadcursado/{legajo} */
+export interface SysacadCorrelatividades {
+  Estado: string;
+  correlatividades: SysacadCorrelatividad[];
 }
 
 /** /cursado/coninasistencia/{legajo} */

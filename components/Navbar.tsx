@@ -20,10 +20,10 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   const isDark = mounted && resolvedTheme === "dark";
 
   async function logout() {
-    // Cierre de sesión centralizado: campus (Moodle) + Sysacad (scraping y web service).
+    // Cierre de sesión centralizado: campus (Moodle) + Sysacad (web service).
+    // El DELETE del WS limpia también las cookies del viejo scraping.
     await Promise.all([
       fetch("/api/auth", { method: "DELETE" }),
-      fetch("/api/sysacad", { method: "DELETE" }),
       fetch("/api/sysacadws/login", { method: "DELETE" }),
     ]);
     clearCourseCache();

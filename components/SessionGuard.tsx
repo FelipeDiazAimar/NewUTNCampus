@@ -5,19 +5,20 @@ import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 /**
- * Mantiene vivas las sesiones (Campus + Sysacad scraping) con keep-alive mientras
- * la pestaña está abierta, detecta cuándo se cierran (401), avisa en el header con
- * una cuenta regresiva y, al cerrarse, redirige al login correspondiente.
+ * Mantiene viva la sesión del Campus (Moodle) con keep-alive mientras la pestaña
+ * está abierta, detecta cuándo se cierra (401), avisa en el header con una cuenta
+ * regresiva y, al cerrarse, redirige al login.
  *
- * Ambas sesiones expiran por INACTIVIDAD del lado del servidor (Moodle ~config,
- * ASP de Sysacad ~20 min) y se "deslizan" con cada request, así que el ping las
- * mantiene vivas. El WS (Basic legajo:DNI) no expira → no se vigila acá.
+ * La sesión de Moodle expira por INACTIVIDAD del lado del servidor (~config) y se
+ * "desliza" con cada request, así que el ping la mantiene viva. Sysacad ahora es
+ * 100% web service (Basic legajo:contraseña) y esa credencial no expira → no se
+ * vigila acá.
  *
  * Vercel no afecta esto: el keep-alive lo dispara el navegador. Cuando esto sea
  * una app nativa, un background task podría reemplazar al intervalo del cliente.
  */
 
-type Key = "campus" | "scrape";
+type Key = "campus";
 
 const CFG: Record<
   Key,
@@ -33,16 +34,6 @@ const CFG: Record<
     login: "/",
     autoRedirect: true, // el campus lo necesita toda la app → redirige solo
   },
-  scrape: {
-    cookie: "sysacad_user",
-    ping: "/api/sysacad/ping",
-    del: "/api/sysacad",
-    interval: 8 * 60_000, // ASP ~20 min → ping cada 8 min
-    timeout: 19 * 60_000,
-    label: "de Sysacad",
-    login: "/sysacad/login",
-    autoRedirect: false, // solo las secciones de Sysacad la necesitan
-  },
 };
 
 const WARN_MS = 120_000; // avisa en los últimos 2 minutos
@@ -54,10 +45,10 @@ function hasCookie(name: string): boolean {
 export default function SessionGuard() {
   const router = useRouter();
   const pathname = usePathname();
-  const [expires, setExpires] = useState<Record<Key, number | null>>({ campus: null, scrape: null });
-  const [closed, setClosed] = useState<Record<Key, boolean>>({ campus: false, scrape: false });
+  const [expires, setExpires] = useState<Record<Key, number | null>>({ campus: null });
+  const [closed, setClosed] = useState<Record<Key, boolean>>({ campus: false });
   const [now, setNow] = useState(() => Date.now());
-  const redirecting = useRef<Record<Key, boolean>>({ campus: false, scrape: false });
+  const redirecting = useRef<Record<Key, boolean>>({ campus: false });
 
   const ping = useCallback(async (k: Key) => {
     if (document.visibilityState !== "visible" || !hasCookie(CFG[k].cookie)) return;
@@ -76,7 +67,7 @@ export default function SessionGuard() {
 
   // Keep-alive: ping inicial, por intervalo y al volver a la pestaña.
   useEffect(() => {
-    const keys: Key[] = ["campus", "scrape"];
+    const keys: Key[] = ["campus"];
     keys.forEach((k) => ping(k));
     const timers = keys.map((k) => setInterval(() => ping(k), CFG[k].interval));
     const onVisible = () => {
@@ -109,7 +100,7 @@ export default function SessionGuard() {
 
   // Determina la alerta más urgente (cerrada > por vencer; campus > sysacad).
   let alert: { k: Key; type: "closed" | "warn"; remaining: number } | null = null;
-  for (const k of ["campus", "scrape"] as Key[]) {
+  for (const k of ["campus"] as Key[]) {
     if (!hasCookie(CFG[k].cookie)) continue;
     if (closed[k]) {
       alert = { k, type: "closed", remaining: 0 };
@@ -117,7 +108,7 @@ export default function SessionGuard() {
     }
   }
   if (!alert) {
-    for (const k of ["campus", "scrape"] as Key[]) {
+    for (const k of ["campus"] as Key[]) {
       if (!hasCookie(CFG[k].cookie) || closed[k]) continue;
       const exp = expires[k];
       if (exp != null) {

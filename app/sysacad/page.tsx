@@ -47,7 +47,7 @@ export default function SysacadPage() {
   const { data: cursado } = useCursado(legajo);
   const { data: examenes } = useExamenes(legajo);
   const { data: plan } = usePlan(user?.idEspecialidad, user?.plan);
-  const { data: estadoRes } = useEstado();
+  const { data: estadoRes } = useEstado(legajo);
   const estado = estadoRes?.data ?? [];
 
   const coreLoading = !!user && (!avance || !cursado || !examenes || !plan);
@@ -94,7 +94,7 @@ export default function SysacadPage() {
                   examenes={examenes!.Examenes ?? []}
                   planMaterias={plan!.Materias ?? []}
                 />
-                <CorrelatividadesAccordion />
+                <CorrelatividadesAccordion legajo={legajo} />
 
                 <Link
                   href="/dashboard/sysacad/password"

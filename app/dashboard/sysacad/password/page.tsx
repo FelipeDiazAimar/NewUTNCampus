@@ -28,7 +28,7 @@ export default function CambioPasswordPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/sysacad/password", {
+      const res = await fetch("/api/sysacadws/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ actual, nueva, repetir }),
@@ -36,8 +36,7 @@ export default function CambioPasswordPage() {
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 401) {
-          await fetch("/api/sysacad", { method: "DELETE" });
-          router.replace("/sysacad/login");
+          router.replace("/sysacad");
           return;
         }
         setMsg({ ok: false, text: json.error ?? json.mensaje ?? "No se pudo cambiar la contraseña." });

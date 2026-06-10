@@ -1,8 +1,16 @@
 "use client";
 
 import useSWR from "swr";
-import type { SysacadAvance, SysacadCursado, SysacadExamenes, SysacadPlan } from "@/lib/sysacadws";
-import type { MateriaEstado, MateriaCorrelativa } from "@/lib/sysacad";
+import type {
+  SysacadAvance,
+  SysacadCursado,
+  SysacadCorrelatividades,
+  SysacadEstadoAcademico,
+  SysacadExamenes,
+  SysacadPlan,
+} from "@/lib/sysacadws";
+import type { MateriaEstado, MateriaCorrelativa } from "@/lib/sysacadTypes";
+import { mapCorrelatividades, mapEstadoAcademico } from "@/lib/sysacadMappers";
 
 /**
  * Hooks de datos de Sysacad con SWR. La caché en memoria de SWR es global y
@@ -41,22 +49,31 @@ export function usePlan(idEspecialidad?: string, plan?: string) {
   return useSWR<SysacadPlan>(idEspecialidad && plan ? `/api/sysacadws/plan/${idEspecialidad}/${plan}` : null, jsonOk, SWR_CFG);
 }
 
-// Datos por scraping (sesión ASP). Si está vencida (401) devolvemos vacío en vez
-// de error, para degradar suave (la sección muestra su estado vacío).
-async function scrapeData<T>(url: string): Promise<{ data: T[]; alumno?: string }> {
-  const r = await fetch(url, { cache: "no-store" });
-  if (r.status === 401) return { data: [] };
-  if (!r.ok) {
-    const e = new Error("fetch failed") as WithStatus;
-    e.status = r.status;
-    throw e;
-  }
-  const j = await r.json();
-  return { data: (j.data ?? []) as T[], alumno: j.alumno };
+// Estado académico y correlatividades: ahora desde el web service (antes scraping).
+// Si la sesión venció (401) degradamos suave devolviendo lista vacía.
+export function useEstado(legajo?: string) {
+  return useSWR<{ data: MateriaEstado[] }>(
+    legajo ? `/api/sysacadws/cursado/estadoacademico/${legajo}` : null,
+    async (url: string) => {
+      const r = await fetch(url, { cache: "no-store" });
+      if (r.status === 401) return { data: [] };
+      if (!r.ok) { const e = new Error("fetch failed") as WithStatus; e.status = r.status; throw e; }
+      const j = (await r.json()) as SysacadEstadoAcademico;
+      return { data: mapEstadoAcademico(j.resultadosAcademicos ?? []) };
+    },
+    SWR_CFG
+  );
 }
-export function useEstado() {
-  return useSWR("sysacad-estado", () => scrapeData<MateriaEstado>("/api/sysacad/estado"), SWR_CFG);
-}
-export function useCorrelatividades() {
-  return useSWR("sysacad-correlatividades", () => scrapeData<MateriaCorrelativa>("/api/sysacad/correlatividades"), SWR_CFG);
+export function useCorrelatividades(legajo?: string) {
+  return useSWR<{ data: MateriaCorrelativa[] }>(
+    legajo ? `/api/sysacadws/cursado/correlatividadcursado/${legajo}` : null,
+    async (url: string) => {
+      const r = await fetch(url, { cache: "no-store" });
+      if (r.status === 401) return { data: [] };
+      if (!r.ok) { const e = new Error("fetch failed") as WithStatus; e.status = r.status; throw e; }
+      const j = (await r.json()) as SysacadCorrelatividades;
+      return { data: mapCorrelatividades(j.correlatividades ?? []) };
+    },
+    SWR_CFG
+  );
 }

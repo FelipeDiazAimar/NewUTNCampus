@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SYSACADWS_BASE, type SysacadDatosPersonales, type SysacadWsUser } from "@/lib/sysacadws";
 import { sessionCookieOptions } from "@/lib/cookies";
-import { sysacadLogin } from "@/lib/sysacad";
-import { encryptCred } from "@/lib/crypto";
-
-const FACULTAD_SF = 12; // San Francisco
 
 export const runtime = "nodejs";
 
@@ -54,35 +50,6 @@ export async function POST(req: NextRequest) {
   // Datos legibles para gatear la UI.
   response.cookies.set("sysacadws_user", JSON.stringify(user), sessionCookieOptions(keep, false));
 
-  // Best-effort: muchos alumnos tienen como contraseña de Sysacad su propio DNI.
-  // Si es así, dejamos también iniciada la sesión por scraping (correlatividades,
-  // estado académico, cambio de contraseña) para no pedir un segundo login.
-  try {
-    const scrape = await sysacadLogin(FACULTAD_SF, String(legajo), String(dni));
-    response.cookies.set(
-      "sysacad_session",
-      JSON.stringify({ cookie: scrape.cookie, baseUrl: scrape.baseUrl }),
-      sessionCookieOptions(keep, true)
-    );
-    response.cookies.set(
-      "sysacad_user",
-      JSON.stringify({ legajo: scrape.legajo, alumno: scrape.alumno, facultad: scrape.facultad }),
-      sessionCookieOptions(keep, false)
-    );
-    // "Mantener sesión": guardamos la credencial del scraping (DNI = contraseña)
-    // para re-loguear solo cuando el ASP expire.
-    if (keep) {
-      response.cookies.set(
-        "sysacad_cred",
-        encryptCred(JSON.stringify({ facultad: FACULTAD_SF, legajo: String(legajo), password: String(dni) })),
-        sessionCookieOptions(true, true)
-      );
-    }
-    console.log("[sysacadws-login] sesión scraping también iniciada (DNI = contraseña)");
-  } catch {
-    // La contraseña de Sysacad no es el DNI → se pedirá el login scraping aparte.
-  }
-
   return response;
 }
 
@@ -90,5 +57,9 @@ export async function DELETE() {
   const response = NextResponse.json({ ok: true });
   response.cookies.delete("sysacadws_auth");
   response.cookies.delete("sysacadws_user");
+  // Limpiamos también las cookies del viejo scraping (usuarios pre-migración).
+  response.cookies.delete("sysacad_session");
+  response.cookies.delete("sysacad_user");
+  response.cookies.delete("sysacad_cred");
   return response;
 }

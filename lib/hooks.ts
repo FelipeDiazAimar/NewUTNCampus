@@ -2,13 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { MoodleCourse, MoodleCourseSection } from "./moodle";
-import type {
-  SysacadRecurso,
-  MateriaEstado,
-  MateriaCorrelativa,
-  MateriaPlan,
-  MateriaCursando,
-} from "./sysacad";
 
 type CourseContentsCache = {
   sections: MoodleCourseSection[];
@@ -154,61 +147,3 @@ export function useCourseContents(courseId: number) {
   return { sections, courseName, loading, error };
 }
 
-// ─── Sysacad ────────────────────────────────────────────────────────────────
-
-/** Mapea cada recurso a su tipo de fila, para tipar el hook según el recurso. */
-type SysacadDataMap = {
-  estado: MateriaEstado;
-  correlatividades: MateriaCorrelativa;
-  materias: MateriaPlan;
-  notas: MateriaCursando;
-};
-
-type SysacadResponse<R extends SysacadRecurso> = {
-  titulo: string;
-  alumno: string;
-  data: SysacadDataMap[R][];
-};
-
-/**
- * Trae un recurso de Sysacad (`estado`, `correlatividades`, `materias`, `notas`)
- * desde `GET /api/sysacad/[recurso]`.  Devuelve `{ data, titulo, alumno, loading, error }`.
- * Un 401 (sesión Sysacad expirada) se expone como `expired` para que la pantalla
- * pueda mandar al login de Sysacad.
- */
-export function useSysacadData<R extends SysacadRecurso>(recurso: R) {
-  const [data, setData] = useState<SysacadDataMap[R][]>([]);
-  const [titulo, setTitulo] = useState("");
-  const [alumno, setAlumno] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [expired, setExpired] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setExpired(false);
-    try {
-      const res = await fetch(`/api/sysacad/${recurso}`, { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) {
-        if (res.status === 401) setExpired(true);
-        throw new Error(json.error ?? "No se pudo cargar la información.");
-      }
-      const payload = json as SysacadResponse<R>;
-      setData(payload.data ?? []);
-      setTitulo(payload.titulo ?? "");
-      setAlumno(payload.alumno ?? "");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [recurso]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  return { data, titulo, alumno, loading, error, expired, refetch: load };
-}

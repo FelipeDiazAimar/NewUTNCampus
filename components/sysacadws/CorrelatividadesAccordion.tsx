@@ -14,9 +14,9 @@ function Pill({ ok }: { ok: boolean }) {
   );
 }
 
-/** Correlatividades (scraping) embebidas como desplegable, agrupadas por nivel. */
-export default function CorrelatividadesAccordion() {
-  const { data, isLoading } = useCorrelatividades();
+/** Correlatividades (web service) embebidas como desplegable, agrupadas por nivel. */
+export default function CorrelatividadesAccordion({ legajo }: { legajo?: string }) {
+  const { data, isLoading } = useCorrelatividades(legajo);
   const items = data?.data ?? [];
 
   // Agrupar por nivel preservando el orden.

@@ -12,7 +12,9 @@ import MateriaSettingsModal from "@/components/horarios/MateriaSettingsModal";
 import { buildSchedule, colorMap, DAY_LABELS, DAY_SHORT, fmtRemaining } from "@/lib/horarios";
 import { hhmmToMin, type CustomScheduleEvent } from "@/lib/customEvents";
 import { getAllMateriaSettings, type MateriaSettings } from "@/lib/materiaSettings";
-import type { MateriaCursando } from "@/lib/sysacad";
+import { mapCursadoToMaterias } from "@/lib/sysacadMappers";
+import type { SysacadCursado } from "@/lib/sysacadws";
+import type { MateriaCursando } from "@/lib/sysacadTypes";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0]; // Lunes a Domingo
 
@@ -35,21 +37,31 @@ const evFetcher = async (u: string): Promise<{ data: CustomScheduleEvent[] }> =>
   return r.json();
 };
 
-const notasFetcher = async (url: string): Promise<MateriaCursando[]> => {
-  let res = await fetch(url, { cache: "no-store" });
-  if (res.status === 401) {
-    const healed = await fetch("/api/sysacad/ping", { cache: "no-store" });
-    if (healed.ok) res = await fetch(url, { cache: "no-store" });
+/** Lee el legajo del web service desde la cookie legible. */
+function getWsLegajo(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/sysacadws_user=([^;]+)/);
+  if (!m) return null;
+  try {
+    return (JSON.parse(decodeURIComponent(m[1])) as { legajo?: string }).legajo ?? null;
+  } catch {
+    return null;
   }
+}
+
+// Cursado desde el web service (coninasistencia) → grilla. Sin scraping ni ping.
+const notasFetcher = async (url: string): Promise<MateriaCursando[]> => {
+  const res = await fetch(url, { cache: "no-store" });
   if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  const json = await res.json();
+  const json = (await res.json()) as SysacadCursado & { error?: string };
   if (!res.ok) throw new Error(json.error ?? "No se pudo cargar el cursado.");
-  return json.data ?? [];
+  return mapCursadoToMaterias(json.Comisiones ?? []);
 };
 
 export default function HorariosPage() {
   const router = useRouter();
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [legajo, setLegajo] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMateria, setEditingMateria] = useState<string | null>(null);
@@ -63,20 +75,22 @@ export default function HorariosPage() {
 
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) { router.replace("/"); return; }
-    if (!document.cookie.includes("sysacad_user")) { router.replace("/sysacad/login"); return; }
+    const lj = getWsLegajo();
+    if (!lj) { router.replace("/sysacad"); return; }
+    setLegajo(lj);
     setAuthed(true);
     setMateriaSettings(getAllMateriaSettings());
   }, [router]);
 
   const { data: notas, error: notasError, isLoading: loading } = useSWR(
-    authed ? "/api/sysacad/notas" : null,
+    authed && legajo ? `/api/sysacadws/cursado/coninasistencia/${legajo}` : null,
     notasFetcher,
     { revalidateOnFocus: false, dedupingInterval: 5 * 60_000, keepPreviousData: true }
   );
 
   useEffect(() => {
     if ((notasError as { status?: number } | undefined)?.status === 401) {
-      router.replace("/sysacad/login");
+      router.replace("/sysacad");
     }
   }, [notasError, router]);
 
