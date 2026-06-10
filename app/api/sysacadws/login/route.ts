@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const { legajo, dni, remember } = await req.json().catch(() => ({}));
   if (!legajo || !dni) {
-    return NextResponse.json({ error: "Completá legajo y DNI." }, { status: 400 });
+    return NextResponse.json({ error: "Completá legajo y contraseña." }, { status: 400 });
   }
 
   const keep = remember === true;
@@ -27,11 +27,11 @@ export async function POST(req: NextRequest) {
     });
     if (!res.ok) {
       // El WS devuelve 404 cuando legajo:DNI no coinciden.
-      return NextResponse.json({ error: "Legajo o DNI incorrectos." }, { status: 401 });
+      return NextResponse.json({ error: "Legajo o contraseña incorrectos." }, { status: 401 });
     }
     perfil = (await res.json()) as SysacadDatosPersonales;
     if (!perfil?.NombreAlumno) {
-      return NextResponse.json({ error: "Legajo o DNI incorrectos." }, { status: 401 });
+      return NextResponse.json({ error: "Legajo o contraseña incorrectos." }, { status: 401 });
     }
   } catch (err) {
     console.error("[sysacadws-login]", (err as Error).message);

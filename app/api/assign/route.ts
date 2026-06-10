@@ -31,12 +31,18 @@ export interface AssignInfo {
   description: string;
   cmid: string;
   submitted: boolean;
-  files: SubmittedFile[];
+  files: SubmittedFile[];        // archivos que entregó el alumno
+  introFiles: SubmittedFile[];   // adjuntos de la consigna (los sube el profesor)
   comments: AssignComments | null;
 }
 
-/** Extrae los archivos entregados de la fila "Archivos enviados". */
-function parseSubmittedFiles(html: string): SubmittedFile[] {
+/**
+ * Extrae los bloques `fileuploadsubmission`. ¡Ojo!: Moodle usa esta misma clase
+ * tanto para los adjuntos de la consigna (introattachment, los sube el profesor)
+ * como para los archivos que entrega el alumno (submission_files). Se distinguen
+ * por la URL del pluginfile — la clasificación se hace en el caller.
+ */
+function parseFileBlocks(html: string): SubmittedFile[] {
   const files: SubmittedFile[] = [];
   for (const block of html.matchAll(/<div class="fileuploadsubmission">([\s\S]*?)<\/div>\s*(?:<div class="fileuploadsubmissiontime">([\s\S]*?)<\/div>)?/gi)) {
     const inner = block[1];
@@ -81,13 +87,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Submission status table rows
+    // Submission status table rows. Moodle pone la etiqueta en un <th scope="row">
+    // y el valor en un <td>, así que hay que capturar ambos tipos de celda.
     const rows: AssignRow[] = [];
     const tableIdx = html.indexOf('class="submissionstatustable"');
     if (tableIdx !== -1) {
-      const chunk = html.slice(tableIdx, tableIdx + 5000);
+      const chunk = html.slice(tableIdx, tableIdx + 6000);
       for (const m of chunk.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
-        const cells = [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)];
+        const cells = [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)];
         if (cells.length >= 2) {
           const label = decode(stripTags(cells[0][1])).trim();
           const value = decode(stripTags(cells[1][1])).trim();
@@ -96,17 +103,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Description (intro div) — only if non-empty
+    // Bloque de la consigna (activity-description). Arrancamos DESPUÉS del ">" de
+    // la etiqueta de apertura, si no el texto del atributo (id="intro">) se cuela
+    // como contenido de la descripción.
     const descIdx = html.indexOf('id="intro"');
     let description = "";
     if (descIdx !== -1) {
-      const descChunk = html.slice(descIdx, descIdx + 2000);
-      const inner = descChunk.match(/>([\s\S]*?)<\/div>/)?.[1] ?? "";
-      description = decode(stripTags(inner)).trim();
+      const tagEnd = html.indexOf(">", descIdx);
+      const body = tagEnd !== -1 ? html.slice(tagEnd + 1) : html.slice(descIdx);
+      // La consigna termina donde abre el <div role="main"> (estado de la entrega).
+      // Cortamos en el "<" de esa etiqueta para no dejar un "<div" sin cerrar.
+      const mainAttr = body.indexOf('role="main"');
+      const inner = mainAttr !== -1 ? body.slice(0, body.lastIndexOf("<", mainAttr)) : body.slice(0, 3000);
+      // Quitamos el árbol de adjuntos — esos se muestran aparte como introFiles.
+      const noTree = inner.replace(/<div[^>]*id="assign_files_tree[^"]*"[\s\S]*?<\/ul>\s*<\/div>/gi, " ");
+      description = decode(stripTags(noTree)).trim();
     }
 
-    // Archivos entregados + meta de comentarios + ids.
-    const files = parseSubmittedFiles(html);
+    // Archivos: separamos los adjuntos de la consigna (introattachment) de los
+    // archivos realmente entregados por el alumno (submission_files).
+    const allBlocks = parseFileBlocks(html);
+    const isIntro = (f: SubmittedFile) => /introattachment/i.test(f.url);
+    const introFiles = allBlocks.filter(isIntro);
+    const files = allBlocks.filter((f) => !isIntro(f));
 
     const cmid = url.match(/[?&]id=(\d+)/)?.[1] ?? "";
     const courseid =
@@ -124,12 +143,16 @@ export async function GET(req: NextRequest) {
         }
       : null;
 
+    // "Entregado" SOLO si hay archivos de entrega reales, o el estado dice
+    // explícitamente "Enviado para calificar" (clase submissionstatussubmitted).
+    // Nunca por "No se ha enviado nada…" (que también contiene "enviado").
     const submitted =
       files.length > 0 ||
-      rows.some((r) => /estado de (la )?entrega/i.test(r.label) && /enviado/i.test(r.value));
+      /submissionstatussubmitted/i.test(html) ||
+      rows.some((r) => /estado de (la )?entrega/i.test(r.label) && /enviado para calificar/i.test(r.value));
 
     return NextResponse.json({
-      title, dates, rows, description, cmid, submitted, files, comments,
+      title, dates, rows, description, cmid, submitted, files, introFiles, comments,
     } satisfies AssignInfo);
   } catch (err) {
     console.error("[assign]", (err as Error).message);

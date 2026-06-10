@@ -32,13 +32,10 @@ type InasResp = {
 };
 type Grupo = { materia: string; fechas: string[] };
 
-const HAR_MATERIAS: Grupo[] = [
-  { materia: "Administracion de Sistemas de Informacion", fechas: [] },
-  { materia: "Ingenieria y Calidad de Software", fechas: [] },
-  { materia: "Investigacion Operativa", fechas: [] },
-  { materia: "Prospectiva Profesional (Elec.)", fechas: [] },
-  { materia: "Redes de Datos", fechas: [] },
-];
+// El selector siempre se arma desde el año actual (constante), nunca desde el
+// año seleccionado — si no, al elegir un año anterior se "perdían" los más nuevos.
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
 
 const agentFetcher = async (url: string): Promise<AgentState> => {
   const res = await fetch(url, { cache: "no-store" });
@@ -138,10 +135,8 @@ export default function AsistenciaPage() {
     queueMicrotask(() => setReady(true));
   }, [router]);
 
-  const grupos = useMemo(() => {
-    const live = normalize(history ?? null);
-    return live.length > 0 ? live : HAR_MATERIAS;
-  }, [history]);
+  // Solo datos reales: si el año no tiene inasistencias, no se inventa nada.
+  const grupos = useMemo(() => normalize(history ?? null), [history]);
 
   if (!ready) {
     return (
@@ -175,7 +170,7 @@ export default function AsistenciaPage() {
 
         <section className="mb-4 rounded-[24px] border border-[var(--separator)] bg-[rgba(255,255,255,0.68)] p-2 shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.72)]">
           <div className="flex gap-1 overflow-x-auto">
-            {[year, year - 1, year - 2, year - 3].map((item) => (
+            {YEAR_OPTIONS.map((item) => (
               <button
                 key={item}
                 type="button"
@@ -210,16 +205,23 @@ export default function AsistenciaPage() {
 
             <div className="h-px bg-[var(--separator)]" />
 
-            <div className="divide-y divide-[var(--separator)]">
-              {grupos.map((grupo) => (
-                <SubjectAccordion
-                  key={grupo.materia}
-                  grupo={grupo}
-                  open={open === grupo.materia}
-                  onToggle={() => setOpen(open === grupo.materia ? null : grupo.materia)}
-                />
-              ))}
-            </div>
+            {grupos.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+                <CalendarX className="h-8 w-8 text-[#34c759]" />
+                <p className="text-[14px] text-[var(--secondary)]">Sin inasistencias registradas en {year}.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--separator)]">
+                {grupos.map((grupo) => (
+                  <SubjectAccordion
+                    key={grupo.materia}
+                    grupo={grupo}
+                    open={open === grupo.materia}
+                    onToggle={() => setOpen(open === grupo.materia ? null : grupo.materia)}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         )}
       </main>
@@ -246,7 +248,7 @@ function AgentStatus({ agent }: { agent?: AgentState }) {
           {label}
         </span>
       </div>
-      <h2 className="mt-4 text-[18px] font-semibold text-[var(--fg)]">Agente Local Motorola</h2>
+      <h2 className="mt-4 text-[18px] font-semibold text-[var(--fg)]">Dispositivo Local</h2>
       <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--secondary)]">
         <Clock3 className="h-4 w-4" />
         {formatRelative(agent?.lastSeenAt ?? null)}

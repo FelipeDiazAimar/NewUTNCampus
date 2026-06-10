@@ -243,7 +243,7 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
 
       return (
         <div
-          className="px-4 py-3 text-[13px] text-[var(--fg)] leading-relaxed label-content"
+          className="px-4 py-3 text-[13px] text-[var(--fg)] leading-relaxed label-content break-words [overflow-wrap:anywhere] overflow-x-hidden"
         >
           {safeParseHtml(mod.description)}
         </div>
@@ -420,7 +420,7 @@ function SectionAccordion({ section, defaultOpen }: {
         <div className="border-t border-[rgba(60,60,67,0.1)]">
           {section.summaryHtml && (
             <div
-              className="prose prose-sm max-w-none dark:prose-invert px-4 py-3 border-b border-[var(--separator)]
+              className="prose prose-sm max-w-none dark:prose-invert px-4 py-3 border-b border-[var(--separator)] break-words [overflow-wrap:anywhere] overflow-x-hidden
                 prose-p:text-[var(--fg)] dark:prose-p:text-[var(--fg)] prose-p:leading-relaxed prose-p:my-1
                 prose-a:text-[var(--accent)] prose-a:no-underline hover:prose-a:underline
                 prose-strong:text-[var(--fg)] prose-strong:font-semibold
@@ -465,7 +465,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
     : visible;
 
   return (
-    <div className="min-h-screen bg-[var(--bg)]">
+    <div className="min-h-screen bg-[var(--bg)] overflow-x-hidden">
       <Navbar fullname={userInfo.fullname} />
       {/*
         WorkspaceLayout manages the split-panel. It provides PdfPreviewContext

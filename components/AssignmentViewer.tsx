@@ -238,6 +238,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
   }
 
   // Filas de estado normalizadas.
+  const groupVal = info?.rows.find((r) => /^grupo$/i.test(r.label))?.value ?? "";
   const submissionVal = info?.rows.find((r) => /estado de (la )?entrega/i.test(r.label))?.value ?? "";
   const gradeVal = info?.rows.find((r) => /calificaci/i.test(r.label))?.value ?? "";
   const lastModVal = info?.rows.find((r) => /última modificaci|ultima modificaci/i.test(r.label))?.value ?? "";
@@ -253,6 +254,11 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
   }
 
   const statusItems = [
+    groupVal && {
+      label: "Grupo",
+      value: groupVal,
+      tone: /no perteneces|ning[úu]n grupo/i.test(groupVal) ? "#ff3b30" : undefined,
+    },
     submissionVal && {
       label: "Estado de la entrega",
       value: submissionVal,
@@ -316,6 +322,63 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                       <p key={i}>{line}</p>
                     ))}
                   </div>
+                </div>
+              </section>
+            )}
+
+            {/* Archivos de la consigna (los adjunta el profesor) */}
+            {info.introFiles.length > 0 && (
+              <section>
+                <p className="px-1 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                  Archivos de la tarea
+                </p>
+                <div className="bg-[var(--surface)] rounded-2xl border border-[var(--separator)] overflow-hidden shadow-sm">
+                  {info.introFiles.map((file: SubmittedFile, i) => {
+                    const kind = panelKindForFile(file.fileType, file.name);
+                    const isActive = activeKey === file.url;
+                    const rowClass = `w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                      isActive ? "bg-[var(--surface2)]" : "active:bg-[var(--surface2)]"
+                    } ${i < info.introFiles.length - 1 ? "border-b border-[var(--separator)]" : ""}`;
+                    const inner = (
+                      <>
+                        <FileTypeIcon type={file.fileType} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-medium text-[var(--fg)] truncate">{file.name}</p>
+                          <p className="text-[12px] text-[var(--secondary)]">Consigna</p>
+                        </div>
+                        <ChevronRight
+                          className={`w-4 h-4 shrink-0 ${isActive ? "text-[var(--accent)]" : "text-[var(--secondary)]"}`}
+                        />
+                      </>
+                    );
+                    return kind ? (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() =>
+                          openPanel({
+                            kind,
+                            proxyUrl: `/api/files?url=${encodeURIComponent(file.url)}&inline=1`,
+                            fileUrl: file.url,
+                            name: file.name,
+                          })
+                        }
+                        className={rowClass}
+                      >
+                        {inner}
+                      </button>
+                    ) : (
+                      <a
+                        key={i}
+                        href={`/api/files?url=${encodeURIComponent(file.url)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={rowClass}
+                      >
+                        {inner}
+                      </a>
+                    );
+                  })}
                 </div>
               </section>
             )}

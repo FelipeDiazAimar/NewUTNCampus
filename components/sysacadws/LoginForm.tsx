@@ -8,7 +8,6 @@ interface LoginFormProps {
   onSuccess: () => void;
 }
 
-/** Login del web service de Sysacad: Legajo + DNI (Basic auth). */
 export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
   const [legajo, setLegajo] = useState("");
   const [dni, setDni] = useState("");
@@ -51,12 +50,12 @@ export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
         </div>
         <p className="text-xs font-semibold tracking-widest text-[var(--accent)] uppercase mb-1">UTN · Sysacad</p>
         <h2 className="text-[22px] font-bold text-[var(--fg)] tracking-tight">Acceso a Sysacad</h2>
-        <p className="text-sm text-[var(--secondary)] mt-0.5">Ingresá con tu legajo y DNI</p>
+        <p className="text-sm text-[var(--secondary)] mt-0.5">Ingresá con tu legajo y contraseña</p>
       </div>
 
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--separator)] overflow-hidden mb-4 shadow-sm">
         <div className="flex items-center px-4 border-b border-[var(--separator)]">
-          <label htmlFor="ws-legajo" className="text-sm font-medium text-[var(--fg)] w-20 shrink-0 py-3.5">Legajo</label>
+          <label htmlFor="ws-legajo" className="text-sm font-medium text-[var(--fg)] w-24 shrink-0 py-3.5">Legajo</label>
           <input
             id="ws-legajo"
             type="text"
@@ -71,17 +70,16 @@ export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
           />
         </div>
         <div className="flex items-center px-4">
-          <label htmlFor="ws-dni" className="text-sm font-medium text-[var(--fg)] w-20 shrink-0 py-3.5">DNI</label>
+          <label htmlFor="ws-dni" className="text-sm font-medium text-[var(--fg)] w-24 shrink-0 py-3.5">Contraseña</label>
           <input
             id="ws-dni"
-            type="text"
-            inputMode="numeric"
+            type="password"
             value={dni}
-            onChange={(e) => setDni(e.target.value.replace(/\D/g, "").slice(0, 9))}
-            placeholder="12345678"
+            onChange={(e) => setDni(e.target.value)}
+            placeholder="••••••••"
             required
             disabled={loading}
-            autoComplete="off"
+            autoComplete="current-password"
             className={field}
           />
         </div>
@@ -118,7 +116,7 @@ export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
       </button>
 
       <p className="text-[12px] text-[#aeaeb2] mt-6 text-center max-w-xs mx-auto leading-relaxed">
-        Usamos tu DNI solo para autenticarte ante Sysacad. No se comparte con terceros.
+        Si es la primera vez, tu contraseña es tu DNI sin puntos.
       </p>
     </form>
   );
