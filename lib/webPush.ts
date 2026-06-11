@@ -12,6 +12,8 @@ export type SendPushPayload = {
   body?: string;
   url?: string;
   tag?: string;
+  icon?: string;
+  badge?: string;
 };
 
 function configureWebPush() {
@@ -26,18 +28,6 @@ function configureWebPush() {
   webpush.setVapidDetails(subject, publicKey, privateKey);
 }
 
-async function fetchSubscriptions(): Promise<PushRow[]> {
-  const res = await supabaseFetch(
-    "web_push_subscriptions?active=eq.true&select=endpoint,p256dh,auth"
-  );
-
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
-
-  return (await res.json()) as PushRow[];
-}
-
 async function deactivateSubscription(endpoint: string) {
   await supabaseFetch(`web_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
     method: "PATCH",
@@ -45,29 +35,27 @@ async function deactivateSubscription(endpoint: string) {
   });
 }
 
-export async function sendPushNotification(payload: SendPushPayload) {
-  configureWebPush();
-
-  const rows = await fetchSubscriptions();
+/** Envía un payload a una lista concreta de suscripciones y limpia las caducadas. */
+async function sendToRows(rows: PushRow[], payload: SendPushPayload) {
   const message = JSON.stringify({
-    title: payload.title ?? "¡La asistencia está abierta!",
-    body: payload.body ?? "El profesor habilitó la asistencia.",
-    url: payload.url ?? "/asistencia",
-    tag: payload.tag ?? "asistencia-abierta",
+    title: payload.title ?? "Campus UTN",
+    body: payload.body ?? "Tenés una novedad.",
+    url: payload.url ?? "/",
+    tag: payload.tag ?? "campus-notif",
+    icon: payload.icon ?? "/LOGOUTNB.png",
+    badge: payload.badge ?? "/LOGOUTNB.png",
   });
 
   const results = await Promise.allSettled(
     rows.map((row) =>
       webpush.sendNotification(
-        {
-          endpoint: row.endpoint,
-          keys: { p256dh: row.p256dh, auth: row.auth },
-        },
+        { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
         message
       )
     )
   );
 
+  // Desactiva suscripciones que ya no existen (410 Gone / 404 Not Found).
   await Promise.all(
     results.map((result, index) => {
       if (result.status === "rejected") {
@@ -82,7 +70,33 @@ export async function sendPushNotification(payload: SendPushPayload) {
 
   return {
     total: rows.length,
-    sent: results.filter((result) => result.status === "fulfilled").length,
-    failed: results.filter((result) => result.status === "rejected").length,
+    sent: results.filter((r) => r.status === "fulfilled").length,
+    failed: results.filter((r) => r.status === "rejected").length,
   };
+}
+
+/** Envía a TODAS las suscripciones activas (broadcast — p.ej. alertas de asistencia). */
+export async function sendPushNotification(payload: SendPushPayload) {
+  configureWebPush();
+
+  const res = await supabaseFetch(
+    "web_push_subscriptions?active=eq.true&select=endpoint,p256dh,auth"
+  );
+  if (!res.ok) throw new Error(await res.text());
+
+  const rows = (await res.json()) as PushRow[];
+  return sendToRows(rows, payload);
+}
+
+/** Envía solo a las suscripciones de un usuario específico (por user_key). */
+export async function sendPushToUser(userKey: string, payload: SendPushPayload) {
+  configureWebPush();
+
+  const res = await supabaseFetch(
+    `web_push_subscriptions?active=eq.true&user_key=eq.${encodeURIComponent(userKey)}&select=endpoint,p256dh,auth`
+  );
+  if (!res.ok) throw new Error(await res.text());
+
+  const rows = (await res.json()) as PushRow[];
+  return sendToRows(rows, payload);
 }

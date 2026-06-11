@@ -59,6 +59,11 @@ export default function SessionGuard() {
       } else if (res.ok) {
         setExpires((e) => ({ ...e, [k]: Date.now() + CFG[k].timeout }));
         setClosed((c) => ({ ...c, [k]: false }));
+        // Refresca la sesión Moodle en las suscripciones push de Supabase.
+        // Fire-and-forget: no bloquea el keep-alive ni produce errores visibles.
+        if (k === "campus") {
+          fetch("/api/notifications/push-subscription/session", { method: "POST" }).catch(() => {});
+        }
       }
     } catch {
       /* error de red transitorio: no marcamos cerrada la sesión */

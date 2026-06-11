@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, Eye, EyeOff } from "lucide-react";
 import Spinner from "@/components/Spinner";
 
 interface LoginFormProps {
@@ -14,6 +14,7 @@ export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPass, setShowPass] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +74,7 @@ export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
           <label htmlFor="ws-dni" className="text-sm font-medium text-[var(--fg)] w-24 shrink-0 py-3.5">Contraseña</label>
           <input
             id="ws-dni"
-            type="password"
+            type={showPass ? "text" : "password"}
             value={dni}
             onChange={(e) => setDni(e.target.value)}
             placeholder="••••••••"
@@ -82,6 +83,14 @@ export default function SysacadWsLogin({ onSuccess }: LoginFormProps) {
             autoComplete="current-password"
             className={field}
           />
+          <button
+            type="button"
+            onClick={() => setShowPass((v) => !v)}
+            disabled={loading}
+            className="shrink-0 p-1 text-[var(--secondary)] active:opacity-60 disabled:opacity-40"
+          >
+            {showPass ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+          </button>
         </div>
       </div>
 

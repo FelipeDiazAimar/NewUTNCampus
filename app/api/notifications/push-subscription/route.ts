@@ -31,6 +31,15 @@ export async function POST(req: NextRequest) {
   }
 
   const userKey = getUserKey(req);
+
+  // Lee la sesión Moodle activa para que el cron pueda llamar a Moodle por este usuario.
+  const moodleSessionToken = req.cookies.get("moodle_session_token")?.value ?? null;
+  const moodleSesskey = req.cookies.get("moodle_sesskey")?.value ?? null;
+  let moodleUserid: number | null = null;
+  try {
+    moodleUserid = Number(JSON.parse(req.cookies.get("moodle_user")?.value ?? "{}").userid) || null;
+  } catch { /* ignore */ }
+
   const res = await supabaseFetch("web_push_subscriptions?on_conflict=endpoint", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
@@ -42,6 +51,11 @@ export async function POST(req: NextRequest) {
       user_agent: req.headers.get("user-agent"),
       active: true,
       updated_at: new Date().toISOString(),
+      // Sesión Moodle — se actualiza cada vez que el usuario suscribe / refresca.
+      moodle_session_token: moodleSessionToken,
+      moodle_sesskey: moodleSesskey,
+      moodle_userid: moodleUserid,
+      last_chat_unread: 0,
     }),
   });
 

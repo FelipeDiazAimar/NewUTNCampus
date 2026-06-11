@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, X, Eye, EyeOff } from "lucide-react";
 import Spinner, { SpinnerOverlay } from "@/components/Spinner";
 import { getRememberedUsers, addRememberedUser, removeRememberedUser } from "@/lib/rememberedUsers";
 
@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [mounted, setMounted] = useState(false);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [showPass, setShowPass] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -183,7 +184,7 @@ export default function LoginPage() {
               </label>
               <input
                 ref={passwordRef}
-                type="password"
+                type={showPass ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -191,6 +192,14 @@ export default function LoginPage() {
                 disabled={loading}
                 className="login-input flex-1 py-3.5 text-sm text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none bg-transparent disabled:opacity-50"
               />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                disabled={loading}
+                className="shrink-0 p-1 text-[var(--secondary)] active:opacity-60 disabled:opacity-40"
+              >
+                {showPass ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+              </button>
             </div>
           </div>
 
