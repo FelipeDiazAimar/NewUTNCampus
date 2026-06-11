@@ -87,19 +87,36 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Submission status table rows. Moodle pone la etiqueta en un <th scope="row">
-    // y el valor en un <td>, así que hay que capturar ambos tipos de celda.
-    const rows: AssignRow[] = [];
-    const tableIdx = html.indexOf('class="submissionstatustable"');
-    if (tableIdx !== -1) {
-      const chunk = html.slice(tableIdx, tableIdx + 6000);
+    // Helper: extrae filas label/value de cualquier <table> a partir de una posición.
+    function parseTableRows(chunk: string): AssignRow[] {
+      const out: AssignRow[] = [];
       for (const m of chunk.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
         const cells = [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)];
         if (cells.length >= 2) {
           const label = decode(stripTags(cells[0][1])).trim();
           const value = decode(stripTags(cells[1][1])).trim();
-          if (label && value) rows.push({ label, value });
+          if (label && value) out.push({ label, value });
         }
+      }
+      return out;
+    }
+
+    // 1) Tabla de estado de la entrega (submissionstatustable)
+    const rows: AssignRow[] = [];
+    const tableIdx = html.indexOf('class="submissionstatustable"');
+    if (tableIdx !== -1) {
+      rows.push(...parseTableRows(html.slice(tableIdx, tableIdx + 6000)));
+    }
+
+    // 2) Tabla de calificación (div.feedback → feedbacktable).
+    // Contiene "Calificación" (nota real) y "Calificado sobre" (fecha de calificación).
+    // Se añade DESPUÉS para que el viewer la encuentre con una búsqueda exacta.
+    const feedbackIdx = html.indexOf('class="feedback"');
+    if (feedbackIdx !== -1) {
+      const feedbackRows = parseTableRows(html.slice(feedbackIdx, feedbackIdx + 2000));
+      // Normalizamos "100,00 / 100,00" → decodificamos &nbsp;
+      for (const r of feedbackRows) {
+        rows.push({ label: r.label, value: r.value.replace(/\s*\/\s*/g, " / ").trim() });
       }
     }
 

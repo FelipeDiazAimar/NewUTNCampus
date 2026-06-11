@@ -240,7 +240,12 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
   // Filas de estado normalizadas.
   const groupVal = info?.rows.find((r) => /^grupo$/i.test(r.label))?.value ?? "";
   const submissionVal = info?.rows.find((r) => /estado de (la )?entrega/i.test(r.label))?.value ?? "";
-  const gradeVal = info?.rows.find((r) => /calificaci/i.test(r.label))?.value ?? "";
+  // "Calificación" exacta (viene de div.feedback) tiene prioridad sobre
+  // "Estado de la calificación" (que dice "Sin calificar" aunque haya nota).
+  const gradeVal =
+    info?.rows.find((r) => /^calificaci[oó]n$/i.test(r.label))?.value ||
+    info?.rows.find((r) => /calificaci/i.test(r.label))?.value || "";
+  const gradedOnVal = info?.rows.find((r) => /calificado sobre/i.test(r.label))?.value ?? "";
   const lastModVal = info?.rows.find((r) => /última modificaci|ultima modificaci/i.test(r.label))?.value ?? "";
   const timeVal = info?.rows.find((r) => /tiempo restante/i.test(r.label))?.value ?? "";
 
@@ -269,6 +274,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
       value: gradeVal,
       tone: /sin calificar/i.test(gradeVal) ? "#ff9500" : "#34c759",
     },
+    gradedOnVal && { label: "Calificado el", value: gradedOnVal },
     lastModVal && lastModVal !== "-" && { label: "Última modificación", value: lastModVal },
     timeVal && { label: "Tiempo restante", value: timeVal },
     delivery && {
