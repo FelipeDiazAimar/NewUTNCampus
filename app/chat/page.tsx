@@ -3,17 +3,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate as globalMutate } from "swr";
-import { ArrowLeft, ArrowUp, MessageCircle, Search } from "lucide-react";
+import { ArrowLeft, ArrowUp, Mail, MessageCircle, Search } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
+import ContactDetailSheet from "@/components/ContactDetailSheet";
 import {
   avatarColor,
   formatChatTime,
   getInitials,
   type Conversation,
   type Message,
+  type UserProfile,
 } from "@/lib/chat";
+
+// ─── Email helper ─────────────────────────────────────────────────────────────
+
+function emailHref(email: string): string {
+  if (typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    return `mailto:${email}`;
+  }
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}`;
+}
 
 // ─── Fetchers ─────────────────────────────────────────────────────────────────
 
@@ -124,6 +135,16 @@ export default function ChatPage() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  // Cierra el sheet de perfil al cambiar de conversación
+  const prevSelectedId = useRef<number | null>(null);
+  useEffect(() => {
+    if (selectedId !== prevSelectedId.current) {
+      setProfileOpen(false);
+      prevSelectedId.current = selectedId;
+    }
+  }, [selectedId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -161,6 +182,17 @@ export default function ChatPage() {
   }, [conversations, search]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  // Perfil del contacto activo — se carga en cuanto hay un chat seleccionado
+  // (eager) para poder mostrar el botón de mail en el header sin esperar al sheet.
+  const profileContactId = selected?.contact.id ?? null;
+  const { data: profileData, isLoading: profileLoading } = useSWR(
+    authed && profileContactId
+      ? `/api/userprofile?userid=${profileContactId}`
+      : null,
+    jsonFetcher<UserProfile>,
+    { revalidateOnFocus: false, dedupingInterval: 120_000 }
+  );
 
   // Al abrir un chat con no leídos: marcarlo como leído (optimista) y avisar al server.
   useEffect(() => {
@@ -225,7 +257,7 @@ export default function ChatPage() {
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--bg)]">
       <Navbar />
 
-      <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col sm:px-4 sm:pb-4">
+      <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col sm:px-4 sm:-mt-6 sm:pt-6 sm:pb-6">
         <div className="px-4 pt-1 sm:px-0">
           <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Chat" }]} />
         </div>
@@ -283,13 +315,34 @@ export default function ChatPage() {
                   >
                     <ArrowLeft className="h-5 w-5" />
                   </button>
-                  <Avatar name={selected.contact.name} url={selected.contact.avatarUrl} size={40} online={selected.contact.online} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-semibold text-[var(--fg)]">{selected.contact.name}</p>
-                    <p className="truncate text-[12px] text-[var(--secondary)]">
-                      {selected.contact.online ? "Conectado" : selected.contact.role ?? "Desconectado"}
-                    </p>
-                  </div>
+                  {/* Área clickeable para ver el perfil */}
+                  <button
+                    type="button"
+                    onClick={() => setProfileOpen(true)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left transition-opacity active:opacity-70"
+                    aria-label={`Ver perfil de ${selected.contact.name}`}
+                  >
+                    <Avatar name={selected.contact.name} url={selected.contact.avatarUrl} size={40} online={selected.contact.online} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold text-[var(--fg)]">{selected.contact.name}</p>
+                      <p className="truncate text-[12px] text-[var(--secondary)]">
+                        {selected.contact.online ? "Conectado" : selected.contact.role ?? "Desconectado"}
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Botón mail — aparece en cuanto se carga el perfil */}
+                  {profileData?.email && (
+                    <a
+                      href={emailHref(profileData.email)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#007aff] transition-opacity hover:opacity-80 active:opacity-60"
+                      aria-label={`Enviar correo a ${selected.contact.name}`}
+                    >
+                      <Mail className="h-5 w-5" />
+                    </a>
+                  )}
                 </header>
 
                 {/* Mensajes */}
@@ -342,6 +395,17 @@ export default function ChatPage() {
           </section>
         </div>
       </main>
+
+      {/* Sheet de perfil — montado siempre para que la animación de salida funcione */}
+      {selected && (
+        <ContactDetailSheet
+          contact={selected.contact}
+          profile={profileData ?? null}
+          loading={profileLoading}
+          isOpen={profileOpen}
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
     </div>
   );
 }

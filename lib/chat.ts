@@ -125,6 +125,17 @@ export function mapConversation(c: MoodleConversation, meId: number): Conversati
   };
 }
 
+// ─── Perfil extendido (scraped de /user/profile.php) ──────────────────────────
+
+export interface UserProfile {
+  id: number;
+  name: string;
+  email: string | null;
+  city: string | null;
+  country: string | null;
+  lastAccess: string | null;
+}
+
 /** Iniciales (máx. 2) a partir del nombre. */
 export function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
