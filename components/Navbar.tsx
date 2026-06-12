@@ -13,9 +13,11 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    setIsAndroid(/Android/i.test(navigator.userAgent));
   }, []);
 
   const isDark = mounted && resolvedTheme === "dark";
@@ -41,9 +43,9 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   }
 
   return (
-    <header className="sticky top-4 z-50 w-full">
+    <header className="sticky top-4 z-50 w-full will-change-transform">
       <div className="max-w-[1600px] mx-auto px-4 mb-6">
-        <div className="w-full h-12 flex items-center justify-between rounded-2xl backdrop-blur-xl backdrop-saturate-150 bg-[var(--navbar-bg)] border border-[var(--navbar-border)] shadow-sm px-4">
+        <div className={`w-full h-12 flex items-center justify-between rounded-2xl ${isAndroid ? "backdrop-blur-md" : "backdrop-blur-xl"} backdrop-saturate-150 bg-[var(--navbar-bg)] border border-[var(--navbar-border)] shadow-sm px-4`}>
         <Link
           href={unreadCount > 0 ? "/chat" : "/dashboard"}
           aria-label={unreadCount > 0 ? `Chat · ${unreadCount} sin leer` : "Dashboard"}

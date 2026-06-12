@@ -15,9 +15,18 @@ export default function ThemeToggle() {
 
   const isDark = resolvedTheme === "dark";
 
+  function toggleTheme() {
+    // Activa la transición solo durante el cambio de tema, no en scroll.
+    // Sin esto, `transition: background-color` en body dispara recálculos
+    // en cada frame de scroll en Android Chrome.
+    document.documentElement.classList.add("theme-transitioning");
+    setTheme(isDark ? "light" : "dark");
+    setTimeout(() => document.documentElement.classList.remove("theme-transitioning"), 400);
+  }
+
   return (
     <button
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={toggleTheme}
       title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
       className="flex items-center justify-center w-8 h-8 rounded-lg
         text-[#6c6c70] dark:text-[#8e8e93]

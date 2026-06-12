@@ -43,7 +43,11 @@ body {
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
     "Helvetica Neue", sans-serif;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  /* La transición de color/background dispara recálculos en cada frame de scroll
+     en Android. Solo se activa al cambiar el tema (no en scroll), pero Chrome
+     Android no lo optimiza igual que Safari. Se aplica únicamente al hacer click
+     en el ThemeToggle mediante la clase .theme-transitioning en <html>. */
+  overscroll-behavior-y: contain;
 }
 
 .login-input {
@@ -68,6 +72,13 @@ body {
   box-shadow: 0 0 0px 1000px var(--surface) inset;
   caret-color: var(--fg);
   transition: background-color 9999s ease-out 0s;
+}
+
+/* Transición de tema: solo activa durante el cambio (ThemeToggle agrega/quita la clase).
+   Así evitamos que `transition: background-color` dispare en cada frame de scroll. */
+.theme-transitioning,
+.theme-transitioning * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease !important;
 }
 
 /* Label / section-summary rendered HTML */
