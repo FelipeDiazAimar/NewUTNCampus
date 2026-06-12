@@ -38,16 +38,23 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* `overscroll-behavior: none` en html+body impide que Chrome Android estire
+   el DOM al llegar al límite del scroll, evitando los recuadros grises y el
+   efecto "slime". iOS Safari ignora esta propiedad en el viewport, por lo que
+   no afecta el rubber-band nativo de iOS en absoluto. */
+html {
+  overscroll-behavior: none;
+  /* Rellena el área que Chrome expone al estirar con el color de fondo correcto
+     en lugar del gris por defecto del navegador. */
+  background: var(--bg);
+}
+
 body {
   background: var(--bg);
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
     "Helvetica Neue", sans-serif;
-  /* La transición de color/background dispara recálculos en cada frame de scroll
-     en Android. Solo se activa al cambiar el tema (no en scroll), pero Chrome
-     Android no lo optimiza igual que Safari. Se aplica únicamente al hacer click
-     en el ThemeToggle mediante la clase .theme-transitioning en <html>. */
-  overscroll-behavior-y: contain;
+  overscroll-behavior: none;
 }
 
 .login-input {
