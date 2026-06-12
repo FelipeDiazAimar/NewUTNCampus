@@ -13,13 +13,25 @@ export type SendPushPayload = {
   url?: string;
   tag?: string;
   icon?: string;
-  badge?: string;
+};
+
+export type SendPushResult = {
+  total: number;
+  sent: number;
+  failed: number;
+  errors?: { endpoint: string; status: number; message: string }[];
 };
 
 function configureWebPush() {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? process.env.VAPID_PUBLIC_KEY ?? "";
   const privateKey = process.env.VAPID_PRIVATE_KEY ?? "";
-  const subject = process.env.VAPID_SUBJECT ?? "mailto:admin@localhost";
+
+  // Apple APNs rechaza subjects con "localhost". Usar la URL de la app o un mailto real.
+  const subject =
+    process.env.VAPID_SUBJECT ??
+    (process.env.NEXT_PUBLIC_APP_URL
+      ? process.env.NEXT_PUBLIC_APP_URL
+      : "mailto:admin@campusutn.dpdns.org");
 
   if (!publicKey || !privateKey) {
     throw new Error("Faltan NEXT_PUBLIC_VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY");
@@ -36,14 +48,14 @@ async function deactivateSubscription(endpoint: string) {
 }
 
 /** Envía un payload a una lista concreta de suscripciones y limpia las caducadas. */
-async function sendToRows(rows: PushRow[], payload: SendPushPayload) {
+async function sendToRows(rows: PushRow[], payload: SendPushPayload): Promise<SendPushResult> {
+  // badge no está soportado en iOS — quitarlo del payload evita rechazos de APNs.
   const message = JSON.stringify({
     title: payload.title ?? "Campus UTN",
     body: payload.body ?? "Tenés una novedad.",
     url: payload.url ?? "/",
     tag: payload.tag ?? "campus-notif",
-    icon: payload.icon ?? "/LOGOUTNB.png",
-    badge: payload.badge ?? "/LOGOUTNB.png",
+    icon: payload.icon ?? "/logo.png",
   });
 
   const results = await Promise.allSettled(
@@ -55,12 +67,20 @@ async function sendToRows(rows: PushRow[], payload: SendPushPayload) {
     )
   );
 
-  // Desactiva suscripciones que ya no existen (410 Gone / 404 Not Found).
+  const errors: SendPushResult["errors"] = [];
+
   await Promise.all(
     results.map((result, index) => {
       if (result.status === "rejected") {
-        const statusCode = (result.reason as { statusCode?: number })?.statusCode;
-        if (statusCode === 404 || statusCode === 410) {
+        const err = result.reason as { statusCode?: number; body?: string; message?: string };
+        const status = err.statusCode ?? 0;
+        const msg = err.body ?? err.message ?? String(result.reason);
+        const short = rows[index].endpoint.slice(-20);
+
+        console.error(`[webPush] failed (${status}) ...${short}: ${msg}`);
+        errors.push({ endpoint: short, status, message: msg });
+
+        if (status === 404 || status === 410) {
           return deactivateSubscription(rows[index].endpoint);
         }
       }
@@ -72,11 +92,12 @@ async function sendToRows(rows: PushRow[], payload: SendPushPayload) {
     total: rows.length,
     sent: results.filter((r) => r.status === "fulfilled").length,
     failed: results.filter((r) => r.status === "rejected").length,
+    ...(errors.length > 0 && { errors }),
   };
 }
 
 /** Envía a TODAS las suscripciones activas (broadcast — p.ej. alertas de asistencia). */
-export async function sendPushNotification(payload: SendPushPayload) {
+export async function sendPushNotification(payload: SendPushPayload): Promise<SendPushResult> {
   configureWebPush();
 
   const res = await supabaseFetch(
@@ -89,7 +110,7 @@ export async function sendPushNotification(payload: SendPushPayload) {
 }
 
 /** Envía solo a las suscripciones de un usuario específico (por user_key). */
-export async function sendPushToUser(userKey: string, payload: SendPushPayload) {
+export async function sendPushToUser(userKey: string, payload: SendPushPayload): Promise<SendPushResult> {
   configureWebPush();
 
   const res = await supabaseFetch(

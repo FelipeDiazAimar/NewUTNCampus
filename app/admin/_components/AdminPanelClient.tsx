@@ -123,11 +123,19 @@ function ActionRow({
 
 // ─── Panel principal ──────────────────────────────────────────────────────────
 
+type LastResult = {
+  total: number;
+  sent: number;
+  failed: number;
+  errors?: { endpoint: string; status: number; message: string }[];
+} | null;
+
 export default function AdminPanelClient() {
   const router = useRouter();
   const [states, setStates] = useState<Record<EventType, ButtonState>>(
     Object.fromEntries(EVENTS.map((e) => [e.type, "idle"])) as Record<EventType, ButtonState>
   );
+  const [lastResult, setLastResult] = useState<LastResult>(null);
   const [logoutLoading, setLogoutLoading] = useState(false);
 
   function setState(type: EventType, s: ButtonState) {
@@ -137,18 +145,20 @@ export default function AdminPanelClient() {
   async function fire(type: EventType) {
     if (states[type] === "loading") return;
     setState(type, "loading");
+    setLastResult(null);
     try {
       const res = await fetch("/api/notifications/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type }),
       });
-      setState(type, res.ok ? "success" : "error");
+      const data = await res.json().catch(() => ({}));
+      setLastResult(data);
+      setState(type, res.ok && (data.failed ?? 0) === 0 ? "success" : "error");
     } catch {
       setState(type, "error");
     } finally {
-      // Vuelve a idle después de 2,5 s para permitir reintentos.
-      setTimeout(() => setState(type, "idle"), 2500);
+      setTimeout(() => setState(type, "idle"), 4000);
     }
   }
 
@@ -199,6 +209,43 @@ export default function AdminPanelClient() {
             ))}
           </div>
         </section>
+
+        {/* Resultado del último envío */}
+        {lastResult && (
+          <section className="mb-7">
+            <p className="px-4 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+              Resultado
+            </p>
+            <div className="overflow-hidden rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] shadow-sm divide-y divide-[var(--separator)]">
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-[14px] text-[var(--fg)]">Total suscripciones</span>
+                <span className="text-[14px] font-semibold text-[var(--fg)]">{lastResult.total}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-[14px] text-[var(--fg)]">Enviadas OK</span>
+                <span className="text-[14px] font-semibold text-[#34c759]">{lastResult.sent}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-[14px] text-[var(--fg)]">Fallidas</span>
+                <span className="text-[14px] font-semibold text-[#ff3b30]">{lastResult.failed}</span>
+              </div>
+            </div>
+
+            {lastResult.errors && lastResult.errors.length > 0 && (
+              <div className="mt-3 overflow-hidden rounded-[20px] border border-[rgba(255,59,48,0.2)] bg-[rgba(255,59,48,0.04)] shadow-sm">
+                <p className="px-4 pt-3 pb-1 text-[12px] font-semibold uppercase tracking-wider text-[#ff3b30]">
+                  Errores de APNs / push service
+                </p>
+                {lastResult.errors.map((e, i) => (
+                  <div key={i} className="px-4 py-2 border-t border-[rgba(255,59,48,0.1)]">
+                    <p className="text-[12px] font-mono text-[#ff3b30]">HTTP {e.status} — …{e.endpoint}</p>
+                    <p className="text-[11px] text-[var(--secondary)] mt-0.5 break-all">{e.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Instrucciones */}
         <section className="mb-7">
