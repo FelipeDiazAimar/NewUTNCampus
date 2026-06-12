@@ -45,8 +45,8 @@ export default function Navbar({ fullname }: { fullname?: string }) {
       <div className="max-w-[1600px] mx-auto px-4 mb-6">
         <div className="w-full h-12 flex items-center justify-between rounded-2xl backdrop-blur-xl backdrop-saturate-150 bg-[var(--navbar-bg)] border border-[var(--navbar-border)] shadow-sm px-4">
         <Link
-          href="/chat"
-          aria-label={unreadCount > 0 ? `Chat · ${unreadCount} sin leer` : "Chat"}
+          href={unreadCount > 0 ? "/chat" : "/dashboard"}
+          aria-label={unreadCount > 0 ? `Chat · ${unreadCount} sin leer` : "Dashboard"}
           className="relative flex items-center gap-2 text-[15px] font-semibold text-[var(--fg)] hover:opacity-70 transition-opacity"
         >
           {mounted && (
