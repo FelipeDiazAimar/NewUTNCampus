@@ -72,7 +72,7 @@ export default function SysacadPage() {
   return (
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar />
-      <main className="max-w-2xl mx-auto px-4 pt-20 pb-12">
+      <main className="max-w-2xl mx-auto px-4 pt-12 pb-12">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Sysacad" }]} />
 
         {!user ? (

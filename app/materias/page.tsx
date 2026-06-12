@@ -139,7 +139,7 @@ export default function MateriasPage() {
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
 
-      <main className="max-w-2xl mx-auto px-4 pt-20 pb-6">
+      <main className="max-w-2xl mx-auto px-4 pt-6 pb-6">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Materias" }]} />
 
         {/* Greeting */}

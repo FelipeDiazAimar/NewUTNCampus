@@ -150,7 +150,7 @@ export default function AsistenciaPage() {
     <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(0,122,255,0.16),transparent_32rem),var(--bg)] dark:bg-[radial-gradient(circle_at_top_left,rgba(10,132,255,0.18),transparent_30rem),var(--bg)]">
       <Navbar />
 
-      <main className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-3xl flex-col px-4 pt-20 pb-12">
+      <main className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-3xl flex-col px-4 pt-12 pb-12">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Asistencia" }]} />
 
         <div className="mb-5 flex items-end justify-between gap-3">

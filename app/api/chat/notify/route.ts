@@ -47,9 +47,26 @@ type SubRow = {
 function configureWebPush() {
   const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? process.env.VAPID_PUBLIC_KEY ?? "";
   const priv = process.env.VAPID_PRIVATE_KEY ?? "";
-  const sub = process.env.VAPID_SUBJECT ?? "mailto:admin@localhost";
+  // Apple APNs rechaza subjects con "localhost". Usar la URL real de la app o un mailto válido.
+  const sub =
+    process.env.VAPID_SUBJECT ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    "mailto:admin@campusutn.dpdns.org";
   if (!pub || !priv) throw new Error("Faltan claves VAPID");
   webpush.setVapidDetails(sub, pub, priv);
+}
+
+/** Devuelve el set de user_key (email) con los avisos de chat desactivados. */
+async function fetchChatDisabledUsers(): Promise<Set<string>> {
+  // Avisos de chat off si el global está pausado O si notificar_chat es false.
+  const res = await supabaseFetch(
+    "perfil_notificaciones" +
+      "?or=(notificaciones_globales_activas.eq.false,notificar_chat.eq.false)" +
+      "&select=email"
+  );
+  if (!res.ok) return new Set();
+  const rows = (await res.json()) as { email: string }[];
+  return new Set(rows.map((r) => r.email));
 }
 
 function stripHtml(html: string): string {
@@ -129,9 +146,13 @@ export async function GET(req: NextRequest) {
     const subs = (await res.json()) as SubRow[];
     if (subs.length === 0) return NextResponse.json({ ok: true, checked: 0 });
 
+    // ── Usuarios que desactivaron los avisos de chat (o el global) ──────────
+    const disabled = await fetchChatDisabledUsers();
+
     // ── Agrupar por user_key (un usuario puede tener varios dispositivos) ────
     const byUser = new Map<string, SubRow[]>();
     for (const s of subs) {
+      if (disabled.has(s.user_key)) continue; // respeta el toggle de Chats
       if (!byUser.has(s.user_key)) byUser.set(s.user_key, []);
       byUser.get(s.user_key)!.push(s);
     }

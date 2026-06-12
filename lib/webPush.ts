@@ -96,16 +96,25 @@ async function sendToRows(rows: PushRow[], payload: SendPushPayload): Promise<Se
   };
 }
 
-/** Envía a TODAS las suscripciones activas (broadcast — p.ej. alertas de asistencia). */
-export async function sendPushNotification(payload: SendPushPayload): Promise<SendPushResult> {
+/**
+ * Envía a TODAS las suscripciones activas (broadcast — p.ej. alertas de asistencia).
+ * `excludeUserKeys` permite saltear usuarios que desactivaron este tipo de aviso.
+ */
+export async function sendPushNotification(
+  payload: SendPushPayload,
+  excludeUserKeys?: Set<string>
+): Promise<SendPushResult> {
   configureWebPush();
 
   const res = await supabaseFetch(
-    "web_push_subscriptions?active=eq.true&select=endpoint,p256dh,auth"
+    "web_push_subscriptions?active=eq.true&select=endpoint,p256dh,auth,user_key"
   );
   if (!res.ok) throw new Error(await res.text());
 
-  const rows = (await res.json()) as PushRow[];
+  let rows = (await res.json()) as (PushRow & { user_key: string })[];
+  if (excludeUserKeys && excludeUserKeys.size > 0) {
+    rows = rows.filter((r) => !excludeUserKeys.has(r.user_key));
+  }
   return sendToRows(rows, payload);
 }
 

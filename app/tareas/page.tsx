@@ -172,7 +172,7 @@ export default function TareasPage() {
       {/* WorkspaceLayout maneja el split: lista a la izquierda, tarea abierta a
           la derecha (o overlay a pantalla completa en móvil), igual que /materias. */}
       <WorkspaceLayout>
-        <div className="pt-20 pb-12">
+        <div className="pt-12 pb-12">
           <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Tareas" }]} />
 
           <div className="mb-4 flex items-center gap-3">

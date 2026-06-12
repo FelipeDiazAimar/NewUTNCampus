@@ -7,6 +7,8 @@ type ProfileRow = {
   telegram_chat_id: string | null;
   telegram_link_code: string | null;
   notificaciones_globales_activas: boolean;
+  notificar_chat: boolean;
+  notificar_asistencia: boolean;
 };
 
 type MateriaRow = {
@@ -91,6 +93,8 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             email,
             notificaciones_globales_activas: true,
+            notificar_chat: true,
+            notificar_asistencia: true,
           }),
         });
         if (!insertRes.ok) {

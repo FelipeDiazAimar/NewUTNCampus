@@ -2,7 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, BellOff, ChevronDown, Share, Smartphone, Wrench, ChevronRight } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  ChevronDown,
+  Share,
+  Smartphone,
+  Wrench,
+  ChevronRight,
+  Search,
+  X,
+  BookOpen,
+  MessageCircle,
+  CalendarCheck,
+} from "lucide-react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -13,7 +26,14 @@ import { useCourses } from "@/lib/hooks";
 
 type Profile = {
   notificaciones_globales_activas: boolean;
+  notificar_chat: boolean;
+  notificar_asistencia: boolean;
 };
+
+// Normaliza para búsquedas sin distinción de mayúsculas ni acentos.
+function normalize(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}
 
 type MateriaConfig = {
   materia_nombre: string;
@@ -264,6 +284,53 @@ function InstallCard() {
   );
 }
 
+// ─── Sección colapsable de nivel superior ────────────────────────────────────
+
+function CollapsibleSection({
+  Icon,
+  iconColor,
+  iconBg,
+  title,
+  subtitle,
+  open,
+  onToggle,
+  children,
+}: {
+  Icon: React.ElementType;
+  iconColor: string;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] shadow-sm">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-black/5 dark:active:bg-white/5"
+      >
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: iconBg, color: iconColor }}
+        >
+          <Icon className="h-[18px] w-[18px]" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[16px] font-medium text-[var(--fg)]">{title}</span>
+          <span className="block truncate text-[12px] text-[var(--secondary)]">{subtitle}</span>
+        </span>
+        <ChevronDown
+          className={`h-[18px] w-[18px] shrink-0 text-[var(--secondary)] transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && <div className="border-t border-[var(--separator)]">{children}</div>}
+    </div>
+  );
+}
+
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 const ADMIN_TOKEN = "campus-admin-2024-internal";
@@ -277,6 +344,12 @@ export default function NotificacionesPage() {
   const [error, setError] = useState<string | null>(null);
   const [openMaterias, setOpenMaterias] = useState<Record<string, boolean>>({});
   const [isAdmin, setIsAdmin] = useState(false);
+  const [query, setQuery] = useState("");
+  const [openSections, setOpenSections] = useState({
+    materias: false,
+    chats: false,
+    asistencia: false,
+  });
 
   useEffect(() => {
     setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
@@ -357,12 +430,42 @@ export default function NotificacionesPage() {
   }
 
   const globalActive = profile?.notificaciones_globales_activas ?? true;
+  const chatActive = profile?.notificar_chat ?? true;
+  const asistenciaActive = profile?.notificar_asistencia ?? true;
+
+  // ─── Búsqueda general sobre los 3 desplegables ──────────────────────────────
+  const q = normalize(query.trim());
+  const searching = q.length > 0;
+
+  // ¿Coincide la consulta con alguna de estas palabras clave?
+  const matchKeyword = (keywords: string[]) => keywords.some((k) => normalize(k).includes(q) || q.includes(normalize(k)));
+
+  // Materias: por nombre, o por palabras clave de sus ajustes internos.
+  const materiasKeywordHit = matchKeyword([
+    "materias", "materia", "tareas", "nuevas tareas", "cierre", "vencimiento", "anticipacion",
+  ]);
+  const materiasByName = materias.filter((m) => normalize(m.materia_nombre).includes(q));
+  const visibleMaterias = !searching || materiasKeywordHit ? materias : materiasByName;
+  const showMaterias = !searching || materiasKeywordHit || materiasByName.length > 0;
+
+  const chatKeywordHit = matchKeyword(["chat", "chats", "mensaje", "mensajes", "nuevos mensajes", "conversacion"]);
+  const showChats = !searching || chatKeywordHit;
+
+  const asistenciaKeywordHit = matchKeyword(["asistencia", "presente", "clase", "clases"]);
+  const showAsistencia = !searching || asistenciaKeywordHit;
+
+  const noResults = searching && !showMaterias && !showChats && !showAsistencia;
+
+  // Al buscar, los desplegables coincidentes se abren automáticamente.
+  const sectionOpen = (key: keyof typeof openSections) => (searching ? true : openSections[key]);
+  const toggleSection = (key: keyof typeof openSections) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar />
 
-      <main className="mx-auto max-w-xl px-4 pt-20 pb-12">
+      <main className="mx-auto max-w-xl px-4 pt-12 pb-12">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Notificaciones" }]} />
 
         <div className="mb-6">
@@ -395,11 +498,11 @@ export default function NotificacionesPage() {
           ) : (
             <>
               {/* Master switch */}
-              <div className="mb-5 overflow-hidden rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] shadow-sm">
+              <div className="mb-4 overflow-hidden rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] shadow-sm">
                 <div className="flex items-center justify-between gap-3 px-4 py-3.5">
                   <div className="min-w-0">
                     <p className="text-[16px] font-medium text-[var(--fg)]">Avisos activos</p>
-                    <p className="text-[12px] text-[var(--secondary)]">Pausá o reactivá todas las materias.</p>
+                    <p className="text-[12px] text-[var(--secondary)]">Pausá o reactivá todas las notificaciones.</p>
                   </div>
                   <Toggle
                     checked={globalActive}
@@ -415,93 +518,185 @@ export default function NotificacionesPage() {
                 </div>
               </div>
 
-              {/* Materias */}
-              {materias.length > 0 ? (
-                <div className="space-y-4">
-                  {materias.map((materia) => {
-                    const materiaActive = globalActive && materia.materia_activa;
-                    const isOpen = openMaterias[materia.materia_nombre] ?? false;
-                    const toggleOpen = () =>
-                      setOpenMaterias((prev) => ({ ...prev, [materia.materia_nombre]: !isOpen }));
+              {/* Buscador general */}
+              <div className="relative mb-4">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[var(--secondary)]" />
+                <input
+                  type="text"
+                  inputMode="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar materia o ajuste…"
+                  className="w-full rounded-[12px] border border-[var(--separator)] bg-[var(--surface)] py-2.5 pl-10 pr-9 text-[16px] text-[var(--fg)] shadow-sm outline-none transition-colors focus:border-[var(--accent)]"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Limpiar búsqueda"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-[var(--secondary)] active:bg-black/5 dark:active:bg-white/10"
+                  >
+                    <X className="h-[16px] w-[16px]" />
+                  </button>
+                )}
+              </div>
 
-                    return (
-                      <div
-                        key={materia.materia_nombre}
-                        className="overflow-hidden rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] shadow-sm"
-                      >
-                        <div className="flex items-center gap-3 px-4 py-3.5">
-                          <button type="button" onClick={toggleOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left active:opacity-70">
-                            <ChevronDown
-                              className={`h-4 w-4 shrink-0 text-[var(--secondary)] transition-transform ${isOpen ? "rotate-180" : ""}`}
-                            />
-                            <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-[var(--fg)]">
-                              {materia.materia_nombre}
-                            </span>
-                          </button>
-                          <Toggle
-                            checked={materia.materia_activa}
-                            disabled={!globalActive}
-                            onChange={(next) => {
-                              const patch: Partial<MateriaConfig> = { materia_activa: next };
-                              if (next) {
-                                patch.notificar_nuevas = true;
-                                patch.notificar_cierre = true;
-                                patch.notificar_vencimiento = true;
-                                patch.dias_anticipacion_vencimiento = 1;
-                              }
-                              updateMateria(materia.materia_nombre, patch);
-                            }}
-                          />
-                        </div>
+              <div className="space-y-4">
+                {/* ── Desplegable: Materias ── */}
+                {showMaterias && (
+                  <CollapsibleSection
+                    Icon={BookOpen}
+                    iconColor="#007aff"
+                    iconBg="rgba(0,122,255,0.12)"
+                    title="Materias"
+                    subtitle={`${materias.length} ${materias.length === 1 ? "materia" : "materias"}`}
+                    open={sectionOpen("materias")}
+                    onToggle={() => toggleSection("materias")}
+                  >
+                    {visibleMaterias.length > 0 ? (
+                      <div className="divide-y divide-[var(--separator)]">
+                        {visibleMaterias.map((materia) => {
+                          const materiaActive = globalActive && materia.materia_activa;
+                          const isOpen = openMaterias[materia.materia_nombre] ?? false;
+                          const toggleOpen = () =>
+                            setOpenMaterias((prev) => ({ ...prev, [materia.materia_nombre]: !isOpen }));
 
-                        {isOpen && (
-                          <div className={`divide-y divide-[var(--separator)] border-t border-[var(--separator)] ${materiaActive ? "" : "opacity-50"}`}>
-                            <Row label="Nuevas tareas">
-                              <Toggle
-                                checked={materia.notificar_nuevas}
-                                disabled={!materiaActive}
-                                onChange={(next) => updateMateria(materia.materia_nombre, { notificar_nuevas: next })}
-                              />
-                            </Row>
-                            <Row label="Cierre de tareas">
-                              <Toggle
-                                checked={materia.notificar_cierre}
-                                disabled={!materiaActive}
-                                onChange={(next) => updateMateria(materia.materia_nombre, { notificar_cierre: next })}
-                              />
-                            </Row>
-                            <Row label="Aviso de vencimiento">
-                              <Toggle
-                                checked={materia.notificar_vencimiento}
-                                disabled={!materiaActive}
-                                onChange={(next) => updateMateria(materia.materia_nombre, { notificar_vencimiento: next })}
-                              />
-                            </Row>
-                            <Row label="Días de anticipación">
-                              <input
-                                type="number"
-                                min={0}
-                                className="w-16 rounded-lg border border-[var(--separator)] bg-transparent px-2 py-1 text-right text-[15px] text-[var(--fg)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
-                                value={materia.dias_anticipacion_vencimiento}
-                                disabled={!materiaActive}
-                                onChange={(e) =>
-                                  updateMateria(materia.materia_nombre, {
-                                    dias_anticipacion_vencimiento: Number(e.target.value),
-                                  })
-                                }
-                              />
-                            </Row>
-                          </div>
-                        )}
+                          return (
+                            <div key={materia.materia_nombre}>
+                              <div className="flex items-center gap-3 px-4 py-3">
+                                <button
+                                  type="button"
+                                  onClick={toggleOpen}
+                                  className="flex min-w-0 flex-1 items-center gap-2 text-left active:opacity-70"
+                                >
+                                  <ChevronDown
+                                    className={`h-4 w-4 shrink-0 text-[var(--secondary)] transition-transform ${isOpen ? "rotate-180" : ""}`}
+                                  />
+                                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--fg)]">
+                                    {materia.materia_nombre}
+                                  </span>
+                                </button>
+                                <Toggle
+                                  checked={materia.materia_activa}
+                                  disabled={!globalActive}
+                                  onChange={(next) => {
+                                    const patch: Partial<MateriaConfig> = { materia_activa: next };
+                                    if (next) {
+                                      patch.notificar_nuevas = true;
+                                      patch.notificar_cierre = true;
+                                      patch.notificar_vencimiento = true;
+                                      patch.dias_anticipacion_vencimiento = 1;
+                                    }
+                                    updateMateria(materia.materia_nombre, patch);
+                                  }}
+                                />
+                              </div>
+
+                              {isOpen && (
+                                <div className={`divide-y divide-[var(--separator)] border-t border-[var(--separator)] bg-[var(--bg)] ${materiaActive ? "" : "opacity-50"}`}>
+                                  <Row label="Nuevas tareas">
+                                    <Toggle
+                                      checked={materia.notificar_nuevas}
+                                      disabled={!materiaActive}
+                                      onChange={(next) => updateMateria(materia.materia_nombre, { notificar_nuevas: next })}
+                                    />
+                                  </Row>
+                                  <Row label="Cierre de tareas">
+                                    <Toggle
+                                      checked={materia.notificar_cierre}
+                                      disabled={!materiaActive}
+                                      onChange={(next) => updateMateria(materia.materia_nombre, { notificar_cierre: next })}
+                                    />
+                                  </Row>
+                                  <Row label="Aviso de vencimiento">
+                                    <Toggle
+                                      checked={materia.notificar_vencimiento}
+                                      disabled={!materiaActive}
+                                      onChange={(next) => updateMateria(materia.materia_nombre, { notificar_vencimiento: next })}
+                                    />
+                                  </Row>
+                                  <Row label="Días de anticipación">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="w-16 rounded-lg border border-[var(--separator)] bg-transparent px-2 py-1 text-right text-[15px] text-[var(--fg)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
+                                      value={materia.dias_anticipacion_vencimiento}
+                                      disabled={!materiaActive}
+                                      onChange={(e) =>
+                                        updateMateria(materia.materia_nombre, {
+                                          dias_anticipacion_vencimiento: Number(e.target.value),
+                                        })
+                                      }
+                                    />
+                                  </Row>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] px-4 py-8 text-center shadow-sm">
-                  <p className="text-[14px] text-[var(--secondary)]">No hay materias para configurar todavía.</p>
-                </div>
-              )}
+                    ) : (
+                      <p className="px-4 py-6 text-center text-[14px] text-[var(--secondary)]">
+                        {materias.length === 0 ? "No hay materias para configurar todavía." : "Ninguna materia coincide con la búsqueda."}
+                      </p>
+                    )}
+                  </CollapsibleSection>
+                )}
+
+                {/* ── Desplegable: Chats ── */}
+                {showChats && (
+                  <CollapsibleSection
+                    Icon={MessageCircle}
+                    iconColor="#34c759"
+                    iconBg="rgba(52,199,89,0.12)"
+                    title="Chats"
+                    subtitle={chatActive && globalActive ? "Avisos activados" : "Avisos desactivados"}
+                    open={sectionOpen("chats")}
+                    onToggle={() => toggleSection("chats")}
+                  >
+                    <div className="divide-y divide-[var(--separator)]">
+                      <Row label="Avisar nuevos mensajes">
+                        <Toggle
+                          checked={chatActive}
+                          disabled={!globalActive}
+                          onChange={(next) => updateProfile({ notificar_chat: next })}
+                        />
+                      </Row>
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* ── Desplegable: Asistencia ── */}
+                {showAsistencia && (
+                  <CollapsibleSection
+                    Icon={CalendarCheck}
+                    iconColor="#af52de"
+                    iconBg="rgba(175,82,222,0.12)"
+                    title="Asistencia"
+                    subtitle={asistenciaActive && globalActive ? "Avisos activados" : "Avisos desactivados"}
+                    open={sectionOpen("asistencia")}
+                    onToggle={() => toggleSection("asistencia")}
+                  >
+                    <div className="divide-y divide-[var(--separator)]">
+                      <Row label="Avisar asistencia disponible">
+                        <Toggle
+                          checked={asistenciaActive}
+                          disabled={!globalActive}
+                          onChange={(next) => updateProfile({ notificar_asistencia: next })}
+                        />
+                      </Row>
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {noResults && (
+                  <div className="rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] px-4 py-8 text-center shadow-sm">
+                    <p className="text-[14px] text-[var(--secondary)]">
+                      Sin resultados para «{query}».
+                    </p>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </section>

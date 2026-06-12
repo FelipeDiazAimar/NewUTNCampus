@@ -35,12 +35,23 @@ export async function POST(req: NextRequest) {
 
   await updateAgentStatus("detected", payload);
 
-  const result = await sendPushNotification({
-    title: "¡La asistencia está abierta!",
-    body: materia ? `Ya podés marcar asistencia en ${materia}.` : "Ya podés marcar asistencia.",
-    url: "/asistencia",
-    tag: "asistencia-abierta",
-  });
+  // Usuarios que desactivaron los avisos de asistencia (o el global) — se excluyen.
+  const disabledRes = await supabaseFetch(
+    "perfil_notificaciones?or=(notificaciones_globales_activas.eq.false,notificar_asistencia.eq.false)&select=email"
+  );
+  const excludeUserKeys = disabledRes.ok
+    ? new Set(((await disabledRes.json()) as { email: string }[]).map((r) => r.email))
+    : undefined;
+
+  const result = await sendPushNotification(
+    {
+      title: "¡La asistencia está abierta!",
+      body: materia ? `Ya podés marcar asistencia en ${materia}.` : "Ya podés marcar asistencia.",
+      url: "/asistencia",
+      tag: "asistencia-abierta",
+    },
+    excludeUserKeys
+  );
 
   return NextResponse.json({ ok: true, ...result });
 }
