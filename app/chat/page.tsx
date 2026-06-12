@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate as globalMutate } from "swr";
-import { ArrowLeft, ArrowUp, Mail, MessageCircle, Search } from "lucide-react";
+import { ArrowLeft, ArrowUp, Mail, MessageCircle, Search, X } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
@@ -26,10 +26,15 @@ function emailHref(email: string): string {
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}`;
 }
 
-// ─── Fetchers ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 type ConvResp = { conversations: Conversation[]; meId: number };
 type MsgResp = { messages: Message[]; meId: number };
+interface SearchUser { id: number; name: string; avatarUrl: string | null }
+interface UserSearchResult { contacts: SearchUser[]; noncontacts: SearchUser[] }
+interface PendingContact { id: number; name: string; avatarUrl: string | null }
+
+// ─── Fetchers ─────────────────────────────────────────────────────────────────
 
 async function jsonFetcher<T>(url: string): Promise<T> {
   const r = await fetch(url, { cache: "no-store" });
@@ -41,12 +46,10 @@ async function jsonFetcher<T>(url: string): Promise<T> {
 
 // ─── Avatar (foto o iniciales) ────────────────────────────────────────────────
 
-/** Avatar default de Moodle (silueta gris): preferimos iniciales antes que eso. */
 function isDefaultAvatar(url?: string | null): boolean {
   return !url || /\/theme\/image\.php\/[^?]*\/u\/f\d/.test(url);
 }
 
-/** Las fotos reales viven en frsfco (con sesión) → las servimos por el proxy. */
 function proxiedAvatar(url: string): string {
   return /frsfco\.cvg\.utn\.edu\.ar/.test(url)
     ? `/api/files?url=${encodeURIComponent(url)}&inline=1`
@@ -106,6 +109,27 @@ function ConversationRow({ conv, active, onClick }: { conv: Conversation; active
   );
 }
 
+// ─── Fila de resultado de búsqueda (usuario del campus) ──────────────────────
+
+function UserRow({ user, label, onClick }: { user: SearchUser; label?: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-[var(--surface2)] lg:hover:bg-[var(--surface2)]"
+    >
+      <Avatar name={user.name} url={user.avatarUrl} size={44} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold text-[var(--fg)]">{user.name}</p>
+        {label && <p className="text-[12px] text-[var(--secondary)]">{label}</p>}
+      </div>
+      <span className="shrink-0 rounded-full bg-[#007aff1a] px-2.5 py-1 text-[11px] font-semibold text-[#007aff]">
+        Mensaje
+      </span>
+    </button>
+  );
+}
+
 // ─── Burbuja de mensaje (panel derecho) ───────────────────────────────────────
 
 function MessageBubble({ msg, mine }: { msg: Message; mine: boolean }) {
@@ -134,8 +158,16 @@ export default function ChatPage() {
   const [authed, setAuthed] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [pendingContact, setPendingContact] = useState<PendingContact | null>(null);
   const [draft, setDraft] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+
+  // Búsqueda de usuarios del campus (debounced)
+  const [userSearchResult, setUserSearchResult] = useState<UserSearchResult | null>(null);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Cierra el sheet de perfil al cambiar de conversación
   const prevSelectedId = useRef<number | null>(null);
@@ -146,12 +178,27 @@ export default function ChatPage() {
     }
   }, [selectedId]);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) { router.replace("/"); return; }
     setAuthed(true);
   }, [router]);
+
+  // Buscar usuarios del campus cuando el texto del buscador cambia
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    const q = search.trim();
+    if (q.length < 2) { setUserSearchResult(null); return; }
+    searchTimerRef.current = setTimeout(async () => {
+      setUserSearchLoading(true);
+      try {
+        const r = await fetch(`/api/chat/search-users?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+        if (r.ok) setUserSearchResult(await r.json());
+      } catch { /* ignore */ } finally {
+        setUserSearchLoading(false);
+      }
+    }, 300);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [search]);
 
   const { data: convData, error: convError, isLoading: convLoading, mutate: mutateConvs } = useSWR(
     authed ? "/api/chat/conversations" : null,
@@ -173,6 +220,7 @@ export default function ChatPage() {
   const meId = convData?.meId ?? msgData?.meId ?? 0;
   const messages = useMemo(() => msgData?.messages ?? [], [msgData]);
 
+  // Conversaciones filtradas por texto de búsqueda
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return conversations;
@@ -183,9 +231,27 @@ export default function ChatPage() {
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
-  // Perfil del contacto activo — se carga en cuanto hay un chat seleccionado
-  // (eager) para poder mostrar el botón de mail en el header sin esperar al sheet.
-  const profileContactId = selected?.contact.id ?? null;
+  // Resultados de búsqueda de usuarios del campus — excluir los que ya son contactos con conv activa
+  const existingContactIds = useMemo(() => new Set(conversations.map((c) => c.contact.id)), [conversations]);
+  const campusContacts = useMemo(
+    () => (userSearchResult?.contacts ?? []).filter((u) => !existingContactIds.has(u.id)),
+    [userSearchResult, existingContactIds]
+  );
+  const campusNonContacts = useMemo(
+    () => (userSearchResult?.noncontacts ?? []).filter((u) => !existingContactIds.has(u.id)),
+    [userSearchResult, existingContactIds]
+  );
+  const hasCampusResults = campusContacts.length > 0 || campusNonContacts.length > 0;
+
+  // El "panel activo": conversación existente o contacto pendiente (nuevo chat)
+  const activeName = selected?.contact.name ?? pendingContact?.name ?? null;
+  const activeAvatarUrl = selected?.contact.avatarUrl ?? pendingContact?.avatarUrl ?? null;
+  const activeOnline = selected?.contact.online ?? false;
+  const activeRole = selected?.contact.role ?? null;
+  const isPanelOpen = selected != null || pendingContact != null;
+
+  // Perfil del contacto activo (eager load)
+  const profileContactId = selected?.contact.id ?? pendingContact?.id ?? null;
   const { data: profileData, isLoading: profileLoading } = useSWR(
     authed && profileContactId
       ? `/api/userprofile?userid=${profileContactId}`
@@ -194,7 +260,7 @@ export default function ChatPage() {
     { revalidateOnFocus: false, dedupingInterval: 120_000 }
   );
 
-  // Al abrir un chat con no leídos: marcarlo como leído (optimista) y avisar al server.
+  // Marcar como leído al abrir conversación existente
   useEffect(() => {
     if (selectedId == null) return;
     const conv = conversations.find((c) => c.id === selectedId);
@@ -211,22 +277,58 @@ export default function ChatPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ convid: selectedId }),
     })
-      .then(() => globalMutate("/api/chat/unread")) // refresca el badge del Navbar
+      .then(() => globalMutate("/api/chat/unread"))
       .catch(() => {});
   }, [selectedId, conversations, mutateConvs]);
 
-  // Scroll automático al último mensaje cuando se abre o cambia el hilo.
+  // Scroll automático al último mensaje
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [selectedId, messages.length]);
 
+  function openPendingContact(user: SearchUser) {
+    // Si ya tenemos conversación con este usuario, abrirla directamente
+    const existing = conversations.find((c) => c.contact.id === user.id);
+    if (existing) {
+      setSelectedId(existing.id);
+      setPendingContact(null);
+    } else {
+      setSelectedId(null);
+      setPendingContact({ id: user.id, name: user.name, avatarUrl: user.avatarUrl });
+    }
+    setSearch("");
+    setUserSearchResult(null);
+  }
+
   async function send() {
     const text = draft.trim();
-    if (!text || !selected || meId === 0) return;
+    if (!text) return;
     setDraft("");
 
-    // Optimista: la burbuja aparece al instante; luego revalidamos contra el server.
+    if (pendingContact) {
+      // Nuevo chat con no-contacto: enviar por touserid, luego buscar la conv creada
+      try {
+        await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ touserid: pendingContact.id, text }),
+        });
+        const result = await mutateConvs();
+        const newConv = result?.conversations.find((c) => c.contact.id === pendingContact.id);
+        if (newConv) {
+          setSelectedId(newConv.id);
+          setPendingContact(null);
+        }
+      } catch (e) {
+        console.error("[chat/send pending]", e);
+      }
+      return;
+    }
+
+    if (!selected || meId === 0) return;
+
+    // Optimista: burbuja al instante
     const optimistic: Message = { id: Date.now(), fromId: meId, text, timestamp: Date.now() };
     mutateMsgs((prev) => (prev ? { ...prev, messages: [...prev.messages, optimistic] } : prev), { revalidate: false });
 
@@ -245,6 +347,11 @@ export default function ChatPage() {
     }
   }
 
+  function closePanel() {
+    setSelectedId(null);
+    setPendingContact(null);
+  }
+
   if (!authed) {
     return (
       <div className="h-[100dvh] bg-[var(--bg)]">
@@ -252,6 +359,8 @@ export default function ChatPage() {
       </div>
     );
   }
+
+  const showSearch = search.trim().length >= 2;
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--bg)]">
@@ -262,9 +371,9 @@ export default function ChatPage() {
           <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Chat" }]} />
         </div>
         <div className="flex min-h-0 flex-1 overflow-hidden bg-transparent sm:rounded-3xl sm:border sm:border-[var(--separator)] sm:bg-[var(--surface)] sm:shadow-sm">
-          {/* ── Panel izquierdo: lista ── */}
+          {/* ── Panel izquierdo: lista + búsqueda ── */}
           <aside
-            className={`${selectedId != null ? "hidden lg:flex" : "flex"} w-full shrink-0 flex-col border-[var(--separator)] lg:w-[360px] lg:border-r`}
+            className={`${isPanelOpen ? "hidden lg:flex" : "flex"} w-full shrink-0 flex-col border-[var(--separator)] lg:w-[360px] lg:border-r`}
           >
             <div className="px-4 pb-2 pt-4">
               <h1 className="mb-3 text-[24px] font-bold tracking-tight text-[var(--fg)]">Mensajes</h1>
@@ -273,72 +382,124 @@ export default function ChatPage() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar"
+                  placeholder="Buscar o nuevo mensaje"
                   className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none"
                 />
+                {search && (
+                  <button type="button" onClick={() => { setSearch(""); setUserSearchResult(null); }} className="shrink-0 text-[var(--secondary)] active:opacity-60">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-              {convLoading && !convData ? (
-                <SpinnerBlock label="Cargando chats…" />
-              ) : convError ? (
-                <p className="px-4 py-10 text-center text-[14px] text-[#ff3b30]">No se pudieron cargar los chats.</p>
-              ) : filtered.length === 0 ? (
-                <p className="px-4 py-10 text-center text-[14px] text-[var(--secondary)]">
-                  {search ? "Sin resultados." : "No tenés mensajes todavía."}
-                </p>
+              {!showSearch ? (
+                /* Vista normal: lista de conversaciones */
+                convLoading && !convData ? (
+                  <SpinnerBlock label="Cargando chats…" />
+                ) : convError ? (
+                  <p className="px-4 py-10 text-center text-[14px] text-[#ff3b30]">No se pudieron cargar los chats.</p>
+                ) : conversations.length === 0 ? (
+                  <p className="px-4 py-10 text-center text-[14px] text-[var(--secondary)]">No tenés mensajes todavía.</p>
+                ) : (
+                  conversations.map((c) => (
+                    <ConversationRow
+                      key={c.id}
+                      conv={c}
+                      active={c.id === selectedId}
+                      onClick={() => { setSelectedId(c.id); setPendingContact(null); }}
+                    />
+                  ))
+                )
               ) : (
-                filtered.map((c) => (
-                  <ConversationRow
-                    key={c.id}
-                    conv={c}
-                    active={c.id === selectedId}
-                    onClick={() => setSelectedId(c.id)}
-                  />
-                ))
+                /* Vista de búsqueda */
+                <>
+                  {/* Conversaciones existentes que coinciden */}
+                  {filtered.length > 0 && (
+                    <>
+                      <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--secondary)]">
+                        Conversaciones
+                      </p>
+                      {filtered.map((c) => (
+                        <ConversationRow
+                          key={c.id}
+                          conv={c}
+                          active={c.id === selectedId}
+                          onClick={() => { setSelectedId(c.id); setPendingContact(null); setSearch(""); setUserSearchResult(null); }}
+                        />
+                      ))}
+                    </>
+                  )}
+
+                  {/* Usuarios del campus */}
+                  {userSearchLoading && (
+                    <div className="flex items-center gap-2 px-4 py-3 text-[13px] text-[var(--secondary)]">
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--secondary)] border-t-transparent" />
+                      Buscando en el campus…
+                    </div>
+                  )}
+
+                  {!userSearchLoading && hasCampusResults && (
+                    <>
+                      <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--secondary)]">
+                        Usuarios del campus
+                      </p>
+                      {campusContacts.map((u) => (
+                        <UserRow key={u.id} user={u} label="Contacto" onClick={() => openPendingContact(u)} />
+                      ))}
+                      {campusNonContacts.map((u) => (
+                        <UserRow key={u.id} user={u} onClick={() => openPendingContact(u)} />
+                      ))}
+                    </>
+                  )}
+
+                  {!userSearchLoading && !hasCampusResults && filtered.length === 0 && (
+                    <p className="px-4 py-10 text-center text-[14px] text-[var(--secondary)]">Sin resultados.</p>
+                  )}
+                </>
               )}
             </div>
           </aside>
 
           {/* ── Panel derecho: chat activo ── */}
-          <section className={`${selectedId != null ? "flex" : "hidden lg:flex"} min-w-0 flex-1 flex-col bg-[var(--bg)]`}>
-            {selected ? (
+          <section className={`${isPanelOpen ? "flex" : "hidden lg:flex"} min-w-0 flex-1 flex-col bg-[var(--bg)]`}>
+            {isPanelOpen && activeName ? (
               <>
                 {/* Cabecera glass fija */}
                 <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-[var(--separator)] bg-[var(--bg)]/80 px-3 py-2.5 backdrop-blur-md">
                   <button
                     type="button"
-                    onClick={() => setSelectedId(null)}
+                    onClick={closePanel}
                     className="-ml-1 flex h-9 w-9 items-center justify-center rounded-full text-[var(--accent)] active:bg-[var(--surface2)] lg:hidden"
                     aria-label="Volver"
                   >
                     <ArrowLeft className="h-5 w-5" />
                   </button>
-                  {/* Área clickeable para ver el perfil */}
                   <button
                     type="button"
-                    onClick={() => setProfileOpen(true)}
+                    onClick={() => selected && setProfileOpen(true)}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left transition-opacity active:opacity-70"
-                    aria-label={`Ver perfil de ${selected.contact.name}`}
+                    aria-label={`Ver perfil de ${activeName}`}
                   >
-                    <Avatar name={selected.contact.name} url={selected.contact.avatarUrl} size={40} online={selected.contact.online} />
+                    <Avatar name={activeName} url={activeAvatarUrl} size={40} online={activeOnline} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-semibold text-[var(--fg)]">{selected.contact.name}</p>
+                      <p className="truncate text-[15px] font-semibold text-[var(--fg)]">{activeName}</p>
                       <p className="truncate text-[12px] text-[var(--secondary)]">
-                        {selected.contact.online ? "Conectado" : selected.contact.role ?? "Desconectado"}
+                        {pendingContact
+                          ? "Nuevo chat"
+                          : activeOnline ? "Conectado" : activeRole ?? "Desconectado"}
                       </p>
                     </div>
                   </button>
 
-                  {/* Botón mail — aparece en cuanto se carga el perfil */}
                   {profileData?.email && (
                     <a
                       href={emailHref(profileData.email)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#007aff] transition-opacity hover:opacity-80 active:opacity-60"
-                      aria-label={`Enviar correo a ${selected.contact.name}`}
+                      aria-label={`Enviar correo a ${activeName}`}
                     >
                       <Mail className="h-5 w-5" />
                     </a>
@@ -347,7 +508,11 @@ export default function ChatPage() {
 
                 {/* Mensajes */}
                 <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4">
-                  {msgLoading && messages.length === 0 ? (
+                  {pendingContact ? (
+                    <p className="py-10 text-center text-[14px] text-[var(--secondary)]">
+                      Escribí el primer mensaje para iniciar la conversación.
+                    </p>
+                  ) : msgLoading && messages.length === 0 ? (
                     <SpinnerBlock label="Cargando mensajes…" />
                   ) : messages.length === 0 ? (
                     <p className="py-10 text-center text-[14px] text-[var(--secondary)]">No hay mensajes. ¡Escribí el primero!</p>
@@ -388,7 +553,7 @@ export default function ChatPage() {
                 </div>
                 <p className="text-[16px] font-semibold text-[var(--fg)]">Tus mensajes</p>
                 <p className="max-w-xs text-[14px] text-[var(--secondary)]">
-                  Elegí una conversación para empezar a chatear.
+                  Elegí una conversación o buscá un usuario para empezar a chatear.
                 </p>
               </div>
             )}
@@ -396,7 +561,7 @@ export default function ChatPage() {
         </div>
       </main>
 
-      {/* Sheet de perfil — montado siempre para que la animación de salida funcione */}
+      {/* Sheet de perfil */}
       {selected && (
         <ContactDetailSheet
           contact={selected.contact}

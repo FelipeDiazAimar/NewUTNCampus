@@ -64,6 +64,47 @@ export function useEstado(legajo?: string) {
     SWR_CFG
   );
 }
+/** Inasistencias con fecha (para el heatmap). Devuelve un Map fecha → materias. */
+type InasItem = { Fecha?: string; NombreMateria?: string; Materia?: string; CodMateria?: string };
+type InasResp = {
+  Inasistencias?: InasItem[];
+  data?: InasItem[];
+  Materias?: { NombreMateria?: string; Materia?: string; Inasistencias?: InasItem[] }[];
+};
+export function useInasistenciasMap(legajo?: string, anio?: number) {
+  return useSWR<Map<string, string[]>>(
+    legajo && anio ? `/api/sysacadws/cursado/inasistencias/${legajo}/${anio}` : null,
+    async (url: string) => {
+      const out = new Map<string, string[]>();
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) return out;
+      const j = (await r.json()) as InasResp;
+
+      const add = (fecha: string | undefined, materia: string) => {
+        const m = (fecha ?? "").match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (!m) return;
+        const key = `${m[1]}-${m[2]}-${m[3]}`;
+        const arr = out.get(key) ?? [];
+        if (materia && !arr.includes(materia)) arr.push(materia);
+        out.set(key, arr);
+      };
+
+      if (Array.isArray(j.Materias)) {
+        for (const mat of j.Materias) {
+          const nombre = (mat.NombreMateria || mat.Materia || "").trim();
+          for (const it of mat.Inasistencias ?? []) add(it.Fecha, nombre);
+        }
+      } else {
+        for (const it of j.Inasistencias ?? j.data ?? []) {
+          add(it.Fecha, (it.NombreMateria || it.Materia || it.CodMateria || "").trim());
+        }
+      }
+      return out;
+    },
+    SWR_CFG
+  );
+}
+
 export function useCorrelatividades(legajo?: string) {
   return useSWR<{ data: MateriaCorrelativa[] }>(
     legajo ? `/api/sysacadws/cursado/correlatividadcursado/${legajo}` : null,

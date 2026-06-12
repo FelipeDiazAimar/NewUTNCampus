@@ -123,7 +123,7 @@ export default function LoginPage() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   onFocus={() => accounts.length > 0 && setAccountsOpen(true)}
-                  placeholder="tu.nombre"
+                  placeholder="Nombre de usuario"
                   required
                   disabled={loading}
                   autoCapitalize="none"

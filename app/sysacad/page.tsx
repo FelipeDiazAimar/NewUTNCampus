@@ -9,6 +9,12 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import ProfileHeader from "@/components/sysacadws/ProfileHeader";
+import ResumenHero from "@/components/sysacadws/ResumenHero";
+import EgresoCard from "@/components/sysacadws/EgresoCard";
+import PlanRoadmap from "@/components/sysacadws/PlanRoadmap";
+import EstadisticasCard from "@/components/sysacadws/EstadisticasCard";
+import AsistenciaCard from "@/components/sysacadws/AsistenciaCard";
+import PlanificacionCard from "@/components/sysacadws/PlanificacionCard";
 import AvanceWidget from "@/components/sysacadws/AvanceWidget";
 import CursadoWidget from "@/components/sysacadws/CursadoWidget";
 import HistorialAcademico from "@/components/sysacadws/HistorialAcademico";
@@ -89,6 +95,23 @@ export default function SysacadPage() {
 
             {!coreLoading && (
               <>
+                <ResumenHero
+                  estado={estado}
+                  examenes={examenes!.Examenes ?? []}
+                  plan={plan!}
+                  avance={avance!}
+                  cursado={cursado!}
+                />
+                <EgresoCard estado={estado} plan={plan!} avance={avance!} />
+                <PlanRoadmap estado={estado} cursado={cursado!} plan={plan!} legajo={legajo} />
+                <AsistenciaCard
+                  cursado={cursado!}
+                  plan={plan!}
+                  especialidad={user.especialidad}
+                  legajo={legajo}
+                />
+                <PlanificacionCard estado={estado} cursado={cursado!} legajo={legajo} />
+                <EstadisticasCard examenes={examenes!.Examenes ?? []} />
                 <AvanceWidget avance={avance!} examenes={examenes!.Examenes ?? []} estado={estado} estadoLoading={estadoLoading} />
                 <CursadoWidget cursado={cursado!} />
                 <HistorialAcademico
