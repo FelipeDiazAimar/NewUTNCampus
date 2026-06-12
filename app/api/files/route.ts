@@ -35,6 +35,17 @@ export async function GET(req: NextRequest) {
   const res = await fetchWithCookie(fileurl, cookie);
 
   const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+
+  // When the session is expired Moodle returns a 200 HTML login/error page instead
+  // of the file. Detect this and fail fast so callers get a proper error (not
+  // pdfjs throwing InvalidPDFException after trying to parse HTML as a PDF).
+  if (contentType.startsWith("text/html")) {
+    return NextResponse.json(
+      { error: "La sesión del Campus expiró. Cerrá sesión y volvé a entrar." },
+      { status: 401 }
+    );
+  }
+
   const upstreamDisp = res.headers.get("content-disposition") ?? "";
   // inline=1 → let the browser display the file; otherwise force download
   const disposition = inline ? "inline" : upstreamDisp || "attachment";

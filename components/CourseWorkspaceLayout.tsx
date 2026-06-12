@@ -323,7 +323,19 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
     async function load() {
       try {
         if (entry.kind === "pdf") {
-          if (!cancelled) setPs({ phase: "pdf", url: entry.proxyUrl });
+          // Pre-fetch so HTTP errors (e.g. 401 when session expired) surface here
+          // instead of inside pdfjs as an opaque InvalidPDFException.
+          setPs({ phase: "loading", label: "Cargando PDF…" });
+          const res = await fetch(entry.proxyUrl);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+            throw new Error(err.error ?? `HTTP ${res.status}`);
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          blobUrlRef.current = url;
+          setPs({ phase: "pdf", url });
           return;
         }
 
@@ -445,6 +457,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const [assignment, setAssignment] = useState<AssignmentEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSubFullscreen, setIsSubFullscreen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false
   );
@@ -481,7 +494,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     });
   }, []);
 
-  const closePanel = useCallback(() => { setActive(null); setAspectRatio(null); }, []);
+  const closePanel = useCallback(() => { setActive(null); setAspectRatio(null); setIsSubFullscreen(false); }, []);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -515,6 +528,10 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else panelRef.current?.requestFullscreen().catch(() => {});
+  }
+
+  function toggleSubFullscreen() {
+    setIsSubFullscreen((v) => !v);
   }
 
   const taskOpen = !!assignment;
@@ -563,19 +580,36 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           </svg>
         </IconBtn>
       ) : (
-        <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
-          {isFullscreen ? (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
-              <polyline points="3,16 3,21 8,21" /><polyline points="16,21 21,21 21,16" />
-            </svg>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
-              <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-            </svg>
-          )}
-        </IconBtn>
+        <>
+          {/* Sub pantalla completa: ocupa toda la ventana del navegador sin F11 */}
+          <IconBtn onClick={toggleSubFullscreen} title={isSubFullscreen ? "Salir de sub pantalla completa" : "Sub pantalla completa"}>
+            {isSubFullscreen ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
+                <polyline points="3,16 3,21 8,21" /><polyline points="16,21 21,21 21,16" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <polyline points="9,3 3,3 3,9" /><polyline points="15,3 21,3 21,9" />
+                <polyline points="3,15 3,21 9,21" /><polyline points="21,15 21,21 15,21" />
+              </svg>
+            )}
+          </IconBtn>
+          {/* Pantalla completa nativa (F11 del elemento) */}
+          <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
+            {isFullscreen ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
+                <polyline points="3,16 3,21 8,21" /><polyline points="16,21 21,21 21,16" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
+                <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </IconBtn>
+        </>
       )}
       <IconBtn onClick={closePanel} title="Cerrar visor">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -586,7 +620,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   );
 
   const panelShell = (isOverlay: boolean) => (
-    <div className={isOverlay ? "flex flex-col h-full rounded-none overflow-hidden shadow-2xl" : "flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl"}>
+    <div className={isOverlay || isSubFullscreen ? "flex flex-col h-full rounded-none overflow-hidden shadow-2xl" : "flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl"}>
       {panelHeader(isOverlay)}
       <PanelContent
         key={active?.fileUrl}
@@ -649,12 +683,16 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
             </div>
           )}
 
-          {/* Preview de archivo — siempre a la derecha (order 3) */}
+          {/* Preview de archivo — siempre a la derecha (order 3).
+              Cuando isSubFullscreen el inner div adopta fixed inset-0 para cubrir
+              toda la ventana sin desmontar PanelContent (no hay flash de PDF). */}
           {!isMobileView && fileOpen && (
             <div
               style={{
                 order: 3,
-                flex: splitTaskFile ? 1 : rightFlexFile,
+                // Colapsar el ítem flex cuando está en sub-fullscreen: el contenido
+                // escapa al viewport via position:fixed y no ocupa espacio en el layout.
+                flex: isSubFullscreen ? "0 0 0px" : splitTaskFile ? 1 : rightFlexFile,
                 minWidth: 0,
                 overflow: "hidden",
                 transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)",
@@ -662,8 +700,8 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
             >
               <div
                 ref={panelRef}
-                className="lg:sticky"
-                style={{ top: panelTop, height: `calc(100vh - ${panelTop + 8}px)` }}
+                className={isSubFullscreen ? "fixed inset-0 z-[200]" : "lg:sticky"}
+                style={isSubFullscreen ? {} : { top: panelTop, height: `calc(100vh - ${panelTop + 8}px)` }}
               >
                 {panelShell(false)}
               </div>
