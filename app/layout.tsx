@@ -5,6 +5,12 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 export const metadata: Metadata = {
   title: "Campus UTN FRSF",
   description: "Campus Virtual - UTN Facultad Regional San Francisco",
+  icons: {
+    // Ícono de la pestaña del navegador
+    icon: "/logo.png",
+    // Ícono que usa iOS al agregar a la pantalla de inicio (sin efecto gloss)
+    apple: [{ url: "/logo.png", sizes: "2048x2048", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
