@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
+  ArrowUpRight,
   CheckCircle2,
   ChevronRight,
   Clock,
   FileText,
   ListTodo,
 } from "lucide-react";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
@@ -154,7 +156,7 @@ export default function TareasPage() {
       const sorted = [...items].sort((a, b) =>
         tab === "pendientes" ? dueMs(a) - dueMs(b) : a.title.localeCompare(b.title)
       );
-      return { course, color: courseColor(course), items: sorted, earliest: dueMs(sorted[0]) };
+      return { course, courseId: sorted[0].courseId, color: courseColor(course), items: sorted, earliest: dueMs(sorted[0]) };
     });
 
     out.sort((a, b) =>
@@ -261,15 +263,17 @@ export default function TareasPage() {
                 {groups.map((g) => (
                   <section key={g.course}>
                     {/* Cabecera pegajosa de la materia */}
-                    <div
-                      className="sticky top-16 z-10 -mx-1 px-1 py-1.5 mb-2 flex items-center gap-2 backdrop-blur-xl"
-                      style={{ background: "color-mix(in srgb, var(--bg) 80%, transparent)" }}
-                    >
+                    <div className="px-1 py-1.5 mb-2 flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
-                      <h2 className="flex-1 min-w-0 text-[13px] font-bold uppercase tracking-wide text-[var(--secondary)] truncate">
+                      <Link
+                        href={`/course/${g.courseId}`}
+                        className="flex-1 min-w-0 text-[13px] font-bold uppercase tracking-wide truncate transition-opacity active:opacity-60 hover:opacity-70"
+                        style={{ color: g.color }}
+                      >
                         {g.course}
-                      </h2>
-                      <span className="text-[12px] font-semibold text-[var(--secondary)] tabular-nums">{g.items.length}</span>
+                        <ArrowUpRight className="inline-block ml-1 w-3 h-3 opacity-60 shrink-0" />
+                      </Link>
+                      <span className="text-[12px] font-semibold text-[var(--secondary)] tabular-nums shrink-0">{g.items.length}</span>
                     </div>
 
                     {/* Inset grouped list */}
