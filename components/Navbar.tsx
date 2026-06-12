@@ -5,19 +5,24 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
+import { ShieldOff } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import SessionGuard from "./SessionGuard";
 import { clearCourseCache } from "@/lib/hooks";
+
+const ADMIN_TOKEN = "campus-admin-2024-internal";
 
 export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     setIsAndroid(/Android/i.test(navigator.userAgent));
+    setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
   }, []);
 
   const isDark = mounted && resolvedTheme === "dark";
@@ -32,14 +37,18 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   const unreadCount: number = unread?.count ?? 0;
 
   async function logout() {
-    // Cierre de sesión centralizado: campus (Moodle) + Sysacad (web service).
-    // El DELETE del WS limpia también las cookies del viejo scraping.
     await Promise.all([
       fetch("/api/auth", { method: "DELETE" }),
       fetch("/api/sysacadws/login", { method: "DELETE" }),
     ]);
     clearCourseCache();
     router.push("/");
+  }
+
+  async function exitAdmin() {
+    await fetch("/api/admin/logout", { method: "POST" }).catch(() => {});
+    setIsAdmin(false);
+    router.refresh();
   }
 
   return (
@@ -77,6 +86,17 @@ export default function Navbar({ fullname }: { fullname?: string }) {
             <span className="text-[13px] text-[var(--secondary)] hidden sm:block truncate max-w-[160px]">
               {fullname}
             </span>
+          )}
+          {/* Badge + botón de salida admin — solo visible con token activo */}
+          {mounted && isAdmin && (
+            <button
+              onClick={exitAdmin}
+              title="Salir del modo admin"
+              className="flex items-center gap-1 rounded-full bg-[rgba(175,82,222,0.12)] px-2.5 py-1 text-[12px] font-semibold text-[#af52de] transition-all duration-200 hover:bg-[rgba(175,82,222,0.22)] active:scale-95"
+            >
+              <ShieldOff className="h-3.5 w-3.5" />
+              Admin
+            </button>
           )}
           <ThemeToggle />
           <button

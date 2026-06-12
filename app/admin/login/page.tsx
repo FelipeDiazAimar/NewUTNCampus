@@ -1,11 +1,21 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, User, Eye, EyeOff, ShieldCheck } from "lucide-react";
 
+// useSearchParams requiere Suspense boundary en Next.js App Router.
 export default function AdminLoginPage() {
+  return (
+    <Suspense>
+      <AdminLoginForm />
+    </Suspense>
+  );
+}
+
+function AdminLoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -13,11 +23,14 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
+  // Destino tras el login: usa ?next= si está definido, o /admin por defecto.
+  const nextUrl = searchParams.get("next") ?? "/testnotis";
+
   useEffect(() => {
     if (document.cookie.includes("admin_session_token=campus-admin")) {
-      router.replace("/admin");
+      router.replace(nextUrl);
     }
-  }, [router]);
+  }, [router, nextUrl]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,7 +47,7 @@ export default function AdminLoginPage() {
         setError(data.error ?? "Credenciales incorrectas.");
         return;
       }
-      router.replace("/admin");
+      router.replace(nextUrl);
     } catch {
       setError("Error de red. Intentá de nuevo.");
     } finally {

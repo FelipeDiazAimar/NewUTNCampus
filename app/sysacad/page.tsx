@@ -47,13 +47,15 @@ export default function SysacadPage() {
   const { data: cursado } = useCursado(legajo);
   const { data: examenes } = useExamenes(legajo);
   const { data: plan } = usePlan(user?.idEspecialidad, user?.plan);
-  const { data: estadoRes } = useEstado(legajo);
+  const { data: estadoRes, isLoading: estadoLoading } = useEstado(legajo);
   const estado = estadoRes?.data ?? [];
 
   const coreLoading = !!user && (!avance || !cursado || !examenes || !plan);
 
   function handleLoginSuccess() {
     setUser(getWsUser());
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next) router.replace(next);
   }
 
   async function handleLogout() {
@@ -87,7 +89,7 @@ export default function SysacadPage() {
 
             {!coreLoading && (
               <>
-                <AvanceWidget avance={avance!} examenes={examenes!.Examenes ?? []} estado={estado} />
+                <AvanceWidget avance={avance!} examenes={examenes!.Examenes ?? []} estado={estado} estadoLoading={estadoLoading} />
                 <CursadoWidget cursado={cursado!} />
                 <HistorialAcademico
                   estado={estado}

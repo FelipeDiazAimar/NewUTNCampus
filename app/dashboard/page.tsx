@@ -11,8 +11,8 @@ import {
   GraduationCap,
   HelpCircle,
   ListTodo,
+  Megaphone,
   MessageCircle,
-  MessageSquare,
   Settings,
   UserCheck,
   Video,
@@ -26,6 +26,7 @@ type HomeItem = {
   subtitle?: string;
   icon: React.ComponentType<{ className?: string }>;
   tone?: string;
+  gradient?: string; // fondo de ícono con degradé (apps destacadas)
   muted?: boolean;
   popup?: boolean;
   calendar?: boolean; // abre el selector de calendario académico
@@ -124,10 +125,10 @@ export default function DashboardPage() {
       {
         type: "app",
         title: "Foro",
-        href: "#",
-        icon: MessageSquare,
-        tone: "#5ac8fa",
-        popup: true,
+        href: "/foro",
+        icon: Megaphone,
+        tone: "#ff3b30",
+        popup: false,
         row: 3,
         col: 1,
         rowSpan: 1,
@@ -357,12 +358,23 @@ export default function DashboardPage() {
                 }}
               >
                 <div className={isWidget ? "flex flex-col h-full" : "flex flex-col items-center justify-center h-full"}>
-                  <div
-                    className={isWidget ? "mb-auto" : "mb-2"}
-                    style={{ color: item.muted ? "var(--secondary)" : item.tone ?? "var(--accent)" }}
-                  >
-                    <Icon className={isWidget ? "w-[34px] h-[34px]" : "w-5 h-5"} />
-                  </div>
+                  {item.gradient && !item.muted ? (
+                    <div className={isWidget ? "mb-auto" : "mb-2"}>
+                      <div
+                        className={`flex items-center justify-center rounded-[12px] shadow-sm ${isWidget ? "w-11 h-11" : "w-8 h-8"}`}
+                        style={{ background: item.gradient }}
+                      >
+                        <Icon className={isWidget ? "w-6 h-6 text-white" : "w-[18px] h-[18px] text-white"} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className={isWidget ? "mb-auto" : "mb-2"}
+                      style={{ color: item.muted ? "var(--secondary)" : item.tone ?? "var(--accent)" }}
+                    >
+                      <Icon className={isWidget ? "w-[34px] h-[34px]" : "w-5 h-5"} />
+                    </div>
+                  )}
 
                   <div className={isWidget ? "mt-auto" : "text-center"}>
                     <p

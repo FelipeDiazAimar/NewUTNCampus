@@ -30,10 +30,12 @@ export default function AvanceWidget({
   avance,
   examenes,
   estado,
+  estadoLoading,
 }: {
   avance: SysacadAvance;
   examenes: SysacadExamen[];
   estado: MateriaEstado[];
+  estadoLoading?: boolean;
 }) {
   const cant = avance.Cantidades ?? [];
   const aprobadasAvance = sumField(cant, "AprobacionesDirectas") + sumField(cant, "PromocionesTP");
@@ -65,7 +67,18 @@ export default function AvanceWidget({
           <ExamenesChart examenes={examenes} />
         </ChartBlock>
         <ChartBlock title="Progreso académico" hint="Materias aprobadas del estado académico">
-          <ProgresoChart aprobadas={aprobadasEstado} total={totalMaterias} />
+          {estadoLoading ? (
+            <div className="flex items-center gap-4 py-1">
+              <div className="shrink-0 h-[132px] w-[132px] rounded-full bg-[var(--surface2)] animate-pulse" />
+              <div className="flex-1 space-y-3">
+                <div className="h-4 w-24 rounded-full bg-[var(--surface2)] animate-pulse" />
+                <div className="h-4 w-20 rounded-full bg-[var(--surface2)] animate-pulse" />
+                <div className="h-4 w-16 rounded-full bg-[var(--surface2)] animate-pulse" />
+              </div>
+            </div>
+          ) : (
+            <ProgresoChart aprobadas={aprobadasEstado} total={totalMaterias} />
+          )}
         </ChartBlock>
       </div>
     </CollapsibleCard>

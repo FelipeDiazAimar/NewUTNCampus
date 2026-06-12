@@ -9,11 +9,16 @@ import {
   CalendarX,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Clock3,
+  KeyRound,
+  Loader2,
   Radio,
+  Send,
   ShieldCheck,
   WifiOff,
 } from "lucide-react";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
@@ -110,11 +115,14 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+const ADMIN_TOKEN = "campus-admin-2024-internal";
+
 export default function AsistenciaPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
   const [open, setOpen] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const legajo = ready ? getLegajo() : null;
 
   const { data: agent } = useSWR("/api/asistencia/agent", agentFetcher, {
@@ -132,6 +140,7 @@ export default function AsistenciaPage() {
       router.push("/");
       return;
     }
+    setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
     queueMicrotask(() => setReady(true));
   }, [router]);
 
@@ -189,23 +198,47 @@ export default function AsistenciaPage() {
 
         {isLoading && <SpinnerBlock label="Consultando inasistencias..." />}
 
+        {/* Panel admin — solo visible cuando hay cookie admin_session_token */}
+        {isAdmin && <AdminNotifyCard />}
+
         {!isLoading && (
           <section className="overflow-hidden rounded-[26px] border border-[var(--separator)] bg-[rgba(255,255,255,0.72)] shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.76)]">
             <div className="flex items-center justify-between gap-3 px-5 py-4">
               <div>
                 <h2 className="text-[17px] font-semibold text-[var(--fg)]">Historial de inasistencias</h2>
                 <p className="text-[13px] text-[var(--secondary)]">
-                  {legajo ? `Legajo ${legajo}` : "Datos base del historial importado"}
+                  {legajo ? `Legajo ${legajo}` : "Vinculá tu cuenta para continuar"}
                 </p>
               </div>
-              <span className="rounded-full bg-[#ff95001a] px-3 py-1 text-[12px] font-semibold text-[#ff9500]">
-                {grupos.reduce((acc, g) => acc + g.fechas.length, 0)} faltas
-              </span>
+              {legajo && (
+                <span className="rounded-full bg-[#ff95001a] px-3 py-1 text-[12px] font-semibold text-[#ff9500]">
+                  {grupos.reduce((acc, g) => acc + g.fechas.length, 0)} faltas
+                </span>
+              )}
             </div>
 
             <div className="h-px bg-[var(--separator)]" />
 
-            {grupos.length === 0 ? (
+            {!legajo ? (
+              <div className="flex flex-col items-center gap-4 px-5 py-10 text-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[rgba(0,122,255,0.1)]">
+                  <KeyRound className="h-7 w-7 text-[#007aff]" />
+                </span>
+                <div>
+                  <p className="text-[15px] font-semibold text-[var(--fg)]">Iniciá sesión en Sysacad</p>
+                  <p className="mt-1 text-[13px] text-[var(--secondary)]">
+                    Para ver tu historial de inasistencias necesitás vincular tu cuenta.
+                  </p>
+                </div>
+                <Link
+                  href="/sysacad?next=/asistencia"
+                  className="flex items-center gap-2 rounded-full bg-[#007aff] px-6 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)] transition-opacity active:opacity-80"
+                >
+                  Ir a Sysacad
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              </div>
+            ) : grupos.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
                 <CalendarX className="h-8 w-8 text-[#34c759]" />
                 <p className="text-[14px] text-[var(--secondary)]">Sin inasistencias registradas en {year}.</p>
@@ -346,6 +379,86 @@ function PushPermissionCard() {
         {busy ? "Procesando..." : subscription ? "Desactivar" : "Activar"}
       </button>
     </div>
+  );
+}
+
+// ─── Tarjeta admin: disparar notificación push manualmente ────────────────────
+
+type NotifyState = "idle" | "loading" | "success" | "error";
+
+function AdminNotifyCard() {
+  const [state, setState] = useState<NotifyState>("idle");
+  const [result, setResult] = useState<{ sent: number; failed: number } | null>(null);
+
+  async function trigger() {
+    if (state === "loading") return;
+    setState("loading");
+    setResult(null);
+    try {
+      const res = await fetch("/api/asistencia/notify", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      setResult({ sent: data.sent ?? 0, failed: data.failed ?? 0 });
+      setState(res.ok && (data.failed ?? 0) === 0 ? "success" : "error");
+    } catch {
+      setState("error");
+    } finally {
+      setTimeout(() => setState("idle"), 5000);
+    }
+  }
+
+  return (
+    <section className="mb-4 overflow-hidden rounded-[26px] border border-[rgba(175,82,222,0.25)] bg-[rgba(175,82,222,0.06)] shadow-sm backdrop-blur-xl">
+      <div className="flex items-start gap-3.5 px-5 py-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[rgba(175,82,222,0.14)]">
+          <ShieldCheck className="h-5 w-5 text-[#af52de]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-semibold text-[var(--fg)]">Admin — Disparar notificación</p>
+          <p className="mt-0.5 text-[12px] text-[var(--secondary)]">
+            Envía push "asistencia disponible" a todos los suscriptores.
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-[rgba(175,82,222,0.15)] px-5 py-3 flex items-center justify-between gap-3">
+        <div className="text-[13px] text-[var(--secondary)]">
+          {state === "success" && result && (
+            <span className="text-[#34c759] font-semibold">
+              ✓ Enviadas {result.sent} / {result.sent + result.failed}
+            </span>
+          )}
+          {state === "error" && result && (
+            <span className="text-[#ff3b30] font-semibold">
+              Fallidas {result.failed} / {result.sent + result.failed}
+            </span>
+          )}
+          {state === "error" && !result && (
+            <span className="text-[#ff3b30] font-semibold">Error de red</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={trigger}
+          disabled={state === "loading"}
+          className="flex items-center gap-2 rounded-full bg-[#af52de] px-5 py-2 text-[14px] font-semibold text-white transition-all duration-300 active:scale-95 disabled:opacity-50"
+        >
+          {state === "loading" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+          {state === "loading" ? "Enviando…" : "Enviar"}
+        </button>
+      </div>
+
+      <Link
+        href="/testnotis"
+        className="flex items-center gap-3 border-t border-[rgba(175,82,222,0.15)] px-5 py-3 transition-colors active:bg-[var(--surface2)]"
+      >
+        <span className="flex-1 text-[13px] font-medium text-[#af52de]">Abrir simulador PWA</span>
+        <ChevronRight className="h-4 w-4 text-[#af52de]" />
+      </Link>
+    </section>
   );
 }
 
