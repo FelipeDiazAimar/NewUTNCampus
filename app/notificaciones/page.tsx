@@ -506,6 +506,19 @@ export default function NotificacionesPage() {
           )}
         </section>
 
+        {/* Acceso rápido al login de admin — visible siempre, borrar cuando no se necesite */}
+        {!isAdmin && (
+          <section className="mt-8">
+            <Link
+              href="/admin/login"
+              className="flex items-center justify-center gap-2 py-2 text-[12px] text-[var(--secondary)] active:opacity-60"
+            >
+              <Wrench className="h-3.5 w-3.5" />
+              Acceso admin
+            </Link>
+          </section>
+        )}
+
         {/* Herramientas de Desarrollador — solo visible para el admin */}
         {isAdmin && (
           <section className="mt-8">

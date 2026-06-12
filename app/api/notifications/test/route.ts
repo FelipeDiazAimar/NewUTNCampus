@@ -100,6 +100,10 @@ function getUserKey(req: NextRequest): string | null {
   }
 }
 
+export async function GET() {
+  return NextResponse.json({ error: "Usar POST con { type }" }, { status: 405 });
+}
+
 export async function POST(req: NextRequest) {
   // Verificar sesión admin
   const token = req.cookies.get("admin_session_token")?.value;

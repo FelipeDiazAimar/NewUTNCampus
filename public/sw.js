@@ -12,20 +12,21 @@ self.addEventListener("push", (event) => {
   const title = payload.title || (isChat ? "Nuevo mensaje" : "¡La asistencia está abierta!");
   const body  = payload.body  || (isChat ? "Tenés un mensaje nuevo en Campus UTN." : "Entrá al Campus UTN para marcar tu asistencia.");
 
+  // iOS Safari no soporta `actions` ni `badge` — incluirlos hace que
+  // showNotification() rechace la promesa y la notificación no aparezca.
   const options = {
     body,
-    icon:      payload.icon   || "/LOGOUTNB.png",
-    badge:     payload.badge  || "/LOGOUTNB.png",
-    tag:       payload.tag    || "campus-notif",
-    renotify:  true,
+    icon: payload.icon || "/logo.png",
+    tag:  payload.tag  || "campus-notif",
+    renotify: true,
     data: { url: payload.url || (isChat ? "/chat" : "/asistencia") },
-    // Solo las notificaciones de asistencia muestran botón de acción.
-    ...(!isChat && {
-      actions: [{ action: "open", title: "Abrir asistencia" }],
-    }),
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, options).catch((err) => {
+      console.error("[SW] showNotification falló:", err);
+    })
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {

@@ -25,6 +25,10 @@ function getUserKey(req: NextRequest): string | null {
   }
 }
 
+export async function GET() {
+  return new NextResponse(null, { status: 405 });
+}
+
 export async function POST(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const sesskey = req.cookies.get("moodle_sesskey")?.value;
