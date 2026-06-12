@@ -1,0 +1,19 @@
+name: Cron — Chat Notify
+
+on:
+  schedule:
+    # Cada hora en punto (UTC). GitHub Actions puede tener ~1-5 min de delay, es normal.
+    - cron: "0 * * * *"
+  # Permite dispararlo manualmente desde GitHub > Actions > Run workflow (para testear)
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Llamar a /api/chat/notify
+        run: |
+          curl --fail --silent --show-error \
+            -X GET "${{ secrets.VERCEL_APP_URL }}/api/chat/notify" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
