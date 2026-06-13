@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCourses, callMoodleService, type MoodleCourse } from "@/lib/moodle";
 import { isGuestRequest } from "@/lib/guest";
 import { MOCK_TAREAS } from "@/lib/guestMockData";
+import { CALENDAR_MONTHS } from "@/lib/calendario";
 
 export const runtime = "nodejs";
 
@@ -12,11 +13,103 @@ export interface TareaEvent {
   kind: "tarea_inicio" | "tarea_fin";
   title: string;
   course: string;
+  /** id del curso en Moodle → enlace a la materia en nuestro campus (/course/[id]). */
+  courseId?: number;
+  /** Enlace directo a la actividad en Moodle (mod/assign/view.php?id=XXXX). */
+  url?: string;
+  /** Clave de fusión entre fases (id del módulo extraído de la URL). */
+  taskId?: string;
+  /** Detalle enriquecido en la Fase 2 (descripción / comentarios del profesor). */
+  detail?: string;
 }
 
 function isoFromUnix(ts: number): string {
   const d = new Date(ts * 1000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** id del módulo a partir de la URL (`...view.php?id=144899` → "144899"). Sirve de taskId. */
+function taskIdFromUrl(url: string | undefined): string | undefined {
+  return url?.match(/[?&]id=(\d+)/)?.[1];
+}
+
+// ─── Fase 1: calendario global de Moodle (core_calendar_get_calendar_monthly_view) ──
+// Una llamada AJAX por mes — rápido y confiable (a diferencia del web service de
+// assign, que está bloqueado). Devuelve aperturas/vencimientos de tareas y
+// cuestionarios con su enlace directo, sin recorrer materia por materia.
+
+/** Forma cruda de un evento del calendario de Moodle (monthly view). */
+export interface MoodleCalendarEvent {
+  id: number;
+  name: string;
+  activityname?: string;
+  activitystr?: string;
+  modulename?: string;          // "assign" | "quiz" | ...
+  eventtype: string;            // "open" | "due" | "close"
+  timestart: number;            // unix (segundos)
+  timesort: number;
+  url?: string;                 // enlace directo a la actividad
+  viewurl?: string;             // enlace a la vista de día del calendario
+  course?: { id: number; fullname: string } | string;
+}
+
+interface MoodleMonthlyView {
+  weeks?: { days?: { events?: MoodleCalendarEvent[] }[] }[];
+}
+
+/** eventtype de Moodle → tipo de pill del calendario. */
+function kindFromEventType(eventtype: string): TareaEvent["kind"] {
+  return eventtype === "open" ? "tarea_inicio" : "tarea_fin";
+}
+
+async function fromMonthlyView(cookie: string, sesskey: string): Promise<TareaEvent[]> {
+  const views = await Promise.all(
+    CALENDAR_MONTHS.map(({ year, month }) =>
+      callMoodleService(cookie, sesskey, "core_calendar_get_calendar_monthly_view", {
+        year: String(year),
+        month: String(month + 1), // Moodle usa meses 1-based
+        courseid: 1,              // 1 = "Todos los cursos"
+        day: 1,
+        view: "monthblock",
+      })
+        .then((d) => d as unknown as MoodleMonthlyView)
+        .catch(() => null)
+    )
+  );
+
+  const events: TareaEvent[] = [];
+  const seen = new Set<string>(); // dedupe entre meses solapados
+  for (const view of views) {
+    for (const week of view?.weeks ?? []) {
+      for (const day of week.days ?? []) {
+        for (const ev of day.events ?? []) {
+          const kind = kindFromEventType(ev.eventtype);
+          const dedupeKey = `${ev.id}-${kind}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          // Solo el enlace DIRECTO a la actividad (mod/.../view.php?id=…).
+          // `viewurl` apunta a calendar/view.php (la vista de calendario de Moodle,
+          // que parece "el campus") → no sirve como enlace a la tarea.
+          const url = (ev.url || "").replace(/&amp;/g, "&");
+          const course = typeof ev.course === "string" ? ev.course : ev.course?.fullname ?? "";
+          // courseId: del objeto course o, si viene como string, del param course= de viewurl.
+          const courseId =
+            (typeof ev.course === "object" ? ev.course?.id : undefined) ??
+            (Number(ev.viewurl?.match(/[?&]course=(\d+)/)?.[1]) || undefined);
+          events.push({
+            date: isoFromUnix(ev.timestart),
+            kind,
+            title: ev.activityname || ev.name,
+            course,
+            courseId,
+            url: url || undefined,
+            taskId: taskIdFromUrl(url),
+          });
+        }
+      }
+    }
+  }
+  return events;
 }
 
 // ─── Fuente principal: web service mod_assign_get_assignments ─────────────────
@@ -93,7 +186,7 @@ function summarySectionIds(html: string): string[] {
   return ids;
 }
 
-async function fetchAssignDates(cookie: string, url: string, name: string, course: string): Promise<TareaEvent[]> {
+async function fetchAssignDates(cookie: string, url: string, name: string, course: string, courseId: number): Promise<TareaEvent[]> {
   try {
     const res = await fetch(url, { headers: { Cookie: cookie } });
     if (res.url.includes("/login/")) return [];
@@ -111,8 +204,12 @@ async function fetchAssignDates(cookie: string, url: string, name: string, cours
     const close = chunk.match(/Cierre:?\s*<\/strong>\s*([^<]+)/i)?.[1];
     const openIso = open ? toIso(open) : null;
     const closeIso = close ? toIso(close) : null;
-    if (openIso) events.push({ date: openIso, kind: "tarea_inicio", title, course });
-    if (closeIso) events.push({ date: closeIso, kind: "tarea_fin", title, course });
+    const taskId = taskIdFromUrl(url);
+    // Descripción / consigna de la tarea (enriquecimiento Fase 2).
+    const detail =
+      clean(html.match(/<div[^>]*id="intro"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "").slice(0, 300) || undefined;
+    if (openIso) events.push({ date: openIso, kind: "tarea_inicio", title, course, courseId, url, taskId, detail });
+    if (closeIso) events.push({ date: closeIso, kind: "tarea_fin", title, course, courseId, url, taskId, detail });
     return events;
   } catch {
     return [];
@@ -170,15 +267,15 @@ async function fromScrape(cookie: string, sesskey: string, userid: number): Prom
         );
         for (const sHtml of sectionHtmls) collect(sHtml);
       } catch { /* ignore */ }
-      return { course: course.fullname, assigns: [...assigns.entries()] };
+      return { course: course.fullname, courseId: course.id, assigns: [...assigns.entries()] };
     })
   );
 
   const jobs = perCourse
-    .flatMap((c) => c.assigns.map(([url, name]) => ({ url, name, course: c.course })))
+    .flatMap((c) => c.assigns.map(([url, name]) => ({ url, name, course: c.course, courseId: c.courseId })))
     .slice(0, 200);
 
-  const results = await Promise.all(jobs.map((j) => fetchAssignDates(cookie, j.url, j.name, j.course)));
+  const results = await Promise.all(jobs.map((j) => fetchAssignDates(cookie, j.url, j.name, j.course, j.courseId)));
   return results.flat();
 }
 
@@ -210,7 +307,21 @@ export async function GET(req: NextRequest) {
   }
   const cookie = `MoodleSession=${sessionToken}`;
   const userid = getUserId(req);
+  const phase = req.nextUrl.searchParams.get("phase");
 
+  // ── Fase 1: carga ultra-rápida desde el calendario global de Moodle ──────────
+  if (phase === "quick") {
+    try {
+      const events = await fromMonthlyView(cookie, sesskey);
+      return NextResponse.json({ events, source: "monthly" });
+    } catch (err) {
+      console.error("[calendar] monthly view error:", (err as Error).message);
+      return NextResponse.json({ events: [], error: (err as Error).message });
+    }
+  }
+
+  // ── Fase 2: enriquecimiento profundo (scraping materia por materia) ──────────
+  // (default y phase=deep) — web service de assign primero, scraping de respaldo.
   try {
     const events = await fromWebService(cookie, sesskey);
     if (events.length > 0) return NextResponse.json({ events, source: "ws" });

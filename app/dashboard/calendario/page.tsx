@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
-import { SpinnerBlock } from "@/components/Spinner";
 import {
   buildAcademicMap,
   CALENDAR_MONTHS,
@@ -270,6 +270,8 @@ function CalendarioInner() {
 
   const [tareas, setTareas] = useState<TareaEvent[]>([]);
   const [loadingTareas, setLoadingTareas] = useState(true);
+  const [enriching, setEnriching] = useState(true);
+  const [progress, setProgress] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
   const [tip, setTip] = useState<{ iso: string; x: number; y: number } | null>(null);
   const [canHover, setCanHover] = useState(false);
@@ -285,14 +287,80 @@ function CalendarioInner() {
     setCanHover(window.matchMedia("(hover: hover)").matches);
   }, []);
 
+  // Carga híbrida en dos fases:
+  //  · Fase 1 (rápida): calendario global de Moodle → pinta las tareas al instante.
+  //  · Fase 2 (fondo):  scraping profundo → enriquece y rellena lo que falte,
+  //    fusionando por taskId (sin duplicar) cuando termina.
   useEffect(() => {
-    setLoadingTareas(true);
-    fetch("/api/calendar", { cache: "no-store" })
+    let cancelled = false;
+
+    // Fusiona la Fase 2 sobre el estado actual por taskId (fallback url/título).
+    const mergeKey = (e: TareaEvent) => `${e.taskId ?? e.url ?? e.title}|${e.kind}`;
+    const merge = (incoming: TareaEvent[]) =>
+      setTareas((prev) => {
+        const map = new Map(prev.map((e) => [mergeKey(e), e] as const));
+        for (const ev of incoming) {
+          const k = mergeKey(ev);
+          const existing = map.get(k);
+          // El deep scrape enriquece, pero nunca pisa con `undefined` un dato bueno
+          // de la Fase 1 (la url directa, el taskId o el detalle).
+          map.set(
+            k,
+            existing
+              ? {
+                  ...existing,
+                  ...ev,
+                  url: ev.url ?? existing.url,
+                  taskId: ev.taskId ?? existing.taskId,
+                  detail: ev.detail ?? existing.detail,
+                }
+              : ev
+          );
+        }
+        return [...map.values()];
+      });
+
+    // Fase 1 (loadingTareas ya inicia en true)
+    fetch("/api/calendar?phase=quick", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => setTareas(j.events ?? []))
-      .catch(() => setTareas([]))
-      .finally(() => setLoadingTareas(false));
+      .then((j) => { if (!cancelled) setTareas(j.events ?? []); })
+      .catch(() => { if (!cancelled) setTareas([]); })
+      .finally(() => { if (!cancelled) setLoadingTareas(false); });
+
+    // Fase 2 (en paralelo, en segundo plano — enriching ya inicia en true)
+    fetch("/api/calendar?phase=deep", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled && Array.isArray(j.events)) merge(j.events); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setEnriching(false); });
+
+    return () => { cancelled = true; };
   }, []);
+
+  // Barra de progreso "realista": avanza por tramos según la fase y desacelera
+  // al acercarse al tope de cada una (estilo NProgress), sin saltos falsos.
+  //   · Fase 1 (carga de materias): 0 → 55 %
+  //   · Fase 2 (enriquecimiento):   55 → 92 %
+  //   · Ambas listas:               → 100 %
+  useEffect(() => {
+    const target = loadingTareas ? 55 : enriching ? 92 : 100;
+    const id = setInterval(() => {
+      setProgress((p) => {
+        if (p >= target) return p;
+        // Paso amortiguado, con mínimo para que siempre llegue al objetivo.
+        const next = p + Math.max(0.6, (target - p) * 0.07);
+        return Math.min(next, target);
+      });
+    }, 110);
+    return () => clearInterval(id);
+  }, [loadingTareas, enriching]);
+
+  const showProgress = loadingTareas || enriching || progress < 100;
+  const progressLabel = loadingTareas
+    ? "Cargando materias…"
+    : enriching
+    ? "Enriqueciendo detalles…"
+    : "Listo";
 
   const dayMap = useMemo(() => {
     const map = buildAcademicMap(plan);
@@ -330,7 +398,13 @@ function CalendarioInner() {
       const label = LEGEND.find((l) => l.type === t)?.label ?? t;
       const detailLines =
         t === "tarea_inicio" || t === "tarea_fin"
-          ? (tareasByDate.get(iso) ?? []).filter((e) => e.kind === t).map((e) => `${e.title} · ${e.course}`)
+          ? (tareasByDate.get(iso) ?? [])
+              .filter((e) => e.kind === t)
+              .map((e) => ({
+                text: `${e.title} · ${e.course}`,
+                // Enlace a la materia dentro de nuestro campus (no a Moodle).
+                href: e.courseId ? `/course/${e.courseId}` : undefined,
+              }))
           : undefined;
       return { type: t, label, detail: detailLines };
     });
@@ -339,6 +413,20 @@ function CalendarioInner() {
 
   const tipInfo = tip ? describeDay(tip.iso) : null;
   const toggle = (type: DayType, v: boolean) => setEnabled((e) => ({ ...e, [type]: v }));
+
+  // Cierre del tooltip con retardo: permite mover el mouse hacia él para hacer
+  // clic en los enlaces de las tareas sin que desaparezca.
+  const tipCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleTipClose = () => {
+    if (tipCloseTimer.current) clearTimeout(tipCloseTimer.current);
+    tipCloseTimer.current = setTimeout(() => setTip(null), 140);
+  };
+  const cancelTipClose = () => {
+    if (tipCloseTimer.current) {
+      clearTimeout(tipCloseTimer.current);
+      tipCloseTimer.current = null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -350,9 +438,24 @@ function CalendarioInner() {
           <h1 className="text-[26px] font-bold text-[var(--fg)] tracking-tight">Calendario académico 2026</h1>
           <p className="text-[14px] text-[var(--secondary)] mt-0.5">
             {plan === "ingenierias" ? "Ingenierías" : "Licenciatura y Tecnicatura"}
-            {loadingTareas ? " · cargando tareas…" : ""}
           </p>
         </div>
+
+        {/* Barra de progreso (carga de materias + enriquecimiento) */}
+        {showProgress && (
+          <div className="mb-5" aria-live="polite">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[13px] font-medium text-[var(--fg)]">{progressLabel}</span>
+              <span className="text-[12px] tabular-nums text-[var(--secondary)]">{Math.round(progress)}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface2)]">
+              <div
+                className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-200 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="lg:flex lg:items-start lg:gap-5">
           <div className="min-w-0 flex-1">
@@ -368,10 +471,11 @@ function CalendarioInner() {
                     typesFor={typesFor}
                     onEnter={(iso, el) => {
                       if (!canHover) return;
+                      cancelTipClose();
                       const r = el.getBoundingClientRect();
                       setTip({ iso, x: r.left + r.width / 2, y: r.top });
                     }}
-                    onLeave={() => setTip(null)}
+                    onLeave={scheduleTipClose}
                     onTap={(iso) => {
                       if (!canHover) setDetail(iso);
                     }}
@@ -380,11 +484,6 @@ function CalendarioInner() {
               ))}
             </div>
 
-            {loadingTareas && (
-              <div className="mt-4">
-                <SpinnerBlock label="Buscando tus tareas…" size={22} minHeight={60} />
-              </div>
-            )}
           </div>
 
           {/* Referencias = filtro (PC, derecha) */}
@@ -410,8 +509,10 @@ function CalendarioInner() {
       {/* Tooltip hover (PC) */}
       {canHover && tip && tipInfo && (
         <div
-          className="fixed z-[60] pointer-events-none -translate-x-1/2 -translate-y-full"
+          className="fixed z-[60] pointer-events-auto -translate-x-1/2 -translate-y-full"
           style={{ left: Math.min(Math.max(tip.x, 120), (typeof window !== "undefined" ? window.innerWidth : 1200) - 120) as number, top: tip.y - 8 } as CSSProperties}
+          onMouseEnter={cancelTipClose}
+          onMouseLeave={scheduleTipClose}
         >
           <div className="rounded-2xl border border-[var(--separator)] bg-[var(--surface)] shadow-2xl px-3.5 py-2.5 w-max max-w-[240px]">
             <p className="text-[13px] font-semibold text-[var(--fg)] capitalize">{tipInfo.title}</p>
@@ -423,9 +524,19 @@ function CalendarioInner() {
                     <Swatch type={e.type} size={12} />
                     <span>
                       {e.label}
-                      {e.detail?.map((d, j) => (
-                        <span key={j} className="block text-[var(--fg)]">{d}</span>
-                      ))}
+                      {e.detail?.map((d, j) =>
+                        d.href ? (
+                          <Link
+                            key={j}
+                            href={d.href}
+                            className="block text-[var(--accent)] hover:underline"
+                          >
+                            {d.text}
+                          </Link>
+                        ) : (
+                          <span key={j} className="block text-[var(--fg)]">{d.text}</span>
+                        )
+                      )}
                     </span>
                   </li>
                 ))}
@@ -459,9 +570,19 @@ function CalendarioInner() {
                       <Swatch type={e.type} />
                       <div>
                         <p className="text-[14px] font-medium text-[var(--fg)]">{e.label}</p>
-                        {e.detail?.map((d, j) => (
-                          <p key={j} className="text-[12px] text-[var(--secondary)]">{d}</p>
-                        ))}
+                        {e.detail?.map((d, j) =>
+                          d.href ? (
+                            <Link
+                              key={j}
+                              href={d.href}
+                              className="block text-[12px] text-[var(--accent)] hover:underline active:opacity-70"
+                            >
+                              {d.text}
+                            </Link>
+                          ) : (
+                            <p key={j} className="text-[12px] text-[var(--secondary)]">{d.text}</p>
+                          )
+                        )}
                       </div>
                     </div>
                   ))
