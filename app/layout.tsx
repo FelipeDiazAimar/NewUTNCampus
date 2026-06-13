@@ -9,7 +9,10 @@ export const metadata: Metadata = {
   // El apple-touch-icon lo provee app/apple-icon.png (opaco y cuadrado, requisito
   // de iOS). Acá solo el favicon de la pestaña del navegador.
   icons: {
-    icon: "/logo.png",
+    icon: [
+      { url: "/favicon-dark.png", media: "(prefers-color-scheme: light)" },
+      { url: "/favicon-light.png", media: "(prefers-color-scheme: dark)" },
+    ],
   },
   // iOS: lanzar en pantalla completa (standalone) y título bajo el ícono.
   appleWebApp: {
