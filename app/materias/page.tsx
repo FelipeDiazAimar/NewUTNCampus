@@ -164,7 +164,7 @@ export default function MateriasPage() {
         .filter((v): v is string => !!v)
     );
     const nombres = (cursado?.Comisiones ?? [])
-      .map((c) => foldText(c.NombreMateria ?? ""))
+      .map((c) => foldText(c.NombreMateria ?? "").replace(/\s*\([^)]*\)/g, "").trim())
       .filter(Boolean);
     return (course: MoodleCourse) => {
       const sn = course.shortname?.trim().toLowerCase();
