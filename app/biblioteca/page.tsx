@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { BookMarked, Check, AlertCircle } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import Breadcrumb from "@/components/Breadcrumb";
 import DropdownSelect, { type DropdownOption } from "@/components/DropdownSelect";
 import CalendarPicker from "@/components/CalendarPicker";
 
@@ -308,10 +309,14 @@ export default function BibliotecaPage() {
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
 
-      <main className="pt-24 pb-10 px-4 md:px-6 max-w-2xl mx-auto">
+      <main className="pt-6 pb-6 px-4 md:px-6 max-w-2xl mx-auto">
+        <div className="pt-6 pb-2">
+          <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }]} />
+        </div>
+
         {/* Header */}
         <div className="mb-8 flex items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-[#34c759] to-[#30b0c0] shadow-sm">
+          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-[#007aff] to-[#5ac8fa] shadow-sm">
             <BookMarked className="w-6 h-6 text-white" />
           </div>
           <div>

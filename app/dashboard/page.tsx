@@ -162,7 +162,7 @@ export default function DashboardPage() {
         title: "Biblioteca",
         href: "/biblioteca",
         icon: BookMarked,
-        tone: "#34c759",
+        tone: "#007aff",
         popup: false,
         row: 5,
         col: 3,
