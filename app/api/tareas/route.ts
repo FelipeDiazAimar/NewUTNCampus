@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCourses, callMoodleService, type MoodleCourse } from "@/lib/moodle";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_TAREAS } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
 
@@ -202,6 +204,11 @@ function getUserId(req: NextRequest): number {
 }
 
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const currentYear = new Date().getFullYear();
+    return NextResponse.json({ tareas: MOCK_TAREAS, years: [2026, 2025], year: currentYear >= 2026 ? 2026 : currentYear });
+  }
+
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const sesskey = req.cookies.get("moodle_sesskey")?.value ?? "";
   if (!sessionToken) {

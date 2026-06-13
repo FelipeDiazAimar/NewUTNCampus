@@ -238,7 +238,15 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-[12px] text-[#aeaeb2] mt-8 text-center max-w-xs">
+        {/* Botón modo invitado */}
+        <a
+          href="/api/guest/login"
+          className="mt-3 w-full max-w-[340px] py-3.5 rounded-2xl border-2 border-[#34c759] text-[#34c759] font-semibold text-[15px] text-center active:opacity-70 transition-opacity flex items-center justify-center gap-2"
+        >
+          Explorar como invitado
+        </a>
+
+        <p className="text-[12px] text-[#aeaeb2] mt-6 text-center max-w-xs">
           Usá las mismas credenciales del campus oficial de la UTN
         </p>
       </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { moodleLogin, refreshMoodleSession, type MoodleSession } from "@/lib/moodle";
 import { sessionCookieOptions } from "@/lib/cookies";
 import { encryptCred, decryptCred } from "@/lib/crypto";
+import { isGuestRequest } from "@/lib/guest";
 
 /** Guarda en la respuesta las cookies de una sesión de Moodle recién creada. */
 function setSessionCookies(response: NextResponse, session: MoodleSession, keep: boolean) {
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
 // Keep-alive: renueva la sesión mientras el navegador siga abierto. Rota el token
 // de Moodle si el servidor lo regeneró y desliza la expiración de las cookies.
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) return NextResponse.json({ ok: true, guest: true });
   const token = req.cookies.get("moodle_session_token")?.value;
   const sesskey = req.cookies.get("moodle_sesskey")?.value;
   const cred = req.cookies.get("moodle_cred")?.value;
@@ -101,5 +103,9 @@ export async function DELETE() {
   response.cookies.delete("moodle_user");
   response.cookies.delete("moodle_remember");
   response.cookies.delete("moodle_cred");
+  // clear guest session if present
+  response.cookies.delete("campus_guest");
+  response.cookies.delete("sysacadws_user");
+  response.cookies.delete("sysacadws_auth");
   return response;
 }

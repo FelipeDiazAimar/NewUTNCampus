@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callMoodleService } from "@/lib/moodle";
 import { mapConversation, type GetConversationsData } from "@/lib/chat";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_CONVERSATIONS } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
 
@@ -22,6 +24,19 @@ function getAuth(req: NextRequest): { cookie: string; sesskey: string; userid: n
  * sin el envoltorio [{error,data}] ni el HTML de los mensajes.
  */
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const GUEST_ID = 9999;
+    const conversations = MOCK_CONVERSATIONS
+      .map((c) => mapConversation(c, GUEST_ID))
+      .sort((a, b) => {
+        const ua = a.unread > 0 ? 1 : 0;
+        const ub = b.unread > 0 ? 1 : 0;
+        if (ua !== ub) return ub - ua;
+        return b.lastTimestamp - a.lastTimestamp;
+      });
+    return NextResponse.json({ conversations, meId: GUEST_ID });
+  }
+
   const auth = getAuth(req);
   if (!auth || !auth.userid) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });

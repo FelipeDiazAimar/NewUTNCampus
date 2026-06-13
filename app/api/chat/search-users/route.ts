@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callMoodleService } from "@/lib/moodle";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_SEARCH_USERS } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
 
@@ -32,6 +34,15 @@ interface SearchResult {
  * Calls core_message_message_search_users and returns contacts + noncontacts.
  */
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const q = req.nextUrl.searchParams.get("q")?.trim().toLowerCase() ?? "";
+    if (q.length < 2) return NextResponse.json({ contacts: [], noncontacts: [] });
+    const filtered = MOCK_SEARCH_USERS.filter((u) =>
+      u.fullname.toLowerCase().includes(q)
+    ).map((u) => ({ id: u.id, name: u.fullname, avatarUrl: u.profileimageurlsmall }));
+    return NextResponse.json({ contacts: [], noncontacts: filtered });
+  }
+
   const auth = getAuth(req);
   if (!auth?.userid) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 

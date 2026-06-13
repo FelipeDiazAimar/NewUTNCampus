@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 
 // ─── Tipos (snake_case = columnas de Supabase) ────────────────────────────────
 
@@ -619,6 +620,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
   // ── Acciones ─────────────────────────────────────────────────────────────────
 
   async function publish(content: string) {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     setPublishing(true);
     try {
       const res = await fetch("/api/foro", {
@@ -667,6 +669,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
   }
 
   async function addReply(postId: string, content: string) {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     const res = await fetch("/api/foro/comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

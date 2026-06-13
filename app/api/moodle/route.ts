@@ -1,7 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sessionCookieOptions } from "@/lib/cookies";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_COURSES, MOCK_CONVERSATIONS, MOCK_SEARCH_USERS } from "@/lib/guestMockData";
 
 export async function POST(req: NextRequest) {
+  // ── Guest mode: return mock data without hitting Moodle ─────────────────────
+  if (isGuestRequest(req)) {
+    const body = await req.json().catch(() => ({}));
+    const methodname: string = body?.methodname ?? "";
+
+    if (methodname === "core_course_get_enrolled_courses_by_timeline_classification" ||
+        methodname === "core_enrol_get_users_courses") {
+      return NextResponse.json({ data: MOCK_COURSES });
+    }
+    if (methodname === "core_message_get_conversations") {
+      return NextResponse.json({ data: { conversations: MOCK_CONVERSATIONS } });
+    }
+    if (methodname === "core_message_message_search_users") {
+      const q: string = (body?.args?.search ?? "").toLowerCase();
+      const filtered = MOCK_SEARCH_USERS.filter((u) =>
+        (u.fullname as string).toLowerCase().includes(q)
+      );
+      return NextResponse.json({ data: { contacts: [], noncontacts: filtered } });
+    }
+    if (methodname === "core_message_send_instant_messages" ||
+        methodname === "core_message_send_messages_to_conversation") {
+      return NextResponse.json(
+        { error: "Esta acción no está disponible en modo invitado." },
+        { status: 403 }
+      );
+    }
+    // No-op for read/notification methods
+    return NextResponse.json({ data: {} });
+  }
+
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const sesskey = req.cookies.get("moodle_sesskey")?.value;
 

@@ -61,5 +61,7 @@ export async function DELETE() {
   response.cookies.delete("sysacad_session");
   response.cookies.delete("sysacad_user");
   response.cookies.delete("sysacad_cred");
+  // clear guest session if present
+  response.cookies.delete("campus_guest");
   return response;
 }

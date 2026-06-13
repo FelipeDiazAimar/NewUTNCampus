@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import GuestBlockModal from "@/components/GuestBlockModal";
 
 export const metadata: Metadata = {
   title: "Campus UTN FRSF",
@@ -30,6 +31,7 @@ export default function RootLayout({
           disableTransitionOnChange={false}
         >
           {children}
+          <GuestBlockModal />
         </ThemeProvider>
       </body>
     </html>

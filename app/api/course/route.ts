@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { MoodleCourseSection, MoodleModule, MoodleContent } from "@/lib/moodle";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_COURSE_SECTIONS } from "@/lib/guestMockData";
 
 const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
@@ -214,6 +216,13 @@ function parseSectionMeta(mainHtml: string): SectionMeta[] {
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const courseId = Number(req.nextUrl.searchParams.get("id"));
+    const mock = MOCK_COURSE_SECTIONS[courseId];
+    if (!mock) return NextResponse.json({ data: [], courseName: "Materia" });
+    return NextResponse.json({ data: mock.data, courseName: mock.courseName });
+  }
+
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const courseId = req.nextUrl.searchParams.get("id");
 

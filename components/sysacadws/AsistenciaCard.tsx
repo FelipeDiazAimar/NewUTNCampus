@@ -296,7 +296,7 @@ export default function AsistenciaCard({
     [cursado, plan, especialidad]
   );
   const heat = useMemo(
-    () => computeHeatmap(cursado, plan, especialidad, inas ?? new Map()),
+    () => computeHeatmap(cursado, plan, especialidad, inas instanceof Map ? inas : new Map()),
     [cursado, plan, especialidad, inas]
   );
 

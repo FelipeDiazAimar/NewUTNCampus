@@ -17,6 +17,7 @@ import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import SubmissionUploader from "@/components/SubmissionUploader";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import type { AssignInfo, SubmittedFile } from "@/app/api/assign/route";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 
 interface AssignmentViewerProps {
   /** URL del módulo assign en Moodle (mod/assign/view.php?id=…). */
@@ -207,6 +208,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
   }
 
   async function handleUpload(formData: FormData) {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     formData.append("tareaId", info?.cmid ?? "");
     const res = await fetch("/api/assign/upload", { method: "POST", body: formData });
     if (!res.ok) {

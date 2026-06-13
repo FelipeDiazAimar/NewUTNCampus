@@ -8,6 +8,7 @@ import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import ContactDetailSheet from "@/components/ContactDetailSheet";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import {
   avatarColor,
   formatChatTime,
@@ -302,6 +303,7 @@ export default function ChatPage() {
   }
 
   async function send() {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     const text = draft.trim();
     if (!text) return;
     setDraft("");

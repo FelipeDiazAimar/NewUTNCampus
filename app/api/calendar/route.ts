@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCourses, callMoodleService, type MoodleCourse } from "@/lib/moodle";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_TAREAS } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
 
@@ -191,6 +193,16 @@ function getUserId(req: NextRequest): number {
 }
 
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const events: TareaEvent[] = MOCK_TAREAS.flatMap((t) => {
+      const out: TareaEvent[] = [];
+      if (t.due) out.push({ date: t.due.slice(0, 10), kind: "tarea_fin", title: t.title, course: t.course });
+      if (t.open) out.push({ date: t.open.slice(0, 10), kind: "tarea_inicio", title: t.title, course: t.course });
+      return out;
+    });
+    return NextResponse.json({ events });
+  }
+
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const sesskey = req.cookies.get("moodle_sesskey")?.value ?? "";
   if (!sessionToken) {

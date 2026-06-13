@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callMoodleService } from "@/lib/moodle";
 import { mapMessage, type GetMessagesData } from "@/lib/chat";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_MESSAGES } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
 
@@ -20,6 +22,14 @@ function getAuth(req: NextRequest): { cookie: string; sesskey: string; userid: n
  * Intercepta core_message_get_conversation_messages → `Message[]` (orden cronológico).
  */
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const GUEST_ID = 9999;
+    const convid = Number(req.nextUrl.searchParams.get("convid"));
+    const raw = (MOCK_MESSAGES[convid] ?? []) as Array<{ id: number; useridfrom: number; text: string; timecreated: number }>;
+    const messages = raw.map((m) => mapMessage(m)).sort((a, b) => a.timestamp - b.timestamp);
+    return NextResponse.json({ messages, meId: GUEST_ID });
+  }
+
   const auth = getAuth(req);
   if (!auth || !auth.userid) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
@@ -51,6 +61,13 @@ export async function GET(req: NextRequest) {
  * Envía un mensaje: a un usuario (instant) o a una conversación grupal.
  */
 export async function POST(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    return NextResponse.json(
+      { error: "Esta acción no está disponible en modo invitado." },
+      { status: 403 }
+    );
+  }
+
   const auth = getAuth(req);
   if (!auth || !auth.userid) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });

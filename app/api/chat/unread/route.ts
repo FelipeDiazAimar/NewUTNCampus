@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callMoodleService } from "@/lib/moodle";
 import type { GetConversationsData } from "@/lib/chat";
+import { isGuestRequest } from "@/lib/guest";
+import { MOCK_CONVERSATIONS } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
 
@@ -21,6 +23,11 @@ function getAuth(req: NextRequest): { cookie: string; sesskey: string; userid: n
  * Lo usa el badge rojo del logo en el Navbar.
  */
 export async function GET(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    const count = MOCK_CONVERSATIONS.reduce((s, c) => s + (c.unreadcount ?? 0), 0);
+    return NextResponse.json({ count, unreadMessages: count, unreadChats: MOCK_CONVERSATIONS.filter((c) => (c.unreadcount ?? 0) > 0).length });
+  }
+
   const auth = getAuth(req);
   if (!auth || !auth.userid) {
     return NextResponse.json({ count: 0 }, { status: 401 });
