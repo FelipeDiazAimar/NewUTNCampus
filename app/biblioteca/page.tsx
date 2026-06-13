@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BookMarked, Check, AlertCircle } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import DropdownSelect, { type DropdownOption } from "@/components/DropdownSelect";
 import CalendarPicker from "@/components/CalendarPicker";
 
@@ -237,6 +238,7 @@ export default function BibliotecaPage() {
   };
 
   const saveProfile = () => {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     // Save to Supabase
     saveToSupabase({
       nombre: profile.nombre,
@@ -255,6 +257,7 @@ export default function BibliotecaPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     setSubmitStatus("loading");
     setErrorMsg("");
     try {
