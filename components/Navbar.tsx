@@ -110,7 +110,14 @@ export default function Navbar({ fullname }: { fullname?: string }) {
             <ThemeToggle />
             {mounted && isGuest ? (
               <button
-                onClick={() => router.push("/")}
+                onClick={async () => {
+                  // Limpiar cookies de invitado antes de ir al login
+                  await Promise.all([
+                    fetch("/api/auth", { method: "DELETE" }),
+                    fetch("/api/sysacadws/login", { method: "DELETE" }),
+                  ]).catch(() => {});
+                  router.push("/");
+                }}
                 className="flex items-center gap-1.5 rounded-full bg-[#007aff] px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-80 active:opacity-70"
               >
                 <LogIn className="h-3 w-3" />
