@@ -1,13 +1,28 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { useCourses } from "@/lib/hooks";
+import { useCursado } from "@/lib/sysacadHooks";
 import type { MoodleCourse } from "@/lib/moodle";
 import { SpinnerBlock } from "@/components/Spinner";
+
+type MateriasView = "cursando" | "anio";
+
+/** Legajo del alumno (cookie sysacadws_user) — para la llamada de "Cursado actual". */
+function getLegajo(): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const m = document.cookie.match(/sysacadws_user=([^;]+)/);
+  if (!m) return undefined;
+  try {
+    return JSON.parse(decodeURIComponent(m[1]))?.legajo;
+  } catch {
+    return undefined;
+  }
+}
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -122,11 +137,42 @@ export default function MateriasPage() {
   const { courses, loading, error } = useCourses();
   const [userInfo, setUserInfo] = useState<{ fullname?: string; username?: string }>({});
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<MateriasView>("anio");
+  const [legajo, setLegajo] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setUserInfo(getUserInfo());
-    if (!document.cookie.includes("moodle_user")) router.push("/");
+    if (!document.cookie.includes("moodle_user")) { router.push("/"); return; }
+
+    const lj = getLegajo();
+    setLegajo(lj);
+    // Vista inicial: ?view= manda; si no, "cursando" sólo si hay sesión sysacad.
+    const param = new URLSearchParams(window.location.search).get("view");
+    if (param === "cursando" || param === "anio") setView(param);
+    else setView(lj ? "cursando" : "anio");
   }, [router]);
+
+  // "Cursado actual" desde sysacad (mismo endpoint que /sysacad).
+  const { data: cursado, isLoading: cursadoLoading } = useCursado(legajo);
+
+  // Vínculo materia-en-curso ↔ curso de Moodle: ClaveCampusVirtual === shortname
+  // (match exacto), con fallback por nombre (NombreMateria ⊂ fullname).
+  const isCursando = useMemo(() => {
+    const claves = new Set(
+      (cursado?.Comisiones ?? [])
+        .map((c) => c.ClaveCampusVirtual?.trim().toLowerCase())
+        .filter((v): v is string => !!v)
+    );
+    const nombres = (cursado?.Comisiones ?? [])
+      .map((c) => foldText(c.NombreMateria ?? ""))
+      .filter(Boolean);
+    return (course: MoodleCourse) => {
+      const sn = course.shortname?.trim().toLowerCase();
+      if (sn && claves.has(sn)) return true;
+      const fn = foldText(course.fullname);
+      return nombres.some((n) => fn.includes(n));
+    };
+  }, [cursado]);
 
   const needle = foldText(search);
   const filtered: MoodleCourse[] = needle
@@ -134,6 +180,8 @@ export default function MateriasPage() {
         foldText(`${c.fullname} ${c.shortname} ${c.coursecategory}`).includes(needle)
       )
     : courses;
+
+  const cursandoCourses = useMemo(() => filtered.filter(isCursando), [filtered, isCursando]);
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -209,6 +257,34 @@ export default function MateriasPage() {
           />
         </div>
 
+        {/* Toggle Cursando / Por año (segmented control estilo Apple) */}
+        <div className="relative flex mb-4 p-1 rounded-full bg-[var(--surface2)] select-none">
+          <span
+            aria-hidden
+            className="absolute top-1 bottom-1 rounded-full bg-[#007aff] shadow-sm transition-transform duration-300 ease-out"
+            style={{
+              left: "0.25rem",
+              width: "calc(50% - 0.25rem)",
+              transform: view === "anio" ? "translateX(100%)" : "translateX(0)",
+            }}
+          />
+          {([
+            ["cursando", "Cursando"],
+            ["anio", "Por año"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={`relative z-10 flex-1 py-1.5 text-[14px] font-semibold rounded-full transition-colors duration-200 ${
+                view === key ? "text-white" : "text-[var(--secondary)]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Loading */}
         {loading && (
           <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden">
@@ -222,7 +298,7 @@ export default function MateriasPage() {
           </div>
         )}
 
-        {!loading && !error && (
+        {!loading && !error && view === "anio" && (
           <>
             {filtered.length === 0 ? (
               <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
@@ -243,6 +319,49 @@ export default function MateriasPage() {
                       ))}
                     </div>
                   </section>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {!loading && !error && view === "cursando" && (
+          <>
+            {!legajo ? (
+              /* Sin sesión de Sysacad: pedir login y volver acá ya en vista Cursando */
+              <div className="bg-[var(--surface)] border border-[var(--separator)] rounded-2xl shadow-sm px-6 py-10 flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ background: "var(--accent-light)" }}>
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <polyline points="10 17 15 12 10 7" />
+                    <line x1="15" y1="12" x2="3" y2="12" />
+                  </svg>
+                </div>
+                <p className="text-[16px] font-semibold text-[var(--fg)]">Iniciá sesión en Sysacad</p>
+                <p className="text-[14px] text-[var(--secondary)] mt-1 max-w-xs">
+                  Debes de iniciar sesión en Sysacad para ver las materias que estás cursando.
+                </p>
+                <Link
+                  href={`/sysacad?next=${encodeURIComponent("/materias?view=cursando")}`}
+                  className="mt-5 inline-flex items-center justify-center rounded-full bg-[#007aff] px-5 py-2.5 text-[15px] font-semibold text-white shadow-sm transition-opacity active:opacity-80"
+                >
+                  Iniciar sesión en Sysacad
+                </Link>
+              </div>
+            ) : cursadoLoading && !cursado ? (
+              <div className="bg-[var(--surface)] rounded-2xl shadow-sm overflow-hidden">
+                <SpinnerBlock label="Buscando tus materias en curso…" size={30} minHeight={180} />
+              </div>
+            ) : cursandoCourses.length === 0 ? (
+              <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
+                {search
+                  ? "Sin resultados para esa búsqueda."
+                  : "No pudimos determinar tus materias en curso. Probá la vista “Por año”."}
+              </p>
+            ) : (
+              <div className="bg-[var(--surface)] rounded-2xl overflow-hidden shadow-sm divide-y divide-[var(--separator)] border border-[var(--separator)]">
+                {cursandoCourses.map((course, i) => (
+                  <CourseRow key={course.id} course={course} index={i} />
                 ))}
               </div>
             )}
