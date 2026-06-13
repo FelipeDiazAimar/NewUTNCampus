@@ -1,0 +1,1166 @@
+
+
+
+
+<!DOCTYPE html>
+<html lang="es"><!-- InstanceBegin template="/Templates/entorno_sitio.dwt.php" codeOutsideHTMLIsLocked="false" -->
+
+<head>
+    <title> UTN Facultad Regional San Francisco - Turnos </title>
+    <link rel='icon' href='favicon.ico' type='image/x-icon' sizes="16x16" />
+
+
+    
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="iso-8859-1">
+<title></title>
+<meta name="description" content="">
+<meta name="keywords" content="">
+
+
+
+<link href="/estilos/especificos/bootstrap.min.css" rel="stylesheet" media="screen">
+<link href="/estilos/especificos/bootstrapmin_edit.css?v=1" rel="stylesheet" media="screen">
+
+<link href="/estilos/especificos/bootstrap-theme.min.css" rel="stylesheet">
+<link href="/estilos/especificos/demo.css" rel="stylesheet">
+<link href="/estilos/especificos/yamm.css" rel="stylesheet">
+<link rel="stylesheet" type="text/css" href="/componentes/slider/estilos/style.css" />
+
+<link rel="stylesheet" href="/estilos/generales/generales.css">
+
+<link rel="stylesheet" href="/estilos/especificos/especificos.css" media="screen">
+
+    
+
+
+<script src="/scripts/generales/funciones_generales.js"></script>
+<script src="/scripts/especificos/validaciones_formularios.js"></script>
+<!--Slider encabezado-->
+<script type="text/javascript" src="/componentes/slider/scripts/jquery.js"></script>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'G-RBB0LMD2RS', 'auto');
+  ga('send', 'pageview');
+</script>
+ 
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-RBB0LMD2RS"></script>
+
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-RBB0LMD2RS');
+</script>
+
+
+<!--FIN Slider encabezado-->
+
+<!--Pesta�as fotos - videos-->
+<script language="javascript" type="text/javascript" src="/scripts/especificos/pestanias.js"></script>
+<script language="javascript" type="text/javascript" src="/scripts/especificos/pestanias_videos_fotos_novedades_ampliadas.js"></script>
+<!--Pesta�as fotos - videos-->
+
+<link rel="stylesheet" type="text/css" href="/componentes/slider/engine1/style.css" />
+<script type="text/javascript" src="/componentes/slider/engine1/jquery.js"></script>
+
+    <script src="js/jquery.min.js"></script>
+    <script src="js/bootstrap.min.js"></script>
+    <script src='https://www.google.com/recaptcha/api.js'></script>
+    <script src="js/jquery-3.3.1.js"></script>
+
+    <link rel="stylesheet" href="/estilos/especificos/preinscripcion.css">
+    
+    <script language="javascript" type="text/javascript">
+
+        function ControlDatos(theForm) {  // JavaScript Document
+            if (theForm.responsable.value == "") {
+                alert("El Área es un dato requerido.");
+                return (false);
+            }
+            if (theForm.tematica.value == "") {
+                alert("La Temática es un dato requerido.");
+                return (false);
+            }
+            
+            var loteVal = document.getElementById("turnos_lote").value;
+            if (!loteVal || loteVal === "" || loteVal === "[]") {
+                alert("Debe añadir al menos un turno haciendo clic en 'Añadir Turno'.");
+                return (false);
+            }
+            if (theForm.nombre.value == "" || theForm.nombre.value == "Nombre y Apellido") {
+                alert("Su nombre y apellido es un dato requerido.");
+                theForm.nombre.focus();
+                return (false);
+            }
+
+            if (theForm.telefono.value == "" || theForm.telefono.value == "Tel\u00e9fono") {
+                alert("Su teléfono es un dato requerido.");
+                theForm.telefono.focus();
+                return (false);
+            }
+
+            if (theForm.email.value == "" || theForm.email.value == "Email") {
+                alert("Su dirección de correo es un dato requerido.");
+                theForm.email.focus();
+                return (false);
+            }
+
+            email = theForm.email.value;
+
+            if (/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(email)) {
+
+            }
+            else {
+                alert("La direcci\xF3n de email es incorrecta.");
+                theForm.email.focus();
+                return (false);
+                document.getElementById("email").style.display = "none";
+            }
+
+            if (theForm.nro_documento.value == "" || theForm.nro_documento.value == "0") {
+                alert("Su dni es un dato requerido.");
+                theForm.nro_documento.focus();
+                return (false);
+            }
+
+            if (theForm.guess.value == "") {
+                alert("El c\xF3digo captcha es un dato requerido.");
+                theForm.guess.focus();
+                return (false);
+            }
+
+            return (true);
+        }
+    </script>
+
+    <!-- InstanceEndEditable -->
+</head>
+
+<script type="text/javascript" src="js/responsable_tematica.js?v=899270167"></script>
+<div id="image_internas">
+
+    <body>
+
+        <!--Encabezado-->
+        
+<div class="row">
+<div class="container">
+	<div class="row visible-sm visible-md visible-lg" style="padding-right:0px;">
+    
+        
+        <div class="col-sm-5 col-md-5 col-lg-5" align="left" style="margin-top:0px;">
+        
+        <h1 class="imagen_header">
+        <a title="Universidad Tecnol&oacute;gica Nacional Facultad Regional San Francisco" href="https://sanfrancisco.utn.edu.ar">Turnos - Universidad Tecnol&oacute;gica Nacional Facultad Regional San Francisco</a>
+        </h1>
+        </div>
+        
+            
+        <div align="right" class="col-sm-7 col-md-7 col-lg-7 pull-right">
+       		<div class="redes_sociales_top">
+        		<a href="/contacto" class="correo"><img alt="Contacto" title="Contacto" src="/imagenes/iconos/ic_correo.png"/> </a> 
+       		   <a href="https://www.youtube.com/channel/UCw5iNPn6LFC3EAjWWc2Nv0A" class="facebook" target="_blank"><img alt="Canal de Youtube Utn San Francisco" title="Canal de Youtube Utn San Francisco" src="/imagenes/iconos/icono_youtube.png"/></a> 
+       		    <a href="https://www.instagram.com/utnsanfrancisco/?hl=es-la" class="facebook" target="_blank"><img alt="Instagram" title="Instagram" src="/imagenes/iconos/instagram_ic.png"/></a>
+ 				<a href="https://twitter.com/utnsanfco" class="twitter" target="_blank"><img alt="Twitter" title="Twitter" src="/imagenes/iconos/ic_twitter.png"/> </a>  
+            	<a href="https://www.facebook.com/utnsanfrancisco" class="facebook" target="_blank"><img alt="Facebook" title="Facebook" src="/imagenes/iconos/ic_facebbok.png"/></a><br />
+             </div> 
+             <!--
+             <div class="accesos_top_header visible-md visible-lg">
+                <a href="/acceso_webmail" target="_blank"><img class="img-responsive" alt="Acceso a Webmail" title="Acceso a Webmail" src="/imagenes/iconos/icono_acceso_webmail2.jpg"/></a>  
+                <a href="https://sistemas.frsfco.utn.edu.ar/sysacad/logindocente.asp" class="docentes" target="_blank"><img class="img-responsive" alt="SysAcad - M&oacute;dulo Autogesti&oacute;n Docentes" title="SysAcad - M&oacute;dulo Autogesti&oacute;n Docentes" src="/imagenes/iconos/icono_acceso_docentes2.jpg"/></a> 
+                <a href="https://sistemas.frsfco.utn.edu.ar/sysacad/loginalumno.asp" class="estudiantes" target="_blank"><img class="img-responsive" alt="SysAcad - M&oacute;dulo Autogesti&oacute;n Estudiantes" title="SysAcad - M&oacute;dulo Autogesti&oacute;n Estudiantes" src="/imagenes/iconos/icono_acceso_estudiantes2.jpg"/></a>
+                 <a href="http://seu.sanfrancisco.utn.edu.ar/contenidos/campus-virtual-aula-25-1" class="estudiantes" target="_blank"><img class="img-responsive" alt="Acceso a Aula 25" title="Acceso a Aula 25" src="/imagenes/iconos/ic_acceso_aula25.png"/></a> 
+              </div> -->
+         </div>
+       
+          
+	</div>  
+</div>
+
+</div>        <div class="navbar-default">
+      <div class="container">
+      
+          <a class="navbar-brand" href="https://sanfrancisco.utn.edu.ar"><img class="visible-xs movil logo_movil" src="/imagenes/estructura/logo_movil50.png" border="0"/></a>
+        <div class="navbar-header visible-sm visible-xs" style="padding-top:2px; margin-bottom:0px;">
+          <button type="button" data-toggle="collapse" data-target="#navbar-collapse-1" class="navbar-toggle "><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button><a href="#" class="navbar-brand"></a>
+        </div>
+            
+        <div id="navbar-collapse-1" class="navbar-collapse collapse">
+        
+          <ul class="nav navbar-nav">
+    
+
+    </div>  
+ <!-- cierre container-->
+  </div>  
+</div>
+        <meta name="Keywords"
+            content="Turnos, UTN, ARGENTINA, FRSFCO, Universidad, Tecnol&oacute;gica, Nacional, Facultad, San Francisco, C&oacute;rdoba" />
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.css" rel="stylesheet" />
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+        <script type="text/javascript"
+            src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/jquery-ui.js"></script>
+        <div class="container">
+            <!-- InstanceBeginEditable name="Contenidos" -->
+            <style>
+                .banner-turnos {
+                    background: linear-gradient(135deg, #2A4470 0%, #61A5D8 100%);
+                    color: white;
+                    border-radius: 10px;
+                    padding: 30px;
+                    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+                    display: flex;
+                    align-items: center;
+                    gap: 25px;
+                    margin-bottom: 30px;
+                    flex-wrap: wrap;
+                }
+
+                .banner-turnos-icon {
+                    flex-shrink: 0;
+                    background: rgba(255, 255, 255, 0.15);
+                    padding: 20px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .banner-turnos-content {
+                    flex: 1;
+                    min-width: 250px;
+                }
+
+                .banner-turnos h1 {
+                    margin-top: 0;
+                    font-weight: bold;
+                    font-size: 26px;
+                    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+                    line-height: 1.3;
+                    color: #ffffff;
+                }
+
+                .banner-turnos p {
+                    font-size: 16px;
+                    margin-bottom: 0;
+                    opacity: 0.95;
+                    line-height: 1.5;
+                }
+
+                @media (max-width: 768px) {
+                    .banner-turnos {
+                        padding: 20px 15px;
+                        flex-direction: column;
+                        text-align: center;
+                        gap: 15px;
+                    }
+
+                    .banner-turnos-icon {
+                        padding: 15px;
+                    }
+
+                    .banner-turnos-icon svg {
+                        width: 45px;
+                        height: 45px;
+                    }
+
+                    .banner-turnos h1 {
+                        font-size: 20px;
+                    }
+
+                    .banner-turnos p {
+                        font-size: 14px;
+                    }
+                }
+
+                /* Estilos responsivos para la tabla de turnos seleccionados en celulares */
+                @media (max-width: 768px) {
+                    .table-turnos-seleccionados,
+                    .table-turnos-seleccionados thead,
+                    .table-turnos-seleccionados tbody,
+                    .table-turnos-seleccionados tr,
+                    .table-turnos-seleccionados td {
+                        display: block !important;
+                        width: 100% !important;
+                    }
+                    
+                    .table-turnos-seleccionados thead {
+                        display: none !important; /* Oculta la cabecera en móviles */
+                    }
+                    
+                    .table-turnos-seleccionados tr {
+                        background: #ffffff !important;
+                        border: 1px solid #e2e8f0 !important;
+                        border-radius: 12px !important;
+                        padding: 12px 16px !important;
+                        margin-bottom: 16px !important;
+                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+                    }
+                    
+                    .table-turnos-seleccionados td {
+                        display: flex !important;
+                        justify-content: space-between !important;
+                        align-items: center !important;
+                        border: none !important;
+                        border-bottom: 1px solid #f1f5f9 !important;
+                        padding: 8px 0 !important;
+                        white-space: normal !important;
+                    }
+                    
+                    .table-turnos-seleccionados td:last-child {
+                        border-bottom: none !important;
+                        padding-top: 12px !important;
+                        justify-content: center !important;
+                    }
+                    
+                    .table-turnos-seleccionados td::before {
+                        content: attr(data-label);
+                        font-weight: 700;
+                        color: #4a5568;
+                        text-transform: uppercase;
+                        font-size: 11px;
+                        letter-spacing: 0.05em;
+                        text-align: left;
+                        margin-right: 15px;
+                        flex-shrink: 0;
+                    }
+
+                    .table-turnos-seleccionados td .td-content {
+                        text-align: right !important;
+                        max-width: 65% !important;
+                        font-size: 14px !important;
+                        color: #2d3748 !important;
+                        word-break: break-word !important;
+                        overflow-wrap: break-word !important;
+                        white-space: normal !important;
+                    }
+                }
+            </style>
+            <div class="jumbotron banner-turnos">
+                <div class="banner-turnos-icon">
+                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                        <path d="M8 14h.01"></path>
+                        <path d="M12 14h.01"></path>
+                        <path d="M16 14h.01"></path>
+                        <path d="M8 18h.01"></path>
+                        <path d="M12 18h.01"></path>
+                        <path d="M16 18h.01"></path>
+                    </svg>
+                </div>
+                <div class="banner-turnos-content">
+                    <h1>
+                        SOLICITAR TURNOS PARA ATENCI&Oacute;N PRESENCIAL
+                    </h1>
+                    <p>
+                        Complete el formulario de reserva de turnos para asistir en forma <strong>PRESENCIAL</strong> a
+                        nuestro establecimiento.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- H-chapters - Tipos de trabajos -->
+            <div class="h-chapter-container section-container section-container-gray-bg">
+                <div class="container">
+                    <div class="row">
+                        <form id="contacto" name="contacto" method="post" action="/envio/envio_turno.php"
+                            onSubmit="return ControlDatos(this)" role="form" class="responsive"
+                            enctype="multipart/form-data">
+                            <!-- Campos ocultos de Form modal -->
+                            <input type="hidden" class="form-control" id="responsable" name="responsable"
+                                value="" />
+                            <input type="hidden" class="form-control" id="tematica" name="tematica"
+                                value="" />
+
+                            <div class="row well">
+                                <div class="row">
+                                    <div class="row" style="margin-bottom: 25px;">
+                                        <h3
+                                            style="border-bottom: 2px solid #61A5D8; padding-bottom: 10px; margin-bottom: 20px; color: #2A4470; text-transform: uppercase; font-size: 22px; margin-top: 10px;">
+                                            Informaci&oacute;n sobre el &aacute;rea a solicitar turno
+                                        </h3>
+                                        <br clear="all" />
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                            <div
+                                                style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                                <button class="btn btn-info btn-lg" type="button" data-toggle='modal'
+                                                    data-target='#bus_turnos'
+                                                    style="box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease;">
+                                                    Seleccionar &Aacute;rea y Tem&aacute;tica
+                                                </button>
+                                                <div style="flex: 1; min-width: 250px;">
+                                                    <div class="alert alert-warning"
+                                                        style="margin-bottom: 0; padding: 10px 15px; border-left: 5px solid #b94030; font-weight: bold; color: #b94030; background-color: #fdf8f5;">
+                                                        <span id="resultado">Nota: Seleccionar &Aacute;rea y Tem&aacute;tica</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                            <div class="form-group">
+                                                <label for="obs">Observaciones:</label>
+                                                <p class="help-block"
+                                                    style="color: #b94030; margin-top: 0; margin-bottom: 8px; font-size: 13px;">
+                                                    Nota: En caso de elegir "Varios". Por favor indique los
+                                                    tr&aacute;mites a realizar. Muchas Gracias.
+                                                </p>
+                                                <textarea id="obs" name="obs" class="form-control" rows="2"
+                                                    style="border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,.075);"></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                            <div class="form-group">
+                                                <label for="datepicker">Seleccione una Fecha Disponible:</label>
+                                                <p class="help-block"
+                                                    style="color: #303eb9; margin-top: 0; margin-bottom: 8px; font-size: 13px;">
+                                                    <span id="resultado_fecha">Nota: Seleccionar &Aacute;rea y
+                                                        Tem&aacute;tica, para ver las Fechas Disponibles</span>
+                                                </p>
+                                                <input
+                                                    style="font-weight: bold; color:black;background-color:#E4F7F9; cursor: pointer; border-radius: 4px;"
+                                                    type="text" id="datepicker" name="datepicker"
+                                                    placeholder="Clic para seleccionar fecha" class="form-control"
+                                                    readonly />
+                                            </div>
+                                        </div>
+                                        <br clear="all" />
+                                        <script type="text/javascript">
+                                            var disableddates = ;
+
+                                            function DisableSpecificDates(date) {
+                                                var m = date.getMonth();
+                                                var d = date.getDate();
+                                                var y = date.getFullYear();
+                                                var currentdate = (m + 1) + '-' + d + '-' + y;
+
+                                                for (var i = 0; i < disableddates.length; i++) {
+                                                    if ($.inArray(currentdate, disableddates) != -1) {
+                                                        return [false];
+                                                    }
+                                                }
+
+                                                return [true];
+                                            }
+
+                                            $(function () {
+                                                $.datepicker.setDefaults($.datepicker.regional["es"]);
+                                                $("#datepicker").datepicker({
+                                                    dateFormat: 'dd/mm/yy',
+                                                    changeMonth: true,
+                                                    changeYear: true,
+                                                    yearRange: "+0:+1",
+                                                    firstDay: 1,
+                                                    minDate: 'today', /** +2d AAAA,MM,DD Fecha inicio */
+                                                    maxDate: '+31d', /** AAAA,MM,DD Fecha Fin */
+
+                                                    monthNames: ['Enero', 'Febrero', 'Marzo',
+                                                        'Abril', 'Mayo', 'Junio',
+                                                        'Julio', 'Agosto', 'Septiembre',
+                                                        'Octubre', 'Noviembre', 'Diciembre'],
+                                                    monthNamesShort: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                                                        'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
+                                                    dayNamesMin: ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'],
+                                                    beforeShowDay: DisableSpecificDates,
+                                                    onClose: function (dateText, inst) {
+                                                        var val = $('#datepicker').val();
+                                                        var areas = ;
+                                                        var tematicas = ;
+
+                                                        var params = {
+                                                            diapicker: val, //aqui defines el valor del parametro
+                                                            area: areas,
+                                                            tematica: tematicas
+                                                        };
+
+                                                        $('#horarios').html('<option value="">Cargando Horarios...aguarde</option>'); // mensaje que se muestra mientras carga la operacion
+                                                        $.ajax({
+                                                            url: 'funciones/disponibilidad_horarios.php?diapicker=' + val + '&area=' + areas + '&tematica=' + tematicas, // funcion php con el id del departamento como parametro "id"
+                                                            data: params,
+                                                            type: 'POST',
+                                                            success: function (resp) {
+                                                                //si todo es exitoso:
+                                                                $('#horarios').html(resp); // rellenamos la lista de municipios segun el id del departamento
+                                                            }
+                                                        });
+                                                    }
+                                                });
+                                            });
+
+
+                                        </script>
+
+
+                                        <!-- Incluye la hoja de estilos de Select2 -->
+                                        <link
+                                            href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css"
+                                            rel="stylesheet" />
+                                        <!-- Incluye el archivo JavaScript de Select2 -->
+                                        <script
+                                            src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                            <div class="form-group">
+                                                <label>Horarios Disponibles: *</label>
+                                                                                                <p class="help-block"
+                                                    style="color: #303eb9; margin-top: 0; margin-bottom: 8px; font-size: 13px;">
+                                                    <span id="resultado">
+                                                                                                                    Nota: Seleccionar previamente Fecha, para ver Horarios
+                                                            Disponibles
+                                                                                                            </span>
+                                                </p>
+
+                                                                                                    <select style="font-weight: bold; color:black;background-color:#E4F7F9;"
+                                                        name="horarios" class="form-control" id="horarios">
+                                                                                                            <option value="">.::Horarios Disponibles:.</option>
+                                                    </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12" style="margin-top: 10px; margin-bottom: 20px;">
+                                            <button type="button" id="btn-agregar-turno" class="btn btn-primary btn-block" style="background-color: #2A4470; border-color: #2A4470; font-weight: bold;">
+                                                <i class="fa fa-plus"></i> Añadir Turno
+                                            </button>
+                                        </div>
+
+                                        <!-- Contenedor del Carrito de Turnos -->
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12" id="contenedor-tabla-turnos" style="display: none; margin-top: 15px; margin-bottom: 25px;">
+                                            <h4 style="color: #2A4470; border-bottom: 2px solid #61A5D8; padding-bottom: 5px;">
+                                                <strong>Mis Turnos Seleccionados:</strong>
+                                            </h4>
+                                            <div class="table-responsive">
+                                                <table class="table table-bordered table-striped table-turnos-seleccionados" style="background-color: #fff;">
+                                                    <thead>
+                                                        <tr style="background-color: #f5f5f5;">
+                                                            <th>Fecha</th>
+                                                            <th>Horario</th>
+                                                            <th>Área / Temática</th>
+                                                            <th style="width: 80px; text-align: center;">Acción</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="tabla-turnos-body">
+                                                        <!-- Se llena dinámicamente -->
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <!-- Campo oculto donde enviamos el lote en formato JSON -->
+                                            <input type="hidden" name="turnos_lote" id="turnos_lote" value="" />
+                                        </div>
+
+                                        <script>
+                                            let turnosSeleccionados = [];
+
+                                            function actualizarTablaTurnos() {
+                                                let tablaBody = document.getElementById("tabla-turnos-body");
+                                                let contenedorTabla = document.getElementById("contenedor-tabla-turnos");
+                                                let hiddenLote = document.getElementById("turnos_lote");
+                                                
+                                                tablaBody.innerHTML = "";
+                                                
+                                                if (turnosSeleccionados.length === 0) {
+                                                    contenedorTabla.style.display = "none";
+                                                    hiddenLote.value = "";
+                                                    return;
+                                                }
+                                                
+                                                contenedorTabla.style.display = "block";
+                                                hiddenLote.value = JSON.stringify(turnosSeleccionados);
+                                                
+                                                turnosSeleccionados.forEach((turno, idx) => {
+                                                    let fila = document.createElement("tr");
+                                                    fila.innerHTML = `
+                                                        <td data-label="Fecha"><span class="td-content"><strong>${turno.fecha}</strong></span></td>
+                                                        <td data-label="Horario"><span class="td-content"><span class="label label-info" style="font-size: 13px;">${turno.horarioDesc}</span></span></td>
+                                                        <td data-label="Área / Temática"><span class="td-content">${turno.responsableDesc} - ${turno.tematicaDesc}</span></td>
+                                                        <td data-label="Acción" style="text-align: center;">
+                                                            <button type="button" class="btn btn-danger btn-xs" onclick="eliminarTurno(${idx})">
+                                                                <i class="fa fa-times"></i> Quitar
+                                                            </button>
+                                                        </td>
+                                                    `;
+                                                    tablaBody.appendChild(fila);
+                                                });
+                                            }
+
+                                            function eliminarTurno(idx) {
+                                                turnosSeleccionados.splice(idx, 1);
+                                                actualizarTablaTurnos();
+                                            }
+
+                                            $(document).ready(function () {
+                                                // Selecciona el elemento select con el ID "horarios" y aplica Select2
+                                                $("#horarios").select2({
+                                                    placeholder: ".::Horarios Disponibles:.",
+                                                    theme: "default",
+                                                });
+
+                                                $("#btn-agregar-turno").click(function() {
+                                                    let fecha = $("#datepicker").val();
+                                                    let horariosSelect = document.getElementById("horarios");
+                                                    
+                                                    if (!fecha) {
+                                                        alert("Por favor, seleccione una fecha disponible.");
+                                                        return;
+                                                    }
+                                                    
+                                                    let selectedOptions = [];
+                                                    for (let i = 0; i < horariosSelect.options.length; i++) {
+                                                        if (horariosSelect.options[i].selected && horariosSelect.options[i].value !== "") {
+                                                            selectedOptions.push({
+                                                                id: horariosSelect.options[i].value,
+                                                                desc: horariosSelect.options[i].text
+                                                            });
+                                                        }
+                                                    }
+                                                    
+                                                    if (selectedOptions.length === 0) {
+                                                        alert("Por favor, seleccione al menos un horario.");
+                                                        return;
+                                                    }
+                                                    
+                                                    let areaId = "";
+                                                    let areaDesc = "";
+                                                    let tematicaId = "";
+                                                    let tematicaDesc = "";
+                                                    
+                                                    let duplicados = 0;
+                                                    selectedOptions.forEach(opt => {
+                                                        let exists = turnosSeleccionados.some(t => t.fecha === fecha && t.idHorario === opt.id && t.idResponsable === areaId);
+                                                        if (!exists) {
+                                                            turnosSeleccionados.push({
+                                                                fecha: fecha,
+                                                                idHorario: opt.id,
+                                                                horarioDesc: opt.desc,
+                                                                idResponsable: areaId,
+                                                                responsableDesc: areaDesc,
+                                                                idTematica: tematicaId,
+                                                                tematicaDesc: tematicaDesc
+                                                            });
+                                                        } else {
+                                                            duplicados++;
+                                                        }
+                                                    });
+                                                    
+                                                    if (duplicados > 0) {
+                                                        alert("Algunos de los turnos seleccionados ya estaban en la lista.");
+                                                    }
+                                                    
+                                                    actualizarTablaTurnos();
+                                                    
+                                                    // Limpiar campos seleccionados para otra entrada
+                                                    $("#datepicker").val("");
+                                                    $("#horarios").val("").trigger("change");
+                                                });
+
+                                                // Inicialización del lote si proviene de la sesión
+                                                                                            });
+                                        </script>
+
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                                                                            <div class="form-group">
+                                                    <label>Tipo de Asistencia: *</label>
+                                                    
+                                                    <select style="font-weight: bold; color:black;background-color:#E4F7F9;"
+                                                        name="tipoasistencia" class="form-control" id="tipoasistencia"
+                                                        required>
+                                                        <option value="" select>.::Tipo de Asistencia:.</option>
+                                                                                                            </select>
+                                                </div>
+                                                                                        </div>
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                                                                                                                        <div class="form-group">
+                                                    <label>Categor&iacute;a de Contacto *</label>
+                                                    <select style="font-weight: bold; color:black;background-color:#E4F7F9;"
+                                                        class="form-control" id="tipo_contacto" name="tipo_contacto"
+                                                        required>
+                                                        <option id="Aspirante" >Aspirante</option>
+                                                        <option id="cursante" >Cursante</option>
+                                                        <option id="NoCursante" >No Cursante
+                                                        </option>
+                                                        <option id="Docente" >Docente</option>
+                                                        <option id="Nodocente" >No Docente</option>
+                                                        <option id="Egresado" >Egresado</option>
+                                                        <option id="Externo" >Externo</option>
+                                                    </select>
+                                                </div>
+                                                                                        </div>
+
+                                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                                                                                            <div class="form-group">
+                                                    <label for="carrera">Carrera: <span style="color: #b94030;">-Nota: Solo
+                                                            para los casos
+                                                            Cursante/No Cursante/ Docente.</span></label>
+                                                    <select type="select" name="carrera" class="form-control" id="carrera">
+                                                        <option value="">.::Seleccione Carrera:.</option>
+                                                        <option value="UTN-Ingenieria Electromecanica">UTN-Ingenier&iacute;a
+                                                            Electromec&aacute;nica</option>
+                                                        <option value="UTN-Ingenieria Electronica">UTN-Ingenier&iacute;a
+                                                            Electronica</option>
+                                                        <option value="UTN-Ingenieria Quimica">UTN-Ingenier&iacute;a
+                                                            Qu&iacute;mica</option>
+                                                        <option value="UTN-Ingenieria en Sistemas de Informacion">
+                                                            UTN-Ingenier&iacute;a en Sistemas de Informaci&oacute;n</option>
+                                                        <option value="UTN-Ingenieria Industrial">UTN-Ingenier&iacute;a
+                                                            Industrial</option>
+                                                        <option value="UTN-Licenciatura en Administracion Rural">
+                                                            UTN-Licenciatura en Administraci&oacute;n Rural</option>
+                                                        <option value="UTN-Tecnicatura en Programacion">UTN-Tecnicatura en
+                                                            Programaci&oacute;n</option>
+                                                        <option value="UTN-Otras">UTN-Otras</option>
+                                                        <option value="UCES-Abogacia">UCES-Abogac&iacute;a</option>
+                                                        <option value="UCES-Contador publico">UCES-Contador publico</option>
+                                                        <option value="UCES-Licenciatura en Recursos Humanos">
+                                                            UCES-Licenciatura en Recursos Humanos</option>
+                                                        <option value="UCES-Licenciatura en Psicología">UCES-Licenciatura en
+                                                            Psicología</option>
+                                                        <option value="UCES-Licenciatura en Marketing">UCES-Licenciatura en
+                                                            Marketing</option>
+                                                        <option value="UCES-Licenciatura en Direccion de Negocios">
+                                                            UCES-Licenciatura en Direcci&oacute;n de Negocios</option>
+                                                        <option value="UCES-Otras">UCES-Otras</option>
+                                                        <!--<option value="Doctorado en quimica">Doctorado en Qu&iacute;mica</option> 
+                                                <option value="Doctorado en Metodos y Tecnicas del Diseno Industrial">Doctorado en Metodos y Tecnicas del Diseno Industrial</option> 
+                                                <option value="Doctorado en Ciencias de la Ingenieria">Doctorado en Ciencias de la Ingen&iacute;eria</option> 
+                                                <option value="Doctorado en Ciencias Agropecuarias">Doctorado en Ciencias Agropecuarias</option> 
+                                                <option value="Doctorado en Tecnologia Quimica">Doctorado en Tecnologia Qu&iacute;mica</option> 
+                                                <option value="Especialista en produccion de cereales">Especialista en produccion de cereales</option> 
+                                                <option value="Especializacion docencia de nivel Superior en Tics">Especializaci&oacute;n docencia de nivel Superior en Tics</option> 
+                                                <option value="Especializacion en Ingenieria Gerencial">Especializaci&oacute;n en Ingen&iacute;eria Gerencial</option> 
+                                                <option value="Especializacion en Energia Electrica">Especializaci&oacute;n en Energ&iacute;a El&eacute;ctrica</option> 
+                                                <option value="Especializacion en Ingenieria Ambiental">Especializaci&oacute;n en Ingen&iacute;eria Ambiental</option> 
+                                                <option value="Especializacion en Higiene y Seguridad en el Trabajo">Especializaci&oacute;n en Higiene y Seguridad en el Trabajo</option> 
+                                                <option value="Especializacion en Docencia Universitaria">Especializaci&oacute;n en Docencia Universitaria</option> 
+                                                <option value="Especializacion en Docencia Universitaria">Especializaci&oacute;n en Docencia Universitaria</option> 
+                                                <option value="Especializacion en metalurgia, y tecnologia de los materiales">Especializaci&oacute;n en metalurgia, y tecnologia de los materiales</option> 
+                                                <option value="Especializacion en sistemas embebidos">Especializaci&oacute;n en sistemas embebidos</option> 
+                                                <option value="Gestion de empresas familiares">Gestion de empresas familiares</option> 
+                                                <option value="Maestria en Ingenieria Ambiental">Maestr&iacute;a en Ingen&iacute;eria Ambiental</option> 
+                                                <option value="Maestria en Energias renovables">Maestr&iacute;a en Energias renovables</option> 
+                                                <option value="Maestria en Sistemas Embebidos">Maestr&iacute;a en Sistemas Embebidos</option> 
+                                                <option value="Maestria en Sistemas de Informacion">Maestr&iacute;a en Sistemas de Informacion</option> 
+                                                <option value="Maestria en Formulacion, Evaluacion y Administracion">Maestr&iacute;a en Formulacion, Evaluacion y Administracion</option> 
+                                                <option value="Maestria en Calidad de Software">Maestr&iacute;a en Calidad de Software</option> 
+                                                <option value="Maestria en Ciencias de la Ingenieria">Maestr&iacute;a en Ciencias de la Ingen&iacute;eria</option> 
+                                                <option value="Maestria en Administracion de Negocios Nacionales">Maestr&iacute;a en Administracion de Negocios Nacionales</option> 
+                                                <option value="Maestria en ingenieria de Control Automatico">Maestr&iacute;a en Ingen&iacute;eria de Control Automatico</option> 
+                                                <option value="Maestria en Ingenieria de Software">Maestr&iacute;a en Ingen&iacute;eria de Software</option> 
+                                                <option value="Posgrado en ingenieria laboral">Posgrado en Ingen&iacute;eria laboral</option> 
+                                                <option value="Posgrado en Metodos Numericos y Simulacion en Ingenieria Mecanica">Posgrado en Metodos Numericos y Simulacion en Ingen&iacute;eria Mecanica</option> 
+                                                <option value="Ingenieria Electromecanica">Ingenier&iacute;a Electromec&aacute;nica</option> 
+                                                <option value="Ingenieria Electronica">Ingenier&iacute;a Electronica</option> 
+                                                <option value="Ingenieria Quimica">Ingenier&iacute;a Qu&iacute;mica</option> 
+                                                <option value="Ingenieria en Sistemas de Informacion">Ingenier&iacute;a en Sistemas de Informaci&oacute;n</option> 
+                                                <option value="Ingenieria Mecanica">Ingenier&iacute;a Mec&aacute;nica</option> 
+                                                <option value="Ingenieria Industrial">Ingenier&iacute;a Industrial</option> 
+                                                <option value="Ingenieria civil">Ingenier&iacute;a civil</option> 
+                                                <option value="Licenciatura en Administracion Rural">Licenciatura en Administraci&oacute;n Rural</option> 
+                                                <option value="Licenciatura en Biologia">Licenciatura en Biologia</option> 
+                                                <option value="Licenciatura en Recursos Humanos">Licenciatura en Recursos Humanos</option> 
+                                                <option value="Licenciatura en Psicología">Licenciatura en Psicología</option> 
+                                                <option value="Licenciatura en Tecnologia Educativa">Licenciatura en Tecnologia Educativa</option> 
+                                                <option value="Licenciatura en Sociologia">Licenciatura en Sociologia</option> 
+                                                <option value="Licenciatura en bioquimica">Licenciatura en bioquimica</option> 
+                                                <option value="Licenciatura en Ciencias del Ambiente">Licenciatura en Ciencias del Ambiente</option> 
+                                                <option value="Profesor de fisica">Profesor de f&iacute;sica</option> 
+                                                <option value="Profesor de historia">Profesor de historia</option> 
+                                                <option value="Profesor de fisica">Profesor de f&iacute;sica</option> 
+                                                <option value="Profesor de historia">Profesor de historia</option> 
+                                                <option value="Tecnicatura en Programacion">Tecnicatura en Programaci&oacute;n</option> -->
+
+                                                    </select>
+                                                </div>
+                                                                                        </div>
+                                        <br clear="all" />
+                                    </div>
+                                    <div class="row" style="margin-top: 40px; margin-bottom: 25px;">
+                                        <h3
+                                            style="border-bottom: 2px solid #61A5D8; padding-bottom: 10px; margin-bottom: 20px; color: #2A4470; text-transform: uppercase; font-size: 22px;">
+                                            Informaci&oacute;n de Contacto
+                                        </h3>
+
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                                                                        <label>Tipo de Documento *</label>
+                                            <select class="form-control" id="tipo_documento" name="tipo_documento"
+                                                required>
+                                                <option id="dni" >DNI</option>
+                                                <option id="pasaporte" >Pasaporte</option>
+                                                <option id="lc" >LC</option>
+                                                <option id="le" >LE</option>
+                                                <option id="du" >DU</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                            <label>Nro. Documento *</label>
+                                                                                            <input type="number" onKeyDown="validaLongitud(); return evitarEnter(event)"
+                                                    onKeyUp="validaLongitud()" onBlur="buscarPersona()" class="form-control"
+                                                    id="nro_documento" placeholder="Por ejemplo, 99999999"
+                                                    name="nro_documento" value="" required />
+                                                                                    </div>
+
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                            <label>Nombre/s*</label>
+                                            <input type="text" class="form-control" id="nombre" name="nombre"
+                                                value="" placeholder="Por ejemplo, Juan Andres"
+                                                required />
+                                        </div>
+
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                            <label>Apellido *</label>
+                                            <input type="text" class="form-control" id="apellido" name="apellido"
+                                                value="" placeholder="Por ejemplo, Perez" required />
+                                        </div>
+
+                                        <div id="mensaje" style="display: none; color: red; font-weight: bold;">
+                                            Atenci&oacute;n!!!!. Es obligatoria la carga del archivo. Por favor
+                                            adjunte archivo.
+                                        </div>
+                                        </br>
+                                        <div id="adjuntar" style="display: none;">
+                                            <span class='yellow m-b-xs' class="datos_requeridos" margin-left: 0px>Por
+                                                favor. Seleccione el archivo a subir:</span>
+                                            <input type="file"
+                                                accept=".pdf,.xls,.xlsx,.txt,.doc,.docx,.jpg,.jpeg,.png,.bmp"
+                                                class="form-control" name="uploadedFile" />
+                                            <span class='white m-b-xs' class="datos_requeridos" margin-left:
+                                                0px>Documento Permitidos:
+                                                .pdf-.xls-.xlsx-.txt-.doc-.docx-.jpg-.jpeg-.png-.bmp</span>
+                                        </div>
+
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                            <label>Correo electr&oacute;nico *</label>
+                                            <input type="text" class="form-control" id="email" name="email"
+                                                value="" placeholder="Por ejemplo, perez@gmail.com"
+                                                required />
+                                        </div>
+
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                                                                            <label>Tel&eacute;fono * (Caracter&iacute;stica "Sin 0" N&uacute;mero
+                                                    "Sin 15")</label>
+                                                <input type="text" class="form-control" id="telefono" name="telefono"
+                                                    value="" placeholder="Por ejemplo, 3564999999"
+                                                    required />
+                                                                                        </div>
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                                                                            <label>Localidad *</label>
+                                                <input type="text" class="form-control" id="localidad" name="localidad"
+                                                    value="" placeholder="Por ejemplo, San Francisco"
+                                                    required>
+                                                                                        </div>
+                                        <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+                                                                                            <label>Provincia *</label>
+                                                <input type="text" class="form-control" id="provincia" name="provincia"
+                                                    value="" placeholder="Por ejemplo, C&oacute;rdoba"
+                                                    required>
+                                                                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row contenedor_preinscripcion" id="contacto_form">
+                                <div class="datos_requeridos_preinscripcion" align="left">
+                                    Nota: Por favor hacer clic en la casilla de verficaci&oacute;n. No soy un robot.
+                                </div>
+                                <div class="g-recaptcha input-field col-sm-12"
+                                    data-sitekey="6Lfx5oAkAAAAAF45dX6a-gGxt13afBWFejLFQ77z" required>
+                                </div>
+                                <br clear="all" /><br clear="all" />
+                                <div class="datos_requeridos_preinscripcion" align="left">
+                                    (*) Datos Requeridos
+                                </div>
+                                <div class="form-group" style="text-align:center; margin:0px auto;">
+                                    <input type="submit" name="enviar" id="enviar" value="Solicitar Turno"
+                                        class="btn btn-info btn-lg btn-block">
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="row contenedor_preinscripcion" id="contacto_form">
+                    </a>
+                    <button class="btn btn-danger btn-lg" data-toggle='modal' data-target='#cancela_turnos'>
+                        Cancelar Turno!!!!!
+                    </button>
+                    </a>
+                    <font color="303eb9"><span id="resultado_fecha">Nota: Para cancelar Turno, deber&aacute; tener el
+                            C&oacute;digo de seguridad de Inscripci&oacute;n que recibi&oacute; en el correo
+                            electrónico. </span></font>
+                </div>
+
+                <hr>
+                <p class="disclaimer">Al enviar este formulario, acepto que el sistema "UTN Turnos" realizado para la
+                    UTN Facultad Regional San Francisco mantenga mis datos personales. Al mismo tiempo acepto que la
+                    Facultad Regional San Francisco mantenga los datos que crea conveniente, y la Facultad Regional San
+                    Francisco se compromete a resguardar los datos de forma segura y no distribuirlos a terceros</p><br>
+                <br>
+
+                <!--//////////////////BUSCAR EVENTO/////////////////////////-->
+                <div class="modal fade" id="bus_turnos" tabindex="-1" role="dialog" aria-labelledby="myModalLabel"
+                    aria-hidden="false">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h4 class="modal-title" id="myModalLabel">Seleccionar &Aacute;rea - Tem&aacute;tica de
+                                    Inter&eacute;s</h4>
+                            </div>
+                            <div class="modal-body">
+                                <form action="" method="post">
+                                    <div class="form-group ">
+                                        <label>&Aacute;rea *</label>
+                                        <select name="resp" id="resp" class="form-control" required>
+                                            <option value="Seleccione un &aacute;rea" select>Seleccione un &Aacute;rea
+                                            </option>
+                                                                                            <option
+                                                    value="32/BIBLIOTECA - Uso Notebooks ">
+                                                    BIBLIOTECA - Uso Notebooks                                                </option>
+                                                                                                <option
+                                                    value="23/BIBLIOTECA - Uso Salas ">
+                                                    BIBLIOTECA - Uso Salas                                                </option>
+                                                                                                <option
+                                                    value="31/Espacio Progresar - Lunes-Mi&eacute;rcoles-Viernes ">
+                                                    Espacio Progresar - Lunes-Mi&eacute;rcoles-Viernes                                                </option>
+                                                                                                <option
+                                                    value="34/Espacio Progresar - Martes-Jueves ">
+                                                    Espacio Progresar - Martes-Jueves                                                </option>
+                                                                                                <option
+                                                    value="26/Laboratorio Electr&oacute;nica General - Sistema de Control (R2) ">
+                                                    Laboratorio Electr&oacute;nica General - Sistema de Control (R2)                                                </option>
+                                                                                                <option
+                                                    value="29/Laboratorio Electromec&aacute;nica ">
+                                                    Laboratorio Electromec&aacute;nica                                                </option>
+                                                                                                <option
+                                                    value="30/Laboratorio F&iacute;sica ">
+                                                    Laboratorio F&iacute;sica                                                </option>
+                                                                                                <option
+                                                    value="28/Laboratorio Fagdut ">
+                                                    Laboratorio Fagdut                                                </option>
+                                                                                                <option
+                                                    value="27/Laboratorio Isilab ">
+                                                    Laboratorio Isilab                                                </option>
+                                                                                                <option
+                                                    value="33/Laboratorio Qu&iacute;mica (Uso de Campana) ">
+                                                    Laboratorio Qu&iacute;mica (Uso de Campana)                                                </option>
+                                                                                                <option
+                                                    value="9/Laboratorio Sistemas Embebidos - Comunicaciones (R1) ">
+                                                    Laboratorio Sistemas Embebidos - Comunicaciones (R1)                                                </option>
+                                                                                        </select>
+                                        <b>
+                                            <font color="b94030"><span id="nota" name="nota"></span></font>
+                                        </b>
+                                    </div>
+                                    <div class="form-group ">
+                                        <label>Seleccione una tem&aacute;tica *</label>
+                                        <select name="tema" id="tema" class="form-control" required></select>
+                                    </div>
+
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-danger" data-dismiss="modal"><i
+                                        class="fa fa-times"></i> Cancelar</button>
+                                <button type="submit" class="btn btn-success" name="bus_turnos"><i
+                                        class="fa fa-check"></i> Aceptar</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!--//////////////////BUSCAR EVENTO/////////////////////////-->
+                <div class="modal fade" id="cancela_turnos" tabindex="-1" role="dialog" aria-labelledby="myModalLabel"
+                    aria-hidden="false">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">Cancelar Turno</h4>
+                            </div>
+                            <div class="modal-body">
+                                <form action="" method="post">
+                                    <div class="form-group ">
+                                        <label>Nro. Documento *</label>
+                                        <input type="number" onKeyDown="valida_longitud()" onKeyUp="valida_longitud()"
+                                            class="form-control" id="nro_documento_can" name="nro_documento_can"
+                                            placeholder="Por ejemplo, 99999999" required />
+                                        <label>C&oacute;digo de seguridad de Inscripci&oacute;n *</label>
+                                        <input type="text" class="form-control" id="codigo_can" name="codigo_can"
+                                            placeholder="Por ejemplo, 999999999-99" required />
+                                    </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-danger" data-dismiss="modal"><i
+                                        class="fa fa-times"></i> Cancelar</button>
+                                <button type="submit" class="btn btn-success" name="cancela_turnos"><i
+                                        class="fa fa-check"></i> Aceptar</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="info_contacto" class="hidden-xs hidden-sm col-md-4 col-lg-4 "></div>
+
+                <!--cierre row -->
+            </div>
+
+            <script>
+                let contenidoAnterior = "";
+
+                function cuentaCaracteres() {
+                    document.forms[0].caracteres.value = document.forms[0].nro_documento.value.length;
+                }
+
+                function evitarEnter(e) {
+                    if (e.key === 'Enter' || e.keyCode === 13) {
+                        e.preventDefault();
+                        return false;
+                    }
+                }
+
+                function validaLongitud() {
+                    const form = document.forms[0];
+                    const tipo = form.tipo_documento.value;
+                    const campo = form.nro_documento;
+                    const longitudMax = (tipo === "DNI" || tipo === "LE" || tipo === "LC") ? 8 : 13;
+                    const cantidad = campo.value.length;
+
+                    campo.style.color = (cantidad > longitudMax) ? "#ff0000" : "#000000";
+
+                    if (cantidad > longitudMax) {
+                        campo.value = contenidoAnterior;
+                    } else {
+                        contenidoAnterior = campo.value;
+                    }
+
+                    cuentaCaracteres();
+                }
+
+                function comprobarDNI() {
+                    const dni = document.getElementById("nro_documento").value;
+
+                    if (!dni) return; // No hacer nada si está vacío
+
+                    const xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function () {
+                        if (this.readyState === 4 && this.status === 200) {
+                            try {
+                                const response = JSON.parse(this.responseText);
+                                const mostrar = response.existe;
+
+                                document.getElementById("enviar").disabled = false;
+                                document.getElementById("mensaje").style.display = mostrar ? "block" : "none";
+                                document.getElementById("adjuntar").style.display = mostrar ? "block" : "none";
+                            } catch (e) {
+                                console.error("Error al parsear la respuesta de comprobarDNI:", e);
+                            }
+                        }
+                    };
+                    xhttp.open("GET", `funciones/comprobar_dni.php?dni=${dni}`, true);
+                    xhttp.send();
+                }
+
+                function buscarPersona() {
+                    const dni = document.getElementById("nro_documento").value;
+
+                    if (!dni) return; // No hacer nada si está vacío
+
+                    const xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function () {
+                        if (this.readyState === 4 && this.status === 200) {
+                            try {
+                                const response = JSON.parse(this.responseText);
+                                if (response.status === "found") {
+                                    const campos = ["apellido", "nombre", "email", "telefono", "localidad", "provincia", "tipo_documento"];
+                                    campos.forEach(campo => {
+                                        if (response[campo]) {
+                                            const input = document.getElementById(campo);
+                                            if (input) input.value = response[campo];
+                                        }
+                                    });
+                                }
+                            } catch (e) {
+                                console.error("Error al parsear la respuesta de buscarPersona:", e);
+                            }
+                        }
+                    };
+                    xhttp.open("GET", `funciones/buscar_persona.php?dni=${dni}`, true);
+                    xhttp.send();
+                }
+            </script>
+
+
+
+
+            <!-- InstanceEndEditable -->
+
+            <!--cierre container -->
+        </div>
+
+        <!--cierre image -->
+</div>
+
+<footer>
+    
+<div class="container">
+
+ <div class="row">
+   <div class="hidden-xs">
+   	<div id="menu_footer" class="hidden-xs">
+
+<ul class="menu_pie" style="list-style:none;">
+    
+
+</div>
+
+   </div>
+ </div>
+ 
+ 
+ <div class="row">
+ 
+  <div class="hidden-xs hidden-sm col-md-8 col-lg-8">
+     <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d13619.785234313194!2d-62.102350108333084!3d-31.415605340242514!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x95cb28503f73860f%3A0xa4607cc996083ed4!2sUTN+Facultad+Regional+de+San+Francisco!5e0!3m2!1ses!2sar!4v1556837473532!5m2!1ses!2sar" width="655" height="256" frameborder="0" style="border:0" allowfullscreen></iframe>
+   <!-- <a href="https://www.google.com/maps/place/Av+de+la+Universidad+501,+San+Francisco,+C%C3%B3rdoba,+Argentina/@-31.4199937,-62.1090384,15z/data=!4m2!3m1!1s0x95cb284fca3b9dfd:0xce952fa73f983160?hl=es-ES" target="_blank"><img alt="Ver ubicaci&oacute;n de la Facultad en pantalla completa" title="Ver ubicaci&oacute;n de la Facultad en pantalla completa" src="/imagenes/estructura/mapa_footer.jpg" width="655" height="256" border="0" /></a>-->
+   </div> 
+   
+   <div class="col-xs-12 col-sm-12 col-md-4 col-lg-4">
+    <div id="datos_contacto_pie">
+    	 <div align="center"><img alt="UTN Facultad Regional San Francisco" title="UTN Facultad Regional San Francisco" class="img-responsive" src="/imagenes/estructura/logo_footer.png"/></div>
+    		<span>
+				Av. de la Universidad 501<br />
+				(2400) San Francisco<br />
+				C&oacute;rdoba - Rep&uacute;blica Argentina
+				<br clear="all"/><br clear="all"/>
+				Tel. (03564) 421147 / 435402<br />
+				facultad@sanfrancisco.utn.edu.ar<br />
+				www.sanfrancisco.utn.edu.ar
+             </span>
+            <a href="https://www.facebook.com/utnsanfrancisco" target="_blank"><img alt="Facebook" title="Facebook" class="icono_contacto" src="/imagenes/iconos/ic_facebbok.png" border="none"/></a>
+			<a href="https://twitter.com/utnsanfco" target="_blank" class="icono_contacto"><img alt="Twitter" title="Twitter" class="icono_contacto" src="/imagenes/iconos/ic_twitter.png" border="none"/></a>
+ 			<a href="/contacto"><img alt="Contacto" title="Contacto" src="/imagenes/iconos/ic_correo.png" border="none"/> </a>
+     </div>
+   </div>
+  </div>
+   
+</div>
+
+
+</div>
+</footer>
+
+
+
+
+</body>
+<!-- InstanceEnd -->
+
+</html>
