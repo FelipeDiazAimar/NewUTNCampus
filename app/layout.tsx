@@ -6,11 +6,16 @@ import GuestBlockModal from "@/components/GuestBlockModal";
 export const metadata: Metadata = {
   title: "Campus UTN FRSF",
   description: "Campus Virtual - UTN Facultad Regional San Francisco",
+  // El apple-touch-icon lo provee app/apple-icon.png (opaco y cuadrado, requisito
+  // de iOS). Acá solo el favicon de la pestaña del navegador.
   icons: {
-    // Ícono de la pestaña del navegador
     icon: "/logo.png",
-    // Ícono que usa iOS al agregar a la pantalla de inicio (sin efecto gloss)
-    apple: [{ url: "/logo.png", sizes: "2048x2048", type: "image/png" }],
+  },
+  // iOS: lanzar en pantalla completa (standalone) y título bajo el ícono.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Campus UTN",
   },
 };
 

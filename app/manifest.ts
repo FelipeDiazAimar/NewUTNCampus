@@ -10,37 +10,12 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#ffffff",
     theme_color: "#007aff",
+    // Íconos opacos y cuadrados (el logo es claro → fondo azul de marca, si no en
+    // Android/iOS quedaría casi invisible sobre fondo blanco/transparente).
     icons: [
-      {
-        src: "/logo.png",
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/logo.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/logo.png",
-        sizes: "1024x1024",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/logo.png",
-        sizes: "2048x2048",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/logo.png",
-        sizes: "2048x2048",
-        type: "image/png",
-        purpose: "maskable",
-      },
+      { src: "/pwa-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/pwa-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }
