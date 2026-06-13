@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import {
   Bell,
   BellOff,
@@ -43,6 +44,8 @@ type MateriaConfig = {
   notificar_vencimiento: boolean;
   dias_anticipacion_vencimiento: number;
 };
+
+type NotifData = { profile: Profile | null; materias: MateriaConfig[] };
 
 // ─── Helper VAPID ─────────────────────────────────────────────────────────────
 
@@ -338,10 +341,6 @@ const ADMIN_TOKEN = "campus-admin-2024-internal";
 export default function NotificacionesPage() {
   const router = useRouter();
   const { courses, loading: loadingCourses } = useCourses();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [materias, setMaterias] = useState<MateriaConfig[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [openMaterias, setOpenMaterias] = useState<Record<string, boolean>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [query, setQuery] = useState("");
@@ -357,62 +356,57 @@ export default function NotificacionesPage() {
 
   const courseNames = useMemo(() => courses.map((c) => c.fullname), [courses]);
 
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/notifications", { cache: "no-store" });
-      if (!res.ok && res.status !== 404) throw new Error();
+  // Fetcher con la lógica de seeding (init si 404 o sin materias). Cacheado por SWR:
+  // al volver a la vista se muestra al instante y se revalida en segundo plano.
+  const notifFetcher = useCallback(async (): Promise<NotifData> => {
+    const res = await fetch("/api/notifications", { cache: "no-store" });
+    if (!res.ok && res.status !== 404) throw new Error();
 
-      if (res.status === 404) {
-        await fetch("/api/notifications", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "init", courses: courseNames }),
-        });
-        const retry = await fetch("/api/notifications", { cache: "no-store" });
-        if (!retry.ok) throw new Error();
-        const data = await retry.json();
-        setProfile(data.profile);
-        setMaterias(data.materias ?? []);
-        return;
-      }
-
-      const data = await res.json();
-      setProfile(data.profile);
-      const existing = data.materias ?? [];
-
-      if (existing.length === 0 && courseNames.length > 0) {
-        const seeded = await fetch("/api/notifications", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "init", courses: courseNames }),
-        });
-        if (!seeded.ok) throw new Error();
-        const seededData = await seeded.json();
-        setProfile(seededData.profile ?? data.profile);
-        setMaterias(seededData.materias ?? []);
-        return;
-      }
-
-      setMaterias(existing);
-    } catch {
-      setError("No se pudieron cargar las preferencias de notificación.");
-    } finally {
-      setLoading(false);
+    if (res.status === 404) {
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "init", courses: courseNames }),
+      });
+      const retry = await fetch("/api/notifications", { cache: "no-store" });
+      if (!retry.ok) throw new Error();
+      const data = await retry.json();
+      return { profile: data.profile, materias: data.materias ?? [] };
     }
+
+    const data = await res.json();
+    const existing = data.materias ?? [];
+    if (existing.length === 0 && courseNames.length > 0) {
+      const seeded = await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "init", courses: courseNames }),
+      });
+      if (!seeded.ok) throw new Error();
+      const seededData = await seeded.json();
+      return { profile: seededData.profile ?? data.profile, materias: seededData.materias ?? [] };
+    }
+    return { profile: data.profile, materias: existing };
   }, [courseNames]);
 
+  // Clave nula mientras cargan los cursos (el seeding necesita courseNames).
+  const { data, error: swrError, mutate } = useSWR<NotifData>(
+    loadingCourses ? null : "/api/notifications",
+    notifFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 120_000, keepPreviousData: true }
+  );
+
+  const profile = data?.profile ?? null;
+  const materias = useMemo(() => data?.materias ?? [], [data]);
+  const loading = !data && !swrError;
+  const error = swrError ? "No se pudieron cargar las preferencias de notificación." : null;
+
   useEffect(() => {
-    if (!document.cookie.includes("moodle_user")) {
-      router.push("/");
-      return;
-    }
-    if (!loadingCourses) loadProfile();
-  }, [loadingCourses, loadProfile, router]);
+    if (!document.cookie.includes("moodle_user")) router.push("/");
+  }, [router]);
 
   async function updateProfile(next: Partial<Profile>) {
-    setProfile((prev) => (prev ? { ...prev, ...next } : prev));
+    mutate((prev) => (prev?.profile ? { ...prev, profile: { ...prev.profile, ...next } } : prev), { revalidate: false });
     await fetch("/api/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -421,7 +415,11 @@ export default function NotificacionesPage() {
   }
 
   async function updateMateria(name: string, patch: Partial<MateriaConfig>) {
-    setMaterias((prev) => prev.map((m) => (m.materia_nombre === name ? { ...m, ...patch } : m)));
+    mutate(
+      (prev) =>
+        prev ? { ...prev, materias: prev.materias.map((m) => (m.materia_nombre === name ? { ...m, ...patch } : m)) } : prev,
+      { revalidate: false }
+    );
     await fetch("/api/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

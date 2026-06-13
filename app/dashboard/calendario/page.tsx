@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import useSWR from "swr";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import {
@@ -50,6 +51,28 @@ const DAY_STYLE: Record<DayType, DayStyle> = {
 };
 
 type Layer = { type: DayType; runLeft: boolean; runRight: boolean };
+
+type CalResp = { events?: TareaEvent[] };
+const calFetcher = (url: string): Promise<CalResp> =>
+  fetch(url, { cache: "no-store" }).then((r) => r.json());
+
+/** Fusiona Fase 1 (quick) + Fase 2 (deep) por taskId, sin duplicar y sin que el
+ *  deep pise con `undefined` un dato bueno del quick (url/taskId/detalle). */
+function mergeCalendarEvents(quick: TareaEvent[], deep: TareaEvent[]): TareaEvent[] {
+  const key = (e: TareaEvent) => `${e.taskId ?? e.url ?? e.title}|${e.kind}`;
+  const map = new Map<string, TareaEvent>(quick.map((e) => [key(e), e]));
+  for (const ev of deep) {
+    const k = key(ev);
+    const existing = map.get(k);
+    map.set(
+      k,
+      existing
+        ? { ...existing, ...ev, url: ev.url ?? existing.url, taskId: ev.taskId ?? existing.taskId, detail: ev.detail ?? existing.detail }
+        : ev
+    );
+  }
+  return [...map.values()];
+}
 
 /** Fecha de hoy en formato YYYY-MM-DD (local). */
 function todayIso(): string {
@@ -268,9 +291,6 @@ function CalendarioInner() {
   const params = useSearchParams();
   const plan = (params.get("plan") === "tecnicaturas" ? "tecnicaturas" : "ingenierias") as CalendarPlan;
 
-  const [tareas, setTareas] = useState<TareaEvent[]>([]);
-  const [loadingTareas, setLoadingTareas] = useState(true);
-  const [enriching, setEnriching] = useState(true);
   const [progress, setProgress] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
   const [tip, setTip] = useState<{ iso: string; x: number; y: number } | null>(null);
@@ -287,55 +307,31 @@ function CalendarioInner() {
     setCanHover(window.matchMedia("(hover: hover)").matches);
   }, []);
 
-  // Carga híbrida en dos fases:
+  // Carga híbrida en dos fases, cacheada con SWR (al volver a la vista se muestra
+  // al instante lo ya cargado y se revalida en segundo plano, sin spinner):
   //  · Fase 1 (rápida): calendario global de Moodle → pinta las tareas al instante.
-  //  · Fase 2 (fondo):  scraping profundo → enriquece y rellena lo que falte,
-  //    fusionando por taskId (sin duplicar) cuando termina.
-  useEffect(() => {
-    let cancelled = false;
+  //  · Fase 2 (fondo):  scraping profundo → enriquece y rellena lo que falte.
+  // dedupingInterval alto evita re-pedir al navegar de ida y vuelta seguido
+  // (el scraping profundo es caro). keepPreviousData mantiene lo visible al revalidar.
+  const quick = useSWR("/api/calendar?phase=quick", calFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 120_000,
+    keepPreviousData: true,
+  });
+  const deep = useSWR("/api/calendar?phase=deep", calFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 300_000,
+    keepPreviousData: true,
+  });
 
-    // Fusiona la Fase 2 sobre el estado actual por taskId (fallback url/título).
-    const mergeKey = (e: TareaEvent) => `${e.taskId ?? e.url ?? e.title}|${e.kind}`;
-    const merge = (incoming: TareaEvent[]) =>
-      setTareas((prev) => {
-        const map = new Map(prev.map((e) => [mergeKey(e), e] as const));
-        for (const ev of incoming) {
-          const k = mergeKey(ev);
-          const existing = map.get(k);
-          // El deep scrape enriquece, pero nunca pisa con `undefined` un dato bueno
-          // de la Fase 1 (la url directa, el taskId o el detalle).
-          map.set(
-            k,
-            existing
-              ? {
-                  ...existing,
-                  ...ev,
-                  url: ev.url ?? existing.url,
-                  taskId: ev.taskId ?? existing.taskId,
-                  detail: ev.detail ?? existing.detail,
-                }
-              : ev
-          );
-        }
-        return [...map.values()];
-      });
-
-    // Fase 1 (loadingTareas ya inicia en true)
-    fetch("/api/calendar?phase=quick", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled) setTareas(j.events ?? []); })
-      .catch(() => { if (!cancelled) setTareas([]); })
-      .finally(() => { if (!cancelled) setLoadingTareas(false); });
-
-    // Fase 2 (en paralelo, en segundo plano — enriching ya inicia en true)
-    fetch("/api/calendar?phase=deep", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled && Array.isArray(j.events)) merge(j.events); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setEnriching(false); });
-
-    return () => { cancelled = true; };
-  }, []);
+  const tareas = useMemo(
+    () => mergeCalendarEvents(quick.data?.events ?? [], deep.data?.events ?? []),
+    [quick.data, deep.data]
+  );
+  // loading/enriching solo en la PRIMERA carga (sin datos cacheados); al volver,
+  // SWR ya tiene datos → ambos false → la barra no aparece.
+  const loadingTareas = quick.isLoading && !quick.data;
+  const enriching = deep.isLoading && !deep.data;
 
   // Barra de progreso "realista": avanza por tramos según la fase y desacelera
   // al acercarse al tope de cada una (estilo NProgress), sin saltos falsos.

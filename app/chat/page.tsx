@@ -9,6 +9,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import ContactDetailSheet from "@/components/ContactDetailSheet";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { useConversations } from "@/lib/useConversations";
 import {
   avatarColor,
   formatChatTime,
@@ -29,7 +30,6 @@ function emailHref(email: string): string {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type ConvResp = { conversations: Conversation[]; meId: number };
 type MsgResp = { messages: Message[]; meId: number };
 interface SearchUser { id: number; name: string; avatarUrl: string | null }
 interface UserSearchResult { contacts: SearchUser[]; noncontacts: SearchUser[] }
@@ -201,11 +201,16 @@ export default function ChatPage() {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
   }, [search]);
 
-  const { data: convData, error: convError, isLoading: convLoading, mutate: mutateConvs } = useSWR(
-    authed ? "/api/chat/conversations" : null,
-    jsonFetcher<ConvResp>,
-    { revalidateOnFocus: true, dedupingInterval: 20_000, refreshInterval: 30_000, keepPreviousData: true }
-  );
+  // Conversaciones: carga progresiva (streaming) + caché entre vistas.
+  const {
+    conversations,
+    meId: convMeId,
+    loading: convLoading,
+    error: convError,
+    unauthorized: convUnauthorized,
+    patch: patchConvs,
+    refresh: refreshConvs,
+  } = useConversations(authed);
 
   const { data: msgData, isLoading: msgLoading, mutate: mutateMsgs } = useSWR(
     authed && selectedId != null ? `/api/chat/messages?convid=${selectedId}` : null,
@@ -214,11 +219,10 @@ export default function ChatPage() {
   );
 
   useEffect(() => {
-    if ((convError as { status?: number } | undefined)?.status === 401) router.replace("/");
-  }, [convError, router]);
+    if (convUnauthorized) router.replace("/");
+  }, [convUnauthorized, router]);
 
-  const conversations = useMemo(() => convData?.conversations ?? [], [convData]);
-  const meId = convData?.meId ?? msgData?.meId ?? 0;
+  const meId = convMeId || msgData?.meId || 0;
   const messages = useMemo(() => msgData?.messages ?? [], [msgData]);
 
   // Conversaciones filtradas por texto de búsqueda
@@ -266,13 +270,7 @@ export default function ChatPage() {
     if (selectedId == null) return;
     const conv = conversations.find((c) => c.id === selectedId);
     if (!conv || conv.unread === 0) return;
-    mutateConvs(
-      (prev) =>
-        prev
-          ? { ...prev, conversations: prev.conversations.map((c) => (c.id === selectedId ? { ...c, unread: 0 } : c)) }
-          : prev,
-      { revalidate: false }
-    );
+    patchConvs((prev) => prev.map((c) => (c.id === selectedId ? { ...c, unread: 0 } : c)));
     fetch("/api/chat/read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -280,7 +278,7 @@ export default function ChatPage() {
     })
       .then(() => globalMutate("/api/chat/unread"))
       .catch(() => {});
-  }, [selectedId, conversations, mutateConvs]);
+  }, [selectedId, conversations, patchConvs]);
 
   // Scroll automático al último mensaje
   useEffect(() => {
@@ -316,8 +314,8 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ touserid: pendingContact.id, text }),
         });
-        const result = await mutateConvs();
-        const newConv = result?.conversations.find((c) => c.contact.id === pendingContact.id);
+        const result = await refreshConvs();
+        const newConv = result.conversations.find((c) => c.contact.id === pendingContact.id);
         if (newConv) {
           setSelectedId(newConv.id);
           setPendingContact(null);
@@ -398,7 +396,7 @@ export default function ChatPage() {
             <div className="min-h-0 flex-1 overflow-y-auto pb-2">
               {!showSearch ? (
                 /* Vista normal: lista de conversaciones */
-                convLoading && !convData ? (
+                convLoading && conversations.length === 0 ? (
                   <SpinnerBlock label="Cargando chats…" />
                 ) : convError ? (
                   <p className="px-4 py-10 text-center text-[14px] text-[#ff3b30]">No se pudieron cargar los chats.</p>
