@@ -12,13 +12,24 @@ function Tile({
   sub,
   label,
   tone,
+  loading,
 }: {
   icon: typeof Award;
   value: string;
   sub?: string;
   label: string;
   tone: string;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div className="relative overflow-hidden rounded-2xl border border-[var(--separator)] bg-[var(--surface)] px-3.5 py-3">
+        <div className="h-4 w-4 rounded-md animate-pulse bg-[var(--surface2)]" />
+        <div className="mt-2 h-7 w-14 rounded-lg animate-pulse bg-[var(--surface2)]" />
+        <div className="mt-1.5 h-3 w-16 rounded animate-pulse bg-[var(--surface2)]" />
+      </div>
+    );
+  }
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[var(--separator)] bg-[var(--surface)] px-3.5 py-3">
       <span
@@ -39,26 +50,28 @@ function Tile({
 
 /** Resumen ejecutivo de la carrera: promedio, aprobadas, % avance y cursando. */
 export default function ResumenHero({
+  loading,
   estado,
   examenes,
   plan,
   avance,
   cursado,
 }: {
+  loading?: boolean;
   estado: MateriaEstado[];
   examenes: SysacadExamen[];
-  plan: SysacadPlan;
-  avance: SysacadAvance;
-  cursado: SysacadCursado;
+  plan: SysacadPlan | null;
+  avance: SysacadAvance | null;
+  cursado: SysacadCursado | null;
 }) {
-  const { promedio, egreso, cursando } = useMemo(
-    () => ({
+  const { promedio, egreso, cursando } = useMemo(() => {
+    if (!plan || !avance || !cursado) return { promedio: { sinAplazos: null, conAplazos: null, aprobados: 0, aplazos: 0, ausentes: 0 }, egreso: { aprobadas: 0, totalMaterias: 0, pct: 0 }, cursando: 0 };
+    return {
       promedio: computePromedio(estado, examenes),
       egreso: computeEgreso(estado, plan, avance),
       cursando: (cursado.Comisiones ?? []).length,
-    }),
-    [estado, examenes, plan, avance, cursado]
-  );
+    };
+  }, [estado, examenes, plan, avance, cursado]);
 
   const prom = promedio.sinAplazos;
   const promTone = prom == null ? "var(--fg)" : notaTone(prom);
@@ -67,34 +80,13 @@ export default function ResumenHero({
     <section className="relative overflow-hidden rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-4 shadow-sm">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(0,122,255,0.1),transparent_60%)]" />
       <div className="relative grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Tile
-          icon={Award}
-          value={prom != null ? prom.toFixed(2) : "—"}
-          label="Promedio"
-          tone={promTone}
-        />
-        <Tile
-          icon={BookCheck}
-          value={String(egreso.aprobadas)}
-          sub={`/ ${egreso.totalMaterias}`}
-          label="Aprobadas"
-          tone="#34c759"
-        />
-        <Tile
-          icon={GraduationCap}
-          value={`${egreso.pct}%`}
-          label="Avance"
-          tone="#af52de"
-        />
-        <Tile
-          icon={Layers}
-          value={String(cursando)}
-          label="Cursando"
-          tone="#007aff"
-        />
+        <Tile loading={loading} icon={Award} value={prom != null ? prom.toFixed(2) : "—"} label="Promedio" tone={promTone} />
+        <Tile loading={loading} icon={BookCheck} value={String(egreso.aprobadas)} sub={`/ ${egreso.totalMaterias}`} label="Aprobadas" tone="#34c759" />
+        <Tile loading={loading} icon={GraduationCap} value={`${egreso.pct}%`} label="Avance" tone="#af52de" />
+        <Tile loading={loading} icon={Layers} value={String(cursando)} label="Cursando" tone="#007aff" />
       </div>
 
-      {(promedio.aprobados > 0 || promedio.aplazos > 0) && (
+      {!loading && (promedio.aprobados > 0 || promedio.aplazos > 0) && (
         <p className="relative mt-3 px-1 text-[12px] text-[var(--secondary)]">
           Promedio con aplazos{" "}
           <span className="font-semibold text-[var(--fg)]">
@@ -104,6 +96,7 @@ export default function ResumenHero({
           {promedio.aprobados} aprobados · {promedio.aplazos} aplazos · {promedio.ausentes} ausentes
         </p>
       )}
+      {loading && <div className="relative mt-3 h-3 w-3/4 rounded animate-pulse bg-[var(--surface2)]" />}
     </section>
   );
 }

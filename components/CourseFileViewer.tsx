@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import Spinner from "@/components/Spinner";
 import type { MoodleContent } from "@/lib/moodle";
@@ -119,6 +119,11 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     setState({ phase: "none" });
   }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel]);
 
+  // Cuando otro archivo toma el panel, limpiar el indicador local.
+  useEffect(() => {
+    if (!isActive && state.phase === "panel") setState({ phase: "idle" });
+  }, [isActive, state.phase]);
+
   const isOpen = state.phase !== "idle" || isActive;
 
   return (
@@ -147,7 +152,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
               </svg>
             )}
           </button>
-          <a href={downloadUrl} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
+          <a href={downloadUrl} download title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7,10 12,15 17,10"/>
@@ -167,15 +172,24 @@ export function FileViewer({ content }: { content: MoodleContent }) {
             </div>
           )}
           {(state.phase === "panel" || isActive) && (
-            <div className="flex items-center gap-2 px-4 py-3 bg-[var(--accent-light)]">
-              <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
-              <span className="text-[13px] text-[var(--accent)] font-medium">Abierto en el visor →</span>
+            <div className="flex items-center justify-between gap-2 px-4 py-3 bg-[var(--accent-light)]">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
+                <span className="text-[13px] text-[var(--accent)] font-medium">Abierto en el visor →</span>
+              </div>
+              <a href={downloadUrl} download title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--accent)] hover:opacity-70 transition-opacity">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7,10 12,15 17,10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+              </a>
             </div>
           )}
           {state.phase === "none" && (
             <div className="py-5 text-center px-4">
               <p className="text-sm text-[var(--secondary)] mb-3">No se puede previsualizar este formato.</p>
-              <a href={downloadUrl} className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#007aff] text-white rounded-2xl text-sm font-semibold">
+              <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#007aff] text-white rounded-2xl text-sm font-semibold">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7,10 12,15 17,10"/>

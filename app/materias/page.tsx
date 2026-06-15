@@ -212,27 +212,6 @@ export default function MateriasPage() {
                 <span className="text-[12px] opacity-80">📚</span>
               </div>
             </div>
-            {!loading && (
-              <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--secondary)]">
-                <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
-                  style={{ background: "var(--surface2)" }}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: "#34c759" }}
-                  />
-                  {courses.length} materia{courses.length !== 1 ? "s" : ""} activa
-                  {courses.length !== 1 ? "s" : ""}
-                </span>
-                <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
-                  style={{ background: "var(--surface2)" }}
-                >
-                  Acceso directo a secciones y archivos
-                </span>
-              </div>
-            )}
           </div>
         </div>
 

@@ -286,7 +286,7 @@ export default function DashboardPage() {
       <Navbar fullname={userInfo.fullname} />
 
       <main
-        className="springboard-scroll relative w-full px-0 pt-16 pb-10 -mt-16 overflow-x-hidden overflow-y-auto"
+        className="springboard-scroll relative w-full px-0 md:px-6 pt-16 pb-10 -mt-16 overflow-x-hidden overflow-y-auto"
         style={{
           "--cell": "min(110px, calc((100vw - 24px) / 3))",
           "--cell-md": "112px",
@@ -298,7 +298,7 @@ export default function DashboardPage() {
       >
         <div className="pointer-events-none absolute -top-12 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl opacity-70" style={{ background: "radial-gradient(circle at 30% 30%, rgba(0,122,255,0.35), transparent 70%)" }} />
         <div className="pointer-events-none absolute top-32 -right-10 h-56 w-56 rounded-full blur-3xl opacity-60" style={{ background: "radial-gradient(circle at 30% 30%, rgba(90,200,250,0.35), transparent 70%)" }} />
-        <div className="springboard-wrap px-0 md:px-6">
+        <div className="springboard-wrap">
           <div className="mb-6 mt-4">
             <p className="text-[12px] uppercase tracking-[0.28em] text-[var(--secondary)]">
               Inicio

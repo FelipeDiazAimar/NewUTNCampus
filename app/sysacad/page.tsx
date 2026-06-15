@@ -6,7 +6,6 @@ import Link from "next/link";
 import { ChevronRight, KeyRound, LogOut } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
-import { SpinnerBlock } from "@/components/Spinner";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import ProfileHeader from "@/components/sysacadws/ProfileHeader";
 import ResumenHero from "@/components/sysacadws/ResumenHero";
@@ -91,17 +90,17 @@ export default function SysacadPage() {
           <div className="space-y-4">
             <ProfileHeader user={user} />
 
-            {coreLoading && <SpinnerBlock label="Cargando tus datos…" />}
+            <ResumenHero
+              loading={coreLoading || estadoLoading}
+              estado={estado}
+              examenes={examenes?.Examenes ?? []}
+              plan={plan ?? null}
+              avance={avance ?? null}
+              cursado={cursado ?? null}
+            />
 
             {!coreLoading && (
               <>
-                <ResumenHero
-                  estado={estado}
-                  examenes={examenes!.Examenes ?? []}
-                  plan={plan!}
-                  avance={avance!}
-                  cursado={cursado!}
-                />
                 <EgresoCard estado={estado} plan={plan!} avance={avance!} />
                 <PlanRoadmap estado={estado} cursado={cursado!} plan={plan!} legajo={legajo} />
                 <AsistenciaCard

@@ -244,7 +244,7 @@ export async function GET(req: NextRequest) {
     console.log("[course] main page length:", mainHtml.length, "url:", mainRes.url);
 
     const rawTitle = mainHtml.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? "";
-    const courseName = rawTitle.split(/\s*[|–—]\s*/)[0].trim();
+    const courseName = rawTitle.split(/\s*[|–—]\s*/)[0].trim().replace(/^curso:\s*/i, "");
 
     const metas = parseSectionMeta(mainHtml);
     console.log("[course] sections found:", metas.map((m) => `${m.sectionNum}:"${m.name}"${m.isSummary ? "(summary)" : ""}`).join(", "));
