@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import {
   BookOpen,
   Clock,
+  Clock3,
   AlertCircle,
   MessageCircle,
   CalendarCheck,
@@ -13,8 +15,11 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Radio,
+  WifiOff,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import Breadcrumb from "@/components/Breadcrumb";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +31,62 @@ type EventType =
   | "ASISTENCIA_DISPONIBLE";
 
 type ButtonState = "idle" | "loading" | "success" | "error";
+
+// ─── Estado del agente local de asistencia ────────────────────────────────────
+
+type AgentState = {
+  status: "listening" | "detected" | "idle" | "offline";
+  listening: boolean;
+  lastSeenAt: string | null;
+};
+
+const agentFetcher = async (url: string): Promise<AgentState> => {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("No se pudo consultar el agente");
+  return res.json();
+};
+
+function formatRelative(value: string | null): string {
+  if (!value) return "Sin registro";
+  const diff = Date.now() - new Date(value).getTime();
+  if (Number.isNaN(diff)) return "Sin registro";
+  const mins = Math.max(0, Math.round(diff / 60000));
+  if (mins < 1) return "Ahora";
+  if (mins === 1) return "Hace 1 min";
+  return `Hace ${mins} min`;
+}
+
+function AgentStatus() {
+  const { data: agent } = useSWR("/api/asistencia/agent", agentFetcher, {
+    refreshInterval: 30000,
+    revalidateOnFocus: true,
+  });
+  const status = agent?.status ?? "offline";
+  const listening = agent?.listening ?? false;
+  const tone = listening ? "#34c759" : status === "detected" ? "#007aff" : "#ff9500";
+  const label = listening ? "Escuchando" : status === "detected" ? "Detectado" : "Sin senal";
+
+  return (
+    <div className="rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <span
+          className="flex h-12 w-12 items-center justify-center rounded-[16px]"
+          style={{ backgroundColor: `${tone}1a`, color: tone }}
+        >
+          {listening ? <Radio className="h-6 w-6" /> : <WifiOff className="h-6 w-6" />}
+        </span>
+        <span className="rounded-full px-3 py-1 text-[12px] font-semibold" style={{ backgroundColor: `${tone}1a`, color: tone }}>
+          {label}
+        </span>
+      </div>
+      <h2 className="mt-4 text-[18px] font-semibold text-[var(--fg)]">Dispositivo Local</h2>
+      <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--secondary)]">
+        <Clock3 className="h-4 w-4" />
+        {formatRelative(agent?.lastSeenAt ?? null)}
+      </div>
+    </div>
+  );
+}
 
 // ─── Configuración de los eventos ─────────────────────────────────────────────
 
@@ -172,7 +233,15 @@ export default function AdminPanelClient() {
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar />
 
-      <main className="mx-auto max-w-xl px-4 pt-20 pb-12">
+      <main className="mx-auto max-w-xl px-4 pt-12 pb-12">
+        <Breadcrumb
+          items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Admin", href: "/admin/dashboard" },
+            { label: "Simulador PWA" },
+          ]}
+        />
+
         {/* Header */}
         <div className="mb-6">
           <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)] mb-1">
@@ -183,6 +252,14 @@ export default function AdminPanelClient() {
             Disparar notificaciones push de prueba a tus suscripciones activas.
           </p>
         </div>
+
+        {/* Estado del agente local de asistencia (movido desde /asistencia) */}
+        <section className="mb-7">
+          <p className="px-4 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+            Agente de asistencia
+          </p>
+          <AgentStatus />
+        </section>
 
         {/* Info banner */}
         <div className="mb-6 flex items-start gap-3 rounded-[16px] border border-[rgba(0,122,255,0.2)] bg-[rgba(0,122,255,0.06)] px-4 py-3">

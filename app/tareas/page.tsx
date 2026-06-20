@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock,
   FileText,
+  KeyRound,
   ListTodo,
 } from "lucide-react";
 import Link from "next/link";
@@ -131,9 +132,9 @@ export default function TareasPage() {
     if (data && !data.years.includes(year)) setYear(data.year);
   }, [data, year]);
 
-  useEffect(() => {
-    if ((error as { status?: number } | undefined)?.status === 401) router.replace("/");
-  }, [error, router]);
+  // Sesión del Campus expirada: en vez de expulsar, mostramos un aviso con un
+  // botón para reingresar y volver acá. Las tareas vienen del Campus (Moodle).
+  const sessionExpired = (error as { status?: number } | undefined)?.status === 401;
 
   const all = useMemo(() => tareas ?? [], [tareas]);
   const pending = useMemo(() => all.filter((t) => !t.submitted), [all]);
@@ -166,7 +167,7 @@ export default function TareasPage() {
   }, [tab, pending, completed]);
 
   const errorMsg = error && error.message !== "UNAUTHORIZED" ? error.message : "";
-  const showSpinner = !ready && !errorMsg;
+  const showSpinner = !ready && !errorMsg && !sessionExpired;
 
   return (
     <div className="min-h-screen bg-[var(--bg)] overflow-x-hidden">
@@ -249,13 +250,31 @@ export default function TareasPage() {
 
           {showSpinner && <SpinnerBlock label="Buscando tus tareas…" />}
 
+          {!showSpinner && sessionExpired && (
+            <div className="bg-[var(--surface)] border border-[var(--separator)] rounded-2xl shadow-sm px-6 py-10 flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ background: "var(--accent-light)" }}>
+                <KeyRound className="w-6 h-6 text-[#007aff]" />
+              </div>
+              <p className="text-[16px] font-semibold text-[var(--fg)]">Tu sesión del Campus expiró</p>
+              <p className="text-[14px] text-[var(--secondary)] mt-1 max-w-xs">
+                Volvé a iniciar sesión en el Campus para ver tus tareas.
+              </p>
+              <Link
+                href={`/?next=${encodeURIComponent("/tareas")}`}
+                className="mt-5 inline-flex items-center justify-center rounded-full bg-[#007aff] px-5 py-2.5 text-[15px] font-semibold text-white shadow-sm transition-opacity active:opacity-80"
+              >
+                Iniciar sesión
+              </Link>
+            </div>
+          )}
+
           {!showSpinner && errorMsg && (
             <div className="rounded-2xl border border-[#ffcdd2] bg-[#fff2f2] p-4 text-sm text-[#ff3b30] dark:border-[rgba(255,59,48,0.25)] dark:bg-[rgba(255,59,48,0.08)]">
               {errorMsg}
             </div>
           )}
 
-          {!showSpinner && !errorMsg && (
+          {!showSpinner && !errorMsg && !sessionExpired && (
             groups.length === 0 ? (
               <EmptyState tab={tab} />
             ) : (

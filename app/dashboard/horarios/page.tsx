@@ -13,8 +13,7 @@ import { buildSchedule, colorMap, DAY_LABELS, DAY_SHORT, fmtRemaining } from "@/
 import { hhmmToMin, type CustomScheduleEvent } from "@/lib/customEvents";
 import { getAllMateriaSettings, type MateriaSettings } from "@/lib/materiaSettings";
 import { mapCursadoToMaterias } from "@/lib/sysacadMappers";
-import type { SysacadCursado } from "@/lib/sysacadws";
-import type { MateriaCursando } from "@/lib/sysacadTypes";
+import { useCursado } from "@/lib/sysacadHooks";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0]; // Lunes a Domingo
 
@@ -49,15 +48,6 @@ function getWsLegajo(): string | null {
   }
 }
 
-// Cursado desde el web service (coninasistencia) → grilla. Sin scraping ni ping.
-const notasFetcher = async (url: string): Promise<MateriaCursando[]> => {
-  const res = await fetch(url, { cache: "no-store" });
-  if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  const json = (await res.json()) as SysacadCursado & { error?: string };
-  if (!res.ok) throw new Error(json.error ?? "No se pudo cargar el cursado.");
-  return mapCursadoToMaterias(json.Comisiones ?? []);
-};
-
 export default function HorariosPage() {
   const router = useRouter();
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -82,17 +72,18 @@ export default function HorariosPage() {
     setMateriaSettings(getAllMateriaSettings());
   }, [router]);
 
-  const { data: notas, error: notasError, isLoading: loading } = useSWR(
-    authed && legajo ? `/api/sysacadws/cursado/coninasistencia/${legajo}` : null,
-    notasFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5 * 60_000, keepPreviousData: true }
+  // Mismo hook que /materias y /sysacad → comparte caché con la MISMA forma de
+  // dato (evita la colisión de claves SWR que dejaba la grilla vacía). Mapeamos
+  // a la grilla en el cliente.
+  const { data: cursado, error: notasError, isLoading: loading } = useCursado(
+    authed && legajo ? legajo : undefined
   );
+  const notas = useMemo(() => mapCursadoToMaterias(cursado?.Comisiones ?? []), [cursado]);
+  const expired = (notasError as { status?: number } | undefined)?.status === 401;
 
   useEffect(() => {
-    if ((notasError as { status?: number } | undefined)?.status === 401) {
-      router.replace("/sysacad");
-    }
-  }, [notasError, router]);
+    if (expired) router.replace("/sysacad");
+  }, [expired, router]);
 
   const { data: customRes, mutate } = useSWR("/api/schedule-events", evFetcher, { revalidateOnFocus: false });
 
@@ -168,7 +159,8 @@ export default function HorariosPage() {
     mutate();
   }
 
-  const errorMsg = notasError?.message !== "UNAUTHORIZED" ? notasError?.message : "";
+  const errorMsg = notasError && !expired ? "No se pudo cargar el cursado." : "";
+  const showSpinner = loading && !cursado && !errorMsg;
 
   // Para el modal de edición
   const editingDefaultColor = editingMateria ? (defaultColors.get(editingMateria) ?? "#007aff") : "#007aff";
@@ -215,15 +207,15 @@ export default function HorariosPage() {
           })}
         </div>
 
-        {loading && !notas && <SpinnerBlock label="Cargando horarios…" />}
+        {showSpinner && <SpinnerBlock label="Cargando horarios…" />}
 
-        {!loading && errorMsg && (
+        {!showSpinner && errorMsg && (
           <div className="rounded-2xl border border-[#ffcdd2] bg-[#fff2f2] p-4 text-sm text-[#ff3b30] dark:border-[rgba(255,59,48,0.25)] dark:bg-[rgba(255,59,48,0.08)]">
             {errorMsg}
           </div>
         )}
 
-        {(!loading || notas) && !errorMsg && (
+        {!showSpinner && !errorMsg && (
           <div
             className="rounded-3xl border border-[var(--navbar-border)] overflow-hidden shadow-sm"
             onTouchStart={onTouchStart}

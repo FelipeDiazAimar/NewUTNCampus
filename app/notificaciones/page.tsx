@@ -9,15 +9,12 @@ import {
   ChevronDown,
   Share,
   Smartphone,
-  Wrench,
-  ChevronRight,
   Search,
   X,
   BookOpen,
   MessageCircle,
   CalendarCheck,
 } from "lucide-react";
-import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
@@ -336,23 +333,16 @@ function CollapsibleSection({
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 
-const ADMIN_TOKEN = "campus-admin-2024-internal";
-
 export default function NotificacionesPage() {
   const router = useRouter();
   const { courses, loading: loadingCourses } = useCourses();
   const [openMaterias, setOpenMaterias] = useState<Record<string, boolean>>({});
-  const [isAdmin, setIsAdmin] = useState(false);
   const [query, setQuery] = useState("");
   const [openSections, setOpenSections] = useState({
     materias: false,
     chats: false,
     asistencia: false,
   });
-
-  useEffect(() => {
-    setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
-  }, []);
 
   const courseNames = useMemo(() => courses.map((c) => c.fullname), [courses]);
 
@@ -698,43 +688,6 @@ export default function NotificacionesPage() {
             </>
           )}
         </section>
-
-        {/* Acceso rápido al login de admin — visible siempre, borrar cuando no se necesite */}
-        {!isAdmin && (
-          <section className="mt-8">
-            <Link
-              href="/admin/login"
-              className="flex items-center justify-center gap-2 py-2 text-[12px] text-[var(--secondary)] active:opacity-60"
-            >
-              <Wrench className="h-3.5 w-3.5" />
-              Acceso admin
-            </Link>
-          </section>
-        )}
-
-        {/* Herramientas de Desarrollador — solo visible para el admin */}
-        {isAdmin && (
-          <section className="mt-8">
-            <p className="px-4 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-              Herramientas de Desarrollador
-            </p>
-            <div className="overflow-hidden rounded-[20px] border border-[var(--separator)] bg-[var(--surface)] shadow-sm">
-              <Link
-                href="/admin"
-                className="flex items-center gap-3 px-4 py-3.5 transition-colors active:bg-black/5 dark:active:bg-white/5"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[rgba(175,82,222,0.12)]">
-                  <Wrench className="h-[18px] w-[18px] text-[#af52de]" />
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-[15px] font-medium text-[var(--fg)]">Panel de Pruebas PWA</span>
-                  <span className="block text-[12px] text-[var(--secondary)]">Simulador de eventos de notificaciones</span>
-                </span>
-                <ChevronRight className="h-[18px] w-[18px] shrink-0 text-[var(--secondary)]" />
-              </Link>
-            </div>
-          </section>
-        )}
       </main>
     </div>
   );

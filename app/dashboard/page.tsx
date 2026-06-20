@@ -92,10 +92,9 @@ export default function DashboardPage() {
       {
         type: "app",
         title: "Configuracion",
-        href: "#",
+        href: "/configuracion",
         icon: Settings,
         tone: "#8e8e93",
-        popup: true,
         row: 1,
         col: 3,
         rowSpan: 1,

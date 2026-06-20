@@ -32,6 +32,20 @@ CREATE TABLE IF NOT EXISTS web_push_subscriptions (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Registro de sesiones por dispositivo (Campus). Permite ver y cerrar de forma
+-- remota las sesiones abiertas en otros dispositivos: el keep-alive de cada
+-- dispositivo consulta `revoked` y, si está marcado, cierra la sesión local.
+CREATE TABLE IF NOT EXISTS device_sessions (
+  device_id TEXT PRIMARY KEY,
+  user_key TEXT NOT NULL,
+  fullname TEXT,
+  user_agent TEXT,
+  revoked BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS device_sessions_user_key_idx ON device_sessions (user_key);
+
 CREATE TABLE IF NOT EXISTS asistencia_agent_status (
   agent_id TEXT PRIMARY KEY,
   status TEXT NOT NULL DEFAULT 'offline',

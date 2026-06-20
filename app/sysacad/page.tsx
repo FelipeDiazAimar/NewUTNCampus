@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { mutate as globalMutate } from "swr";
 import { ChevronRight, KeyRound, LogOut } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -48,17 +49,25 @@ export default function SysacadPage() {
 
   // Datos cacheados con SWR (instantáneos al volver). El WS no expira.
   const legajo = user?.legajo;
-  const { data: avance } = useAvance(legajo);
-  const { data: cursado } = useCursado(legajo);
-  const { data: examenes } = useExamenes(legajo);
-  const { data: plan } = usePlan(user?.idEspecialidad, user?.plan);
+  const { data: avance, error: avanceError } = useAvance(legajo);
+  const { data: cursado, error: cursadoError } = useCursado(legajo);
+  const { data: examenes, error: examenesError } = useExamenes(legajo);
+  const { data: plan, error: planError } = usePlan(user?.idEspecialidad, user?.plan);
   const { data: estadoRes, isLoading: estadoLoading } = useEstado(legajo);
   const estado = estadoRes?.data ?? [];
 
-  const coreLoading = !!user && (!avance || !cursado || !examenes || !plan);
+  // Si algún dato del WS responde 401, la sesión de Sysacad ya no sirve →
+  // pedimos re-login (en vez de quedar cargando para siempre).
+  const sessionExpired = [avanceError, cursadoError, examenesError, planError].some(
+    (e) => (e as { status?: number } | undefined)?.status === 401
+  );
+
+  const coreLoading = !!user && !sessionExpired && (!avance || !cursado || !examenes || !plan);
 
   function handleLoginSuccess() {
     setUser(getWsUser());
+    // Revalida los datos del WS (limpia errores 401 cacheados de una sesión vencida).
+    globalMutate(() => true);
     const next = new URLSearchParams(window.location.search).get("next");
     if (next) router.replace(next);
   }
@@ -82,8 +91,13 @@ export default function SysacadPage() {
       <main className="max-w-2xl mx-auto px-4 pt-12 pb-12">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Sysacad" }]} />
 
-        {!user ? (
+        {!user || sessionExpired ? (
           <div className="flex flex-col items-center pt-6">
+            {sessionExpired && (
+              <div className="mb-4 w-full max-w-sm rounded-2xl border border-[#ffe0b2] bg-[#fff8f0] px-4 py-3 text-center text-[13px] text-[#ff9500] dark:border-[rgba(255,149,0,0.25)] dark:bg-[rgba(255,149,0,0.08)]">
+                Tu sesión de Sysacad expiró. Volvé a iniciar sesión para ver tus datos.
+              </div>
+            )}
             <SysacadWsLogin onSuccess={handleLoginSuccess} />
           </div>
         ) : (

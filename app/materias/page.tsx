@@ -153,7 +153,9 @@ export default function MateriasPage() {
   }, [router]);
 
   // "Cursado actual" desde sysacad (mismo endpoint que /sysacad).
-  const { data: cursado, isLoading: cursadoLoading } = useCursado(legajo);
+  const { data: cursado, isLoading: cursadoLoading, error: cursadoError } = useCursado(legajo);
+  // Sesión de Sysacad vencida/ inválida → tratamos como no logueado y pedimos login.
+  const cursadoExpired = (cursadoError as { status?: number } | undefined)?.status === 401;
 
   // Vínculo materia-en-curso ↔ curso de Moodle: ClaveCampusVirtual === shortname
   // (match exacto), con fallback por nombre (NombreMateria ⊂ fullname).
@@ -306,7 +308,7 @@ export default function MateriasPage() {
 
         {!loading && !error && view === "cursando" && (
           <>
-            {!legajo ? (
+            {!legajo || cursadoExpired ? (
               /* Sin sesión de Sysacad: pedir login y volver acá ya en vista Cursando */
               <div className="bg-[var(--surface)] border border-[var(--separator)] rounded-2xl shadow-sm px-6 py-10 flex flex-col items-center text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ background: "var(--accent-light)" }}>

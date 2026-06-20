@@ -23,8 +23,8 @@ function AdminLoginForm() {
   const [loading, setLoading] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  // Destino tras el login: usa ?next= si está definido, o /admin por defecto.
-  const nextUrl = searchParams.get("next") ?? "/testnotis";
+  // Destino tras el login: usa ?next= si está definido, o el dashboard admin.
+  const nextUrl = searchParams.get("next") ?? "/admin/dashboard";
 
   useEffect(() => {
     if (document.cookie.includes("admin_session_token=campus-admin")) {

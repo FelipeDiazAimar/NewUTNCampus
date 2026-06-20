@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { moodleLogin, refreshMoodleSession, type MoodleSession } from "@/lib/moodle";
 import { sessionCookieOptions } from "@/lib/cookies";
 import { encryptCred, decryptCred } from "@/lib/crypto";
 import { isGuestRequest } from "@/lib/guest";
+import {
+  upsertDeviceSession,
+  touchDeviceSession,
+  isDeviceSessionRevoked,
+  deleteDeviceSession,
+} from "@/lib/deviceSessions";
+
+const DEVICE_COOKIE = "campus_device_id";
 
 /** Guarda en la respuesta las cookies de una sesión de Moodle recién creada. */
 function setSessionCookies(response: NextResponse, session: MoodleSession, keep: boolean) {
@@ -31,6 +40,17 @@ export async function POST(req: NextRequest) {
     console.log("[auth] Login successful:", { userid: session.userid, fullname: session.fullname });
     const response = NextResponse.json({ ok: true, session });
     setSessionCookies(response, session, keep);
+
+    // Registra/actualiza la sesión de este dispositivo para poder cerrarla de
+    // forma remota desde /configuracion. Reutiliza el device_id si ya existía.
+    const deviceId = req.cookies.get(DEVICE_COOKIE)?.value || randomUUID();
+    response.cookies.set(DEVICE_COOKIE, deviceId, sessionCookieOptions(true, true));
+    await upsertDeviceSession({
+      deviceId,
+      userKey: session.username || String(session.userid),
+      fullname: session.fullname,
+      userAgent: req.headers.get("user-agent"),
+    });
     // "Mantener sesión": guardamos credenciales cifradas para re-loguear solo al vencer.
     if (keep) {
       response.cookies.set("moodle_cred", encryptCred(JSON.stringify({ u: username, p: password })), sessionCookieOptions(true, true));
@@ -55,12 +75,27 @@ export async function GET(req: NextRequest) {
   const sesskey = req.cookies.get("moodle_sesskey")?.value;
   const cred = req.cookies.get("moodle_cred")?.value;
   const keep = req.cookies.get("moodle_remember")?.value === "1";
+  const deviceId = req.cookies.get(DEVICE_COOKIE)?.value;
+
+  // Cierre remoto: si esta sesión de dispositivo fue revocada desde otro lado,
+  // tratamos la sesión como cerrada y limpiamos las cookies del Campus.
+  if (deviceId && (await isDeviceSessionRevoked(deviceId))) {
+    const response = NextResponse.json({ error: "Sesión cerrada en este dispositivo" }, { status: 401 });
+    response.cookies.delete("moodle_session_token");
+    response.cookies.delete("moodle_sesskey");
+    response.cookies.delete("moodle_user");
+    response.cookies.delete("moodle_remember");
+    response.cookies.delete("moodle_cred");
+    response.cookies.delete(DEVICE_COOKIE);
+    return response;
+  }
 
   // 1) Intentar deslizar la sesión actual.
   if (token && sesskey) {
     try {
       const r = await refreshMoodleSession(token);
       if (r.alive) {
+        if (deviceId) await touchDeviceSession(deviceId, req.headers.get("user-agent"));
         const response = NextResponse.json({ ok: true });
         response.cookies.set("moodle_session_token", r.token, sessionCookieOptions(keep, true));
         response.cookies.set("moodle_sesskey", sesskey, sessionCookieOptions(keep, true));
@@ -96,13 +131,18 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "Sesión expirada" }, { status: 401 });
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
+  // Logout normal de ESTE dispositivo: borramos su fila del registro.
+  const deviceId = req.cookies.get(DEVICE_COOKIE)?.value;
+  if (deviceId) await deleteDeviceSession(deviceId);
+
   const response = NextResponse.json({ ok: true });
   response.cookies.delete("moodle_session_token");
   response.cookies.delete("moodle_sesskey");
   response.cookies.delete("moodle_user");
   response.cookies.delete("moodle_remember");
   response.cookies.delete("moodle_cred");
+  response.cookies.delete(DEVICE_COOKIE);
   // clear guest session if present
   response.cookies.delete("campus_guest");
   response.cookies.delete("sysacadws_user");

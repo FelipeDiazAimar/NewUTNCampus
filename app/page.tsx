@@ -21,8 +21,14 @@ export default function LoginPage() {
   const [showPass, setShowPass] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
+  // Destino tras autenticarse: ?next= si es una ruta interna válida, o /dashboard.
+  function destination() {
+    const next = new URLSearchParams(window.location.search).get("next");
+    return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  }
+
   useEffect(() => {
-    if (document.cookie.includes("moodle_user")) router.push("/dashboard");
+    if (document.cookie.includes("moodle_user")) router.push(destination());
   }, [router]);
 
   useEffect(() => {
@@ -70,7 +76,7 @@ export default function LoginPage() {
     }
     // Guardar la cuenta en el dispositivo solo si pidió mantener sesión.
     if (remember) addRememberedUser(username);
-    router.push("/dashboard");
+    router.push(destination());
   }
 
   return (

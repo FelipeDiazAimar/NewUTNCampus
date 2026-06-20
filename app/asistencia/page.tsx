@@ -10,24 +10,15 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Clock3,
   KeyRound,
   Loader2,
-  Radio,
   Send,
   ShieldCheck,
-  WifiOff,
 } from "lucide-react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
-
-type AgentState = {
-  status: "listening" | "detected" | "idle" | "offline";
-  listening: boolean;
-  lastSeenAt: string | null;
-};
 
 type InasItem = { CodMateria?: string; NombreMateria?: string; Materia?: string; Fecha?: string };
 type InasResp = {
@@ -42,14 +33,10 @@ type Grupo = { materia: string; fechas: string[] };
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
 
-const agentFetcher = async (url: string): Promise<AgentState> => {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("No se pudo consultar el agente");
-  return res.json();
-};
-
 const historyFetcher = async (url: string): Promise<InasResp | null> => {
   const res = await fetch(url, { cache: "no-store" });
+  // 401 = sesión de Sysacad vencida → lo propagamos para pedir re-login.
+  if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
   if (!res.ok) return null;
   return res.json();
 };
@@ -92,16 +79,6 @@ function formatDate(value: string): string {
   return value;
 }
 
-function formatRelative(value: string | null): string {
-  if (!value) return "Sin registro";
-  const diff = Date.now() - new Date(value).getTime();
-  if (Number.isNaN(diff)) return "Sin registro";
-  const mins = Math.max(0, Math.round(diff / 60000));
-  if (mins < 1) return "Ahora";
-  if (mins === 1) return "Hace 1 min";
-  return `Hace ${mins} min`;
-}
-
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -125,15 +102,13 @@ export default function AsistenciaPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const legajo = ready ? getLegajo() : null;
 
-  const { data: agent } = useSWR("/api/asistencia/agent", agentFetcher, {
-    refreshInterval: 30000,
-    revalidateOnFocus: true,
-  });
-  const { data: history, isLoading } = useSWR(
+  const { data: history, isLoading, error: historyError } = useSWR(
     legajo ? `/api/sysacadws/cursado/inasistencias/${legajo}/${year}` : null,
     historyFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5 * 60_000 }
+    { revalidateOnFocus: false, dedupingInterval: 5 * 60_000, shouldRetryOnError: false }
   );
+  // Sesión de Sysacad vencida → mostramos el aviso de re-login (igual que sin legajo).
+  const sessionExpired = (historyError as { status?: number } | undefined)?.status === 401;
 
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) {
@@ -172,8 +147,7 @@ export default function AsistenciaPage() {
           </span>
         </div>
 
-        <section className="mb-4 grid gap-3 md:grid-cols-[1.15fr_0.85fr]">
-          <AgentStatus agent={agent} />
+        <section className="mb-4">
           <PushPermissionCard />
         </section>
 
@@ -219,15 +193,19 @@ export default function AsistenciaPage() {
 
             <div className="h-px bg-[var(--separator)]" />
 
-            {!legajo ? (
+            {!legajo || sessionExpired ? (
               <div className="flex flex-col items-center gap-4 px-5 py-10 text-center">
                 <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[rgba(0,122,255,0.1)]">
                   <KeyRound className="h-7 w-7 text-[#007aff]" />
                 </span>
                 <div>
-                  <p className="text-[15px] font-semibold text-[var(--fg)]">Iniciá sesión en Sysacad</p>
+                  <p className="text-[15px] font-semibold text-[var(--fg)]">
+                    {sessionExpired ? "Tu sesión de Sysacad expiró" : "Iniciá sesión en Sysacad"}
+                  </p>
                   <p className="mt-1 text-[13px] text-[var(--secondary)]">
-                    Para ver tu historial de inasistencias necesitás vincular tu cuenta.
+                    {sessionExpired
+                      ? "Volvé a iniciar sesión en Sysacad para ver tu historial de inasistencias."
+                      : "Para ver tu historial de inasistencias necesitás vincular tu cuenta."}
                   </p>
                 </div>
                 <Link
@@ -258,34 +236,6 @@ export default function AsistenciaPage() {
           </section>
         )}
       </main>
-    </div>
-  );
-}
-
-function AgentStatus({ agent }: { agent?: AgentState }) {
-  const status = agent?.status ?? "offline";
-  const listening = agent?.listening ?? false;
-  const tone = listening ? "#34c759" : status === "detected" ? "#007aff" : "#ff9500";
-  const label = listening ? "Escuchando" : status === "detected" ? "Detectado" : "Sin senal";
-
-  return (
-    <div className="rounded-[26px] border border-[var(--separator)] bg-[rgba(255,255,255,0.72)] p-5 shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.76)]">
-      <div className="flex items-start justify-between gap-4">
-        <span
-          className="flex h-12 w-12 items-center justify-center rounded-[16px]"
-          style={{ backgroundColor: `${tone}1a`, color: tone }}
-        >
-          {listening ? <Radio className="h-6 w-6" /> : <WifiOff className="h-6 w-6" />}
-        </span>
-        <span className="rounded-full px-3 py-1 text-[12px] font-semibold" style={{ backgroundColor: `${tone}1a`, color: tone }}>
-          {label}
-        </span>
-      </div>
-      <h2 className="mt-4 text-[18px] font-semibold text-[var(--fg)]">Dispositivo Local</h2>
-      <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--secondary)]">
-        <Clock3 className="h-4 w-4" />
-        {formatRelative(agent?.lastSeenAt ?? null)}
-      </div>
     </div>
   );
 }
@@ -452,7 +402,7 @@ function AdminNotifyCard() {
       </div>
 
       <Link
-        href="/testnotis"
+        href="/admin/testnotis"
         className="flex items-center gap-3 border-t border-[rgba(175,82,222,0.15)] px-5 py-3 transition-colors active:bg-[var(--surface2)]"
       >
         <span className="flex-1 text-[13px] font-medium text-[#af52de]">Abrir simulador PWA</span>
