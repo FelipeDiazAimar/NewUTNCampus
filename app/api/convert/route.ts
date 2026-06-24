@@ -106,18 +106,15 @@ const GOOGLE_MIME: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  const clientId     = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientId        = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret    = process.env.GOOGLE_CLIENT_SECRET;
   const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  const folderId     = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const folderId        = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
   if (!clientId || !clientSecret)
     return NextResponse.json({ error: "Google OAuth credentials not configured" }, { status: 500 });
 
-  // Cookie-stored token (from re-auth flow) takes precedence over env var
-  const refreshToken =
-    req.cookies.get("google_refresh_token")?.value ?? envRefreshToken ?? "";
-
+  const refreshToken = req.cookies.get("google_refresh_token")?.value ?? envRefreshToken ?? "";
   if (!refreshToken)
     return NextResponse.json(
       { error: "Google Drive no está conectado", code: "GOOGLE_AUTH_REQUIRED" },
@@ -125,98 +122,137 @@ export async function POST(req: NextRequest) {
     );
 
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
+  if (!sessionToken)
+    return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "FormData inválido" }, { status: 400 });
-  }
+  try { formData = await req.formData(); }
+  catch { return NextResponse.json({ error: "FormData inválido" }, { status: 400 }); }
 
-  // Accept either a URL (server fetches the file) or a raw File blob
-  const urlField = formData.get("url");
+  const urlField  = formData.get("url");
   const kindField = (formData.get("kind") as string | null)?.toLowerCase() ?? "";
-  let fileBuffer: Buffer;
-  let ext: string;
-  let outputFilename: string;
 
-  if (typeof urlField === "string" && urlField) {
-    if (!sessionToken)
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    ext = kindField || urlField.split(".").pop()?.toLowerCase() || "";
-    outputFilename = `archivo.${ext.replace(/\.[^.]+$/, "")}.pdf`;
-    const moodleRes = await fetchWithCookie(urlField, `MoodleSession=${sessionToken}`);
-    if (!moodleRes.ok)
-      return NextResponse.json({ error: `Error al descargar el archivo (HTTP ${moodleRes.status})` }, { status: 502 });
-    fileBuffer = Buffer.from(await moodleRes.arrayBuffer());
-  } else {
-    const file = formData.get("file");
-    if (!(file instanceof File))
-      return NextResponse.json({ error: "Campo 'url' o 'file' requerido" }, { status: 400 });
-    ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    outputFilename = file.name.replace(/\.[^.]+$/, ".pdf");
-    fileBuffer = Buffer.from(await file.arrayBuffer());
-  }
+  if (typeof urlField !== "string" || !urlField)
+    return NextResponse.json({ error: "Campo 'url' requerido" }, { status: 400 });
 
+  const ext = kindField || urlField.split(".").pop()?.toLowerCase() || "";
   if (!SUPPORTED_EXTS.has(ext))
-    return NextResponse.json(
-      { error: `Formato .${ext} no soportado. Use .xlsx o .pptx.` },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: `Formato .${ext} no soportado.` }, { status: 400 });
 
-  let fileId: string | null = null;
-  let drive: drive_v3.Drive | null = null;
+  // ── SSE stream ──────────────────────────────────────────────────────────────
+  const encoder = new TextEncoder();
 
-  try {
-    const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
-    oauth2.setCredentials({ refresh_token: refreshToken });
-    drive = google.drive({ version: "v3", auth: oauth2 });
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); }
+        catch { /* stream closed by client */ }
+      };
 
-    const uploadRes = await drive.files.create({
-      requestBody: {
-        name: `campus-convert-${Date.now()}.${ext}`,
-        mimeType: GOOGLE_MIME[ext],
-        ...(folderId ? { parents: [folderId] } : {}),
-      },
-      media: {
-        mimeType: SOURCE_MIME[ext],
-        body: Readable.from(fileBuffer),
-      },
-      fields: "id",
-    });
+      let fileId: string | null = null;
+      let drive: drive_v3.Drive | null = null;
 
-    fileId = uploadRes.data.id ?? null;
-    if (!fileId) throw new Error("Drive no retornó un ID de archivo tras la subida");
+      try {
+        // ── Step 1: Download from Moodle (2 → 30%) ────────────────────────
+        send({ progress: 2, label: "Preparando archivo…" });
 
-    const exportRes = await drive.files.export(
-      { fileId, mimeType: "application/pdf" },
-      { responseType: "arraybuffer" }
-    );
+        const moodleRes = await fetchWithCookie(urlField, `MoodleSession=${sessionToken}`);
+        if (!moodleRes.ok) {
+          send({ error: `Error al descargar el archivo (HTTP ${moodleRes.status})` });
+          return;
+        }
 
-    const pdfBuffer = Buffer.from(exportRes.data as unknown as ArrayBuffer);
+        const contentLength = parseInt(moodleRes.headers.get("content-length") ?? "0");
+        const chunks: Buffer[] = [];
+        let downloaded = 0;
 
-    return new NextResponse(pdfBuffer, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${outputFilename}"`,
-        "Content-Length": String(pdfBuffer.length),
-      },
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Error interno";
-    console.error("[convert/pdf]", message);
-    const isAuthError = message.includes("invalid_grant") || message.includes("invalid_client");
-    return NextResponse.json(
-      { error: message, ...(isAuthError ? { code: "GOOGLE_AUTH_REQUIRED" } : {}) },
-      { status: isAuthError ? 401 : 500 }
-    );
-  } finally {
-    if (fileId && drive) {
-      await drive.files
-        .delete({ fileId })
-        .catch((e) => console.error(`[convert/pdf] delete ${fileId}:`, e.message));
-    }
-  }
+        if (moodleRes.body) {
+          const reader = moodleRes.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(Buffer.from(value));
+            downloaded += value.length;
+            if (contentLength > 0) {
+              send({
+                progress: 2 + Math.min(28, Math.round((downloaded / contentLength) * 28)),
+                label: "Preparando archivo…",
+              });
+            }
+          }
+        } else {
+          chunks.push(Buffer.from(await moodleRes.arrayBuffer()));
+        }
+
+        const fileBuffer = Buffer.concat(chunks);
+        send({ progress: 30, label: "Procesando…" });
+
+        // ── Step 2: Upload to Drive (30 → 65%) ────────────────────────────
+        const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
+        oauth2.setCredentials({ refresh_token: refreshToken });
+        drive = google.drive({ version: "v3", auth: oauth2 });
+
+        const uploadRes = await drive.files.create(
+          {
+            requestBody: {
+              name: `campus-convert-${Date.now()}.${ext}`,
+              mimeType: GOOGLE_MIME[ext],
+              ...(folderId ? { parents: [folderId] } : {}),
+            },
+            media: { mimeType: SOURCE_MIME[ext], body: Readable.from(fileBuffer) },
+            fields: "id",
+          },
+          {
+            onUploadProgress: (evt: { bytesRead: number }) => {
+              send({
+                progress: 30 + Math.min(33, Math.round((evt.bytesRead / fileBuffer.length) * 33)),
+                label: "Procesando…",
+              });
+            },
+          }
+        );
+
+        fileId = uploadRes.data.id ?? null;
+        if (!fileId) throw new Error("Drive no retornó un ID de archivo tras la subida");
+
+        // ── Step 3: Export PDF (65 → 80%) ─────────────────────────────────
+        send({ progress: 65, label: "Generando vista previa…" });
+
+        const exportRes = await drive.files.export(
+          { fileId, mimeType: "application/pdf" },
+          { responseType: "arraybuffer" }
+        );
+
+        send({ progress: 80, label: "Casi listo…" });
+
+        const pdfBuffer = Buffer.from(exportRes.data as unknown as ArrayBuffer);
+
+        // ── Done: send PDF as base64 (100%) ───────────────────────────────
+        send({ progress: 100, label: "Abriendo…", pdf: pdfBuffer.toString("base64") });
+
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Error interno";
+        console.error("[convert/pdf]", message);
+        const isAuthError = message.includes("invalid_grant") || message.includes("invalid_client");
+        send({ error: message, ...(isAuthError ? { code: "GOOGLE_AUTH_REQUIRED" } : {}) });
+      } finally {
+        if (fileId && drive) {
+          await drive.files
+            .delete({ fileId })
+            .catch((e) => console.error(`[convert/pdf] delete ${fileId}:`, e.message));
+        }
+        try { controller.close(); } catch { /* already closed */ }
+      }
+    },
+  });
+
+  return new NextResponse(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 }
 
 // ── Moodle file conversion (HTML/slides/table) ───────────────────────────────

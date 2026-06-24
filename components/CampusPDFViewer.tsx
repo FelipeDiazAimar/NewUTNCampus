@@ -70,7 +70,8 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const aspectReportedRef = useRef(false); // report only once per document
+  const aspectReportedRef = useRef(false);
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
 
   // Resolve src → react-pdf file prop, clean up objectURLs
   const [file, setFile] = useState<string | { data: ArrayBuffer } | null>(null);
@@ -97,7 +98,13 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
 
   const pageWidth = containerWidth > 0 ? Math.floor(containerWidth - 32) : undefined;
 
+  // Destroy previous document when src changes or component unmounts
+  useEffect(() => {
+    return () => { pdfDocRef.current?.destroy(); pdfDocRef.current = null; };
+  }, [src]);
+
   async function handleDocLoad(pdf: PDFDocumentProxy) {
+    pdfDocRef.current = pdf;
     setNumPages(pdf.numPages);
     if (onAspectRatio && !aspectReportedRef.current) {
       try {

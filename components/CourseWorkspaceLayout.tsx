@@ -63,13 +63,16 @@ const KIND_RATIOS: Record<PanelKind, number> = {
 // ─── Panel internal loading state ─────────────────────────────────────────────
 
 type PanelState =
-  | { phase: "loading"; label: string }
+  | { phase: "loading"; label: string; progress?: number }
   | { phase: "error"; msg: string }
   | { phase: "pdf"; url: string }
   | { phase: "docx"; buffer: ArrayBuffer }
   | { phase: "xlsx"; buffer: ArrayBuffer }
   | { phase: "slides"; slides: Slide[] }
   | { phase: "text"; text: string };
+
+type CachedPanelState = Exclude<PanelState, { phase: "loading" } | { phase: "error" }>;
+type FileCache = Map<string, CachedPanelState>;
 
 // ─── DOCX viewer (docx-preview client-side) ───────────────────────────────────
 
@@ -80,17 +83,25 @@ function DocxViewer({ buffer, initialScale = 1.0 }: { buffer: ArrayBuffer; initi
   const [scale, setScale] = useState(initialScale);
 
   useEffect(() => {
-    if (!ref.current) return;
+    const container = ref.current;
+    if (!container) return;
+    let cancelled = false;
     setDone(false); setErr("");
+    // Clear any previous docx-preview DOM before re-rendering
+    container.innerHTML = "";
     import("docx-preview")
       .then(({ renderAsync }) =>
-        renderAsync(buffer, ref.current!, undefined, {
+        renderAsync(buffer, container, undefined, {
           inWrapper: true, ignoreWidth: false, ignoreHeight: false,
           renderHeaders: true, renderFooters: true, useBase64URL: true, breakPages: true,
         })
       )
-      .then(() => setDone(true))
-      .catch((e) => setErr((e as Error).message));
+      .then(() => { if (!cancelled) setDone(true); })
+      .catch((e) => { if (!cancelled) setErr((e as Error).message); });
+    return () => {
+      cancelled = true;
+      container.innerHTML = "";
+    };
   }, [buffer]);
 
   return (
@@ -300,18 +311,57 @@ function TextViewer({ text }: { text: string }) {
   );
 }
 
+// ─── Native fallback when Drive is unavailable ───────────────────────────────
+
+async function nativeFallback(
+  entry: PanelEntry,
+  setPs: (s: PanelState) => void,
+  cancelled: boolean,
+  cache?: (s: CachedPanelState) => void
+) {
+  if (entry.kind === "pptx") {
+    setPs({ phase: "loading", label: "Cargando presentación…" });
+    const res = await fetch(`/api/convert?url=${encodeURIComponent(entry.fileUrl)}&filename=file.pptx`);
+    if (!res.ok) { setPs({ phase: "error", msg: `HTTP ${res.status}` }); return; }
+    const data = await res.json();
+    if (!cancelled && data.kind === "slides") {
+      const s: CachedPanelState = { phase: "slides", slides: data.slides };
+      cache?.(s); setPs(s);
+    }
+    return;
+  }
+  if (entry.kind === "xlsx") {
+    setPs({ phase: "loading", label: "Cargando hoja de cálculo…" });
+    const res = await fetch(entry.proxyUrl);
+    if (!res.ok) { setPs({ phase: "error", msg: `HTTP ${res.status}` }); return; }
+    const buf = await res.arrayBuffer();
+    if (!cancelled) {
+      const s: CachedPanelState = { phase: "xlsx", buffer: buf };
+      cache?.(s); setPs(s);
+    }
+  }
+}
+
 // ─── Panel content loader ─────────────────────────────────────────────────────
 
-function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
+function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, fileCache }: {
   entry: PanelEntry;
   onAspectRatio: (r: number) => void;
   xlsxMode: "pdf" | "excel";
   initialScale?: number;
+  fileCache: React.RefObject<FileCache>;
 }) {
-  const [ps, setPs] = useState<PanelState>({ phase: "loading", label: "Cargando…" });
+  const [ps, setPs] = useState<PanelState>(() =>
+    fileCache.current?.get(entry.fileUrl) ?? { phase: "loading", label: "Cargando…" }
+  );
   const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const cacheKey = entry.fileUrl;
+
+    // Cache hit — state was already initialized correctly, nothing to do
+    if (fileCache.current?.has(cacheKey)) return;
+
     if (blobUrlRef.current) {
       URL.revokeObjectURL(blobUrlRef.current);
       blobUrlRef.current = null;
@@ -320,22 +370,23 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
     setPs({ phase: "loading", label: "Cargando…" });
     let cancelled = false;
 
+    const cache = (state: CachedPanelState) => {
+      fileCache.current?.set(cacheKey, state);
+    };
+
     async function load() {
       try {
         if (entry.kind === "pdf") {
-          // Pre-fetch so HTTP errors (e.g. 401 when session expired) surface here
-          // instead of inside pdfjs as an opaque InvalidPDFException.
+          // HEAD check to surface session errors before handing the URL to PDF.js
           setPs({ phase: "loading", label: "Cargando PDF…" });
-          const res = await fetch(entry.proxyUrl);
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-            throw new Error(err.error ?? `HTTP ${res.status}`);
+          const check = await fetch(entry.proxyUrl, { method: "HEAD" });
+          if (!check.ok) {
+            const err = await check.json().catch(() => ({ error: `HTTP ${check.status}` }));
+            throw new Error(err.error ?? `HTTP ${check.status}`);
           }
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          if (cancelled) { URL.revokeObjectURL(url); return; }
-          blobUrlRef.current = url;
-          setPs({ phase: "pdf", url });
+          // Pass URL directly — PDF.js will stream via range requests
+          const state: CachedPanelState = { phase: "pdf", url: entry.proxyUrl };
+          if (!cancelled) { cache(state); setPs(state); }
           return;
         }
 
@@ -344,7 +395,7 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
           const res = await fetch(entry.proxyUrl);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const buf = await res.arrayBuffer();
-          if (!cancelled) setPs({ phase: "docx", buffer: buf });
+          if (!cancelled) { const s: CachedPanelState = { phase: "docx", buffer: buf }; cache(s); setPs(s); }
           return;
         }
 
@@ -354,50 +405,65 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
           const res = await fetch(entry.proxyUrl);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const buf = await res.arrayBuffer();
-          if (!cancelled) setPs({ phase: "xlsx", buffer: buf });
+          if (!cancelled) { const s: CachedPanelState = { phase: "xlsx", buffer: buf }; cache(s); setPs(s); }
           return;
         }
 
         if (entry.kind === "xlsx" || entry.kind === "pptx") {
-          setPs({ phase: "loading", label: "Convirtiendo a PDF…" });
+          setPs({ phase: "loading", label: "Preparando archivo…", progress: 0 });
           const fd = new FormData();
           fd.append("url", entry.fileUrl);
           fd.append("kind", entry.kind);
           const r = await fetch("/api/convert", { method: "POST", body: fd });
-          if (r.ok) {
-            const pdfBlob = await r.blob();
-            const url = URL.createObjectURL(pdfBlob);
-            if (cancelled) { URL.revokeObjectURL(url); return; }
-            blobUrlRef.current = url;
-            setPs({ phase: "pdf", url });
+
+          // Non-SSE error (auth, bad request, etc.)
+          if (!r.ok || !r.body) {
+            await nativeFallback(entry, setPs, cancelled, cache);
             return;
           }
 
-          const errBody = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+          // Parse SSE stream
+          const reader = r.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = "";
+          let converted = false;
 
-          // Drive no disponible (credenciales ausentes o expiradas) — fallback al visor nativo
-          if (entry.kind === "pptx") {
-            setPs({ phase: "loading", label: "Cargando presentación…" });
-            const fallback = await fetch(
-              `/api/convert?url=${encodeURIComponent(entry.fileUrl)}&filename=file.pptx`
-            );
-            if (!fallback.ok) throw new Error(`HTTP ${fallback.status}`);
-            const data = await fallback.json();
-            if (cancelled) return;
-            if (data.kind === "slides") { setPs({ phase: "slides", slides: data.slides }); return; }
+          outer: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const parts = buf.split("\n\n");
+            buf = parts.pop() ?? "";
+            for (const chunk of parts) {
+              const line = chunk.split("\n").find((l) => l.startsWith("data: "));
+              if (!line) continue;
+              let data: { progress?: number; label?: string; pdf?: string; error?: string; code?: string };
+              try { data = JSON.parse(line.slice(6)); } catch { continue; }
+
+              if (data.error) { break outer; }
+
+              if (data.progress !== undefined && !cancelled)
+                setPs({ phase: "loading", label: data.label ?? "", progress: data.progress });
+
+              if (data.pdf && !cancelled) {
+                const bytes = Uint8Array.from(atob(data.pdf), (c) => c.charCodeAt(0));
+                const blob = new Blob([bytes], { type: "application/pdf" });
+                const url = URL.createObjectURL(blob);
+                if (cancelled) { URL.revokeObjectURL(url); return; }
+                // Blob URL owned by cache — don't track in blobUrlRef
+                const s: CachedPanelState = { phase: "pdf", url };
+                cache(s);
+                setPs(s);
+                converted = true;
+              }
+            }
           }
 
-          if (entry.kind === "xlsx") {
-            setPs({ phase: "loading", label: "Cargando hoja de cálculo…" });
-            const fallback = await fetch(entry.proxyUrl);
-            if (!fallback.ok) throw new Error(`HTTP ${fallback.status}`);
-            const buf = await fallback.arrayBuffer();
-            if (cancelled) return;
-            setPs({ phase: "xlsx", buffer: buf });
-            return;
-          }
+          if (converted) return;
 
-          if (!cancelled) setPs({ phase: "error", msg: errBody.error ?? `HTTP ${r.status}` });
+          // Drive failed — fallback to native viewer
+          await nativeFallback(entry, setPs, cancelled, cache);
+          return;
         }
 
         if (entry.kind === "text") {
@@ -405,7 +471,7 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
           const res = await fetch(entry.proxyUrl);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const text = await res.text();
-          if (!cancelled) setPs({ phase: "text", text });
+          if (!cancelled) { const s: CachedPanelState = { phase: "text", text }; cache(s); setPs(s); }
           return;
         }
       } catch (e) {
@@ -424,10 +490,29 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
   }, [entry.kind, entry.proxyUrl, entry.fileUrl, xlsxMode]);
 
   if (ps.phase === "loading") {
+    const hasProgress = ps.progress !== undefined;
     return (
-      <div className="flex-1 flex items-center justify-center gap-2.5" style={{ background: "#525659" }}>
-        <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
-        <span className="text-[13px] text-white/60">{ps.label}</span>
+      <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ background: "#525659" }}>
+        {hasProgress ? (
+          <>
+            <div className="w-48 flex flex-col items-center gap-2">
+              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.15)" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${ps.progress}%`, background: "#007aff" }}
+                />
+              </div>
+              <div className="flex items-center justify-end w-full">
+                <span className="text-[12px] text-white/70 tabular-nums font-medium">{ps.progress}%</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center gap-2.5">
+            <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+            <span className="text-[13px] text-white/60">{ps.label}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -476,6 +561,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const [active, setActive] = useState<PanelEntry | null>(null);
   const [assignment, setAssignment] = useState<AssignmentEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+  const fileCache = useRef<FileCache>(new Map());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSubFullscreen, setIsSubFullscreen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(() =>
@@ -663,6 +749,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
         onAspectRatio={setAspectRatio}
         xlsxMode={xlsxMode}
         initialScale={isMobileView ? 0.75 : 1.0}
+        fileCache={fileCache}
       />
     </div>
   );

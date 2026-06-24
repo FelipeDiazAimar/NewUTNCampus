@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
-// Follow up to N redirects manually so the Cookie header is preserved on every hop.
-// fetch()'s built-in redirect:"follow" drops custom headers on cross-hop redirects.
-async function fetchWithCookie(url: string, cookie: string, maxRedirects = 5): Promise<Response> {
+async function fetchWithCookie(
+  url: string,
+  cookie: string,
+  extraHeaders: Record<string, string> = {},
+  maxRedirects = 5
+): Promise<Response> {
   let current = url;
   for (let i = 0; i < maxRedirects; i++) {
     const res = await fetch(current, {
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, ...extraHeaders },
       redirect: "manual",
     });
     if (res.status >= 300 && res.status < 400) {
@@ -32,13 +35,17 @@ export async function GET(req: NextRequest) {
 
   const cookie = `MoodleSession=${sessionToken}`;
   const inline = req.nextUrl.searchParams.get("inline") === "1";
-  const res = await fetchWithCookie(fileurl, cookie);
+
+  // Forward Range header so PDF.js can do partial content requests
+  const extraHeaders: Record<string, string> = {};
+  const range = req.headers.get("range");
+  if (range) extraHeaders["Range"] = range;
+
+  const res = await fetchWithCookie(fileurl, cookie, extraHeaders);
 
   const contentType = res.headers.get("content-type") ?? "application/octet-stream";
 
-  // When the session is expired Moodle returns a 200 HTML login/error page instead
-  // of the file. Detect this and fail fast so callers get a proper error (not
-  // pdfjs throwing InvalidPDFException after trying to parse HTML as a PDF).
+  // Moodle returns a 200 HTML login page when the session expires
   if (contentType.startsWith("text/html")) {
     return NextResponse.json(
       { error: "La sesión del Campus expiró. Cerrá sesión y volvé a entrar." },
@@ -47,14 +54,23 @@ export async function GET(req: NextRequest) {
   }
 
   const upstreamDisp = res.headers.get("content-disposition") ?? "";
-  // inline=1 → let the browser display the file; otherwise force download
   const disposition = inline ? "inline" : upstreamDisp || "attachment";
-  const body = await res.arrayBuffer();
 
-  return new NextResponse(body, {
-    headers: {
-      "Content-Type": contentType,
-      "Content-Disposition": disposition,
-    },
+  const responseHeaders: Record<string, string> = {
+    "Content-Type": contentType,
+    "Content-Disposition": disposition,
+    "Accept-Ranges": "bytes",
+  };
+
+  // Forward range-related headers so PDF.js can paginate
+  for (const h of ["content-length", "content-range"] as const) {
+    const v = res.headers.get(h);
+    if (v) responseHeaders[h === "content-length" ? "Content-Length" : "Content-Range"] = v;
+  }
+
+  // Stream the body directly — no full buffering
+  return new NextResponse(res.body, {
+    status: res.status,
+    headers: responseHeaders,
   });
 }
