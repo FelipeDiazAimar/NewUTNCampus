@@ -359,25 +359,45 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0 }: {
         }
 
         if (entry.kind === "xlsx" || entry.kind === "pptx") {
-          setPs({ phase: "loading", label: "Descargando archivo…" });
-          const fileRes = await fetch(entry.proxyUrl);
-          if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
-          const fileBlob = await fileRes.blob();
-
           setPs({ phase: "loading", label: "Convirtiendo a PDF…" });
           const fd = new FormData();
-          fd.append("file", new File([fileBlob], `file.${entry.kind}`));
+          fd.append("url", entry.fileUrl);
+          fd.append("kind", entry.kind);
           const r = await fetch("/api/convert", { method: "POST", body: fd });
-          if (!r.ok) {
-            const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
-            throw new Error(err.error ?? `HTTP ${r.status}`);
+          if (r.ok) {
+            const pdfBlob = await r.blob();
+            const url = URL.createObjectURL(pdfBlob);
+            if (cancelled) { URL.revokeObjectURL(url); return; }
+            blobUrlRef.current = url;
+            setPs({ phase: "pdf", url });
+            return;
           }
-          const pdfBlob = await r.blob();
-          const url = URL.createObjectURL(pdfBlob);
-          if (cancelled) { URL.revokeObjectURL(url); return; }
-          blobUrlRef.current = url;
-          setPs({ phase: "pdf", url });
-          return;
+
+          const errBody = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+
+          // Drive no disponible (credenciales ausentes o expiradas) — fallback al visor nativo
+          if (entry.kind === "pptx") {
+            setPs({ phase: "loading", label: "Cargando presentación…" });
+            const fallback = await fetch(
+              `/api/convert?url=${encodeURIComponent(entry.fileUrl)}&filename=file.pptx`
+            );
+            if (!fallback.ok) throw new Error(`HTTP ${fallback.status}`);
+            const data = await fallback.json();
+            if (cancelled) return;
+            if (data.kind === "slides") { setPs({ phase: "slides", slides: data.slides }); return; }
+          }
+
+          if (entry.kind === "xlsx") {
+            setPs({ phase: "loading", label: "Cargando hoja de cálculo…" });
+            const fallback = await fetch(entry.proxyUrl);
+            if (!fallback.ok) throw new Error(`HTTP ${fallback.status}`);
+            const buf = await fallback.arrayBuffer();
+            if (cancelled) return;
+            setPs({ phase: "xlsx", buffer: buf });
+            return;
+          }
+
+          if (!cancelled) setPs({ phase: "error", msg: errBody.error ?? `HTTP ${r.status}` });
         }
 
         if (entry.kind === "text") {

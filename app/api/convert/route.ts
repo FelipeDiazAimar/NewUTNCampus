@@ -106,14 +106,25 @@ const GOOGLE_MIME: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  // Validación temprana — sin Drive, falla rápido
   const clientId     = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  const folderId     = process.env.GOOGLE_DRIVE_FOLDER_ID; // opcional pero recomendado
+  const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const folderId     = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-  if (!clientId || !clientSecret || !refreshToken)
+  if (!clientId || !clientSecret)
     return NextResponse.json({ error: "Google OAuth credentials not configured" }, { status: 500 });
+
+  // Cookie-stored token (from re-auth flow) takes precedence over env var
+  const refreshToken =
+    req.cookies.get("google_refresh_token")?.value ?? envRefreshToken ?? "";
+
+  if (!refreshToken)
+    return NextResponse.json(
+      { error: "Google Drive no está conectado", code: "GOOGLE_AUTH_REQUIRED" },
+      { status: 401 }
+    );
+
+  const sessionToken = req.cookies.get("moodle_session_token")?.value;
 
   let formData: FormData;
   try {
@@ -122,28 +133,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "FormData inválido" }, { status: 400 });
   }
 
-  const file = formData.get("file");
-  if (!(file instanceof File))
-    return NextResponse.json({ error: "Campo 'file' requerido" }, { status: 400 });
+  // Accept either a URL (server fetches the file) or a raw File blob
+  const urlField = formData.get("url");
+  const kindField = (formData.get("kind") as string | null)?.toLowerCase() ?? "";
+  let fileBuffer: Buffer;
+  let ext: string;
+  let outputFilename: string;
 
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (typeof urlField === "string" && urlField) {
+    if (!sessionToken)
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    ext = kindField || urlField.split(".").pop()?.toLowerCase() || "";
+    outputFilename = `archivo.${ext.replace(/\.[^.]+$/, "")}.pdf`;
+    const moodleRes = await fetchWithCookie(urlField, `MoodleSession=${sessionToken}`);
+    if (!moodleRes.ok)
+      return NextResponse.json({ error: `Error al descargar el archivo (HTTP ${moodleRes.status})` }, { status: 502 });
+    fileBuffer = Buffer.from(await moodleRes.arrayBuffer());
+  } else {
+    const file = formData.get("file");
+    if (!(file instanceof File))
+      return NextResponse.json({ error: "Campo 'url' o 'file' requerido" }, { status: 400 });
+    ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    outputFilename = file.name.replace(/\.[^.]+$/, ".pdf");
+    fileBuffer = Buffer.from(await file.arrayBuffer());
+  }
+
   if (!SUPPORTED_EXTS.has(ext))
     return NextResponse.json(
       { error: `Formato .${ext} no soportado. Use .xlsx o .pptx.` },
       { status: 400 }
     );
 
-  // Operaciones con Drive — la limpieza en finally es garantizada
   let fileId: string | null = null;
   let drive: drive_v3.Drive | null = null;
 
   try {
-    // Autenticar como el usuario real (usa su quota de 15 GB, no la de la SA)
     const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
     oauth2.setCredentials({ refresh_token: refreshToken });
     drive = google.drive({ version: "v3", auth: oauth2 });
 
-    // Subir con conversión a formato Google Workspace
     const uploadRes = await drive.files.create({
       requestBody: {
         name: `campus-convert-${Date.now()}.${ext}`,
@@ -152,7 +180,7 @@ export async function POST(req: NextRequest) {
       },
       media: {
         mimeType: SOURCE_MIME[ext],
-        body: Readable.from(Buffer.from(await file.arrayBuffer())),
+        body: Readable.from(fileBuffer),
       },
       fields: "id",
     });
@@ -160,7 +188,6 @@ export async function POST(req: NextRequest) {
     fileId = uploadRes.data.id ?? null;
     if (!fileId) throw new Error("Drive no retornó un ID de archivo tras la subida");
 
-    // Exportar a PDF
     const exportRes = await drive.files.export(
       { fileId, mimeType: "application/pdf" },
       { responseType: "arraybuffer" }
@@ -171,16 +198,19 @@ export async function POST(req: NextRequest) {
     return new NextResponse(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${file.name.replace(/\.[^.]+$/, ".pdf")}"`,
+        "Content-Disposition": `inline; filename="${outputFilename}"`,
         "Content-Length": String(pdfBuffer.length),
       },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error interno";
     console.error("[convert/pdf]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isAuthError = message.includes("invalid_grant") || message.includes("invalid_client");
+    return NextResponse.json(
+      { error: message, ...(isAuthError ? { code: "GOOGLE_AUTH_REQUIRED" } : {}) },
+      { status: isAuthError ? 401 : 500 }
+    );
   } finally {
-    // Borrado garantizado: evita acumulación en el Drive de la Service Account
     if (fileId && drive) {
       await drive.files
         .delete({ fileId })
