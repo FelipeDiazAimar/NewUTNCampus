@@ -45,8 +45,60 @@ export async function GET(req: NextRequest) {
 
   const contentType = res.headers.get("content-type") ?? "application/octet-stream";
 
-  // Moodle returns a 200 HTML login page when the session expires
+  // Moodle sometimes returns HTML from view.php instead of redirecting directly.
+  // Try to extract the real file URL before giving up.
   if (contentType.startsWith("text/html")) {
+    const html = await res.text();
+
+    // Genuine session expiry: Moodle login page has a logintoken field
+    if (html.includes("logintoken") || html.includes("/login/index.php")) {
+      return NextResponse.json(
+        { error: "La sesión del Campus expiró. Cerrá sesión y volvé a entrar." },
+        { status: 401 }
+      );
+    }
+
+    // Extract actual file URL from common Moodle HTML patterns.
+    // Use specific patterns to avoid matching navbar/avatar pluginfile.php URLs.
+
+    // 1. <meta http-equiv="refresh" content="0; url=...">
+    const metaUrl =
+      html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"'\s>]+)/i)?.[1] ??
+      html.match(/content=["'][^"']*url=([^"'\s>]+)["'][^>]*http-equiv=["']refresh["']/i)?.[1];
+
+    // 2. href with Moodle resource content path (most specific — avoids images/avatars)
+    const hrefUrl =
+      html.match(/href=["']([^"']*pluginfile\.php\/\d+\/mod_resource\/content\/\d+\/[^"']+)/i)?.[1];
+
+    // 3. JS redirect (window.location / document.location)
+    const jsUrl =
+      html.match(/(?:window|document)\.location(?:\.href)?\s*=\s*["']([^"']*pluginfile\.php[^"']*)/i)?.[1];
+
+    const found = metaUrl ?? hrefUrl ?? jsUrl;
+
+    if (found) {
+      const absolute = found.startsWith("//") ? `https:${found}`
+        : found.startsWith("/")               ? `${MOODLE_BASE}${found}`
+        : found;
+      const fileRes = await fetchWithCookie(absolute, cookie, extraHeaders);
+      const fileCT = fileRes.headers.get("content-type") ?? "application/octet-stream";
+      if (!fileCT.startsWith("text/html")) {
+        const upstreamDisp2 = fileRes.headers.get("content-disposition") ?? "";
+        const disposition2  = inline ? "inline" : upstreamDisp2 || "attachment";
+        const h2: Record<string, string> = {
+          "Content-Type": fileCT,
+          "Content-Disposition": disposition2,
+          "Accept-Ranges": "bytes",
+        };
+        for (const h of ["content-length", "content-range"] as const) {
+          const v = fileRes.headers.get(h);
+          if (v) h2[h === "content-length" ? "Content-Length" : "Content-Range"] = v;
+        }
+        return new NextResponse(fileRes.body, { status: fileRes.status, headers: h2 });
+      }
+    }
+
+    // Unrecognised HTML — treat as session expiry
     return NextResponse.json(
       { error: "La sesión del Campus expiró. Cerrá sesión y volvé a entrar." },
       { status: 401 }

@@ -93,16 +93,24 @@ async function convertBuffer(buf: Buffer, filename: string, contentType: string)
 
 // ── Google Drive PDF conversion ─────────────────────────────────────────────
 
-const SUPPORTED_EXTS = new Set(["xlsx", "pptx"]);
+// Modern OOXML (xlsx/pptx) and legacy binary Office (doc/xls/ppt). Legacy formats are
+// OLE compound files that no client-side JS viewer can render, so they go through Drive.
+const SUPPORTED_EXTS = new Set(["xlsx", "pptx", "doc", "xls", "ppt"]);
 
 const SOURCE_MIME: Record<string, string> = {
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  doc:  "application/msword",
+  xls:  "application/vnd.ms-excel",
+  ppt:  "application/vnd.ms-powerpoint",
 };
 
 const GOOGLE_MIME: Record<string, string> = {
   xlsx: "application/vnd.google-apps.spreadsheet",
   pptx: "application/vnd.google-apps.presentation",
+  doc:  "application/vnd.google-apps.document",
+  xls:  "application/vnd.google-apps.spreadsheet",
+  ppt:  "application/vnd.google-apps.presentation",
 };
 
 export async function POST(req: NextRequest) {
@@ -177,6 +185,8 @@ export async function POST(req: NextRequest) {
               send({
                 progress: 2 + Math.min(28, Math.round((downloaded / contentLength) * 28)),
                 label: "Preparando archivo…",
+                downloaded,
+                total: contentLength,
               });
             }
           }

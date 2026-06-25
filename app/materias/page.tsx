@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -48,7 +48,7 @@ function formatGreetingName(value?: string) {
 function foldText(value: string) {
   return value
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .trim();
 }
@@ -104,9 +104,18 @@ function CourseIcon({ name, index }: { name: string; index: number }) {
   );
 }
 
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function CourseRow({ course, index }: { course: MoodleCourse; index: number }) {
   return (
-    <Link href={`/course/${course.id}`}>
+    <Link href={`/materia/${course.id}-${toSlug(course.fullname)}`}>
       <div className="flex items-center gap-3.5 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors cursor-pointer">
         <CourseIcon name={course.fullname} index={index} />
         <div className="flex-1 min-w-0">

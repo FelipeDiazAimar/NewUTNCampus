@@ -55,6 +55,35 @@ function kindFromCT(ct: string): ViewerKind {
 
 const PANEL_KINDS: ViewerKind[] = ["pdf", "docx", "xlsx", "pptx", "text"];
 
+/**
+ * Extracts the real filename from a Moodle fileurl.
+ * e.g. "https://.../pluginfile.php/123/.../1-Redes-de-Datos-2026.pptx?forcedownload=1"
+ * → "1-Redes-de-Datos-2026.pptx"
+ * Falls back to display name + fileType if the URL is absent or unparseable.
+ */
+/**
+ * Extracts the real filename from a Moodle fileurl.
+ * e.g. ".../pluginfile.php/123/.../1-Redes-de-Datos-2026.pptx?token=1"
+ * → "1-Redes-de-Datos-2026.pptx"
+ * Falls back to displayName + fileType when the URL is a view.php redirect
+ * or has no recognizable filename in the path.
+ */
+export function realFilename(fileurl: string | undefined, displayName: string, fileType?: string): string {
+  if (fileurl) {
+    try {
+      const pathname = new URL(fileurl).pathname;
+      const last = decodeURIComponent(pathname.split("/").pop() ?? "");
+      // Only use it if it looks like a real filename (has a short extension, not a PHP script)
+      if (last && /\.[a-zA-Z0-9]{1,5}$/.test(last) && !last.endsWith(".php")) return last;
+    } catch { /* fall through */ }
+  }
+  // Fallback: display name + extension
+  const dot = displayName.lastIndexOf(".");
+  if (dot > 0 && displayName.length - dot <= 6 && !displayName.endsWith(".php")) return displayName;
+  const ext = fileType?.toLowerCase();
+  return ext ? `${displayName}.${ext}` : displayName;
+}
+
 // ─── Viewer states (media only — documents go to the panel) ──────────────────
 
 type State =
@@ -73,11 +102,28 @@ type State =
 
 export function FileViewer({ content }: { content: MoodleContent }) {
   const [state, setState] = useState<State>({ phase: "idle" });
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
   const { openPanel, closePanel, activeKey } = usePdfPreview();
 
-  const proxyUrl   = `/api/files?url=${encodeURIComponent(content.fileurl!)}&inline=1`;
+  const proxyUrl    = `/api/files?url=${encodeURIComponent(content.fileurl!)}&inline=1`;
   const downloadUrl = `/api/files?url=${encodeURIComponent(content.fileurl!)}`;
-  const isActive   = activeKey === content.fileurl;
+  const fileName    = resolvedName ?? realFilename(content.fileurl, content.filename, content.fileType);
+  const isActive    = activeKey === content.fileurl;
+
+  // view.php filenames are already resolved server-side in /api/course.
+  // This effect is a client-side fallback for any that slipped through
+  // (e.g. mock data or cached responses with unresolved names).
+  useEffect(() => {
+    if (!content.fileurl?.includes("view.php")) return;
+    // If the server already resolved it, filename won't look like a display name
+    // (it will have an extension). Skip the fetch if that's the case.
+    const dot = content.filename.lastIndexOf(".");
+    if (dot > 0 && content.filename.length - dot <= 6) return;
+    fetch(`/api/meta?url=${encodeURIComponent(content.fileurl)}`)
+      .then((r) => r.json())
+      .then((j) => { if (j.filename) setResolvedName(j.filename); })
+      .catch(() => { /* ignore — display name is the fallback */ });
+  }, [content.fileurl, content.filename]);
 
   const badge = content.fileType ?? (content.filename.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE");
 
@@ -106,7 +152,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
         kind: kind as PanelKind,
         proxyUrl,
         fileUrl: content.fileurl!,
-        name: content.filename,
+        name: fileName,
       });
       setState({ phase: "panel" });
       return;
@@ -134,7 +180,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
         </button>
 
         <button onClick={handleClick} className="flex-1 min-w-0 text-left active:opacity-70">
-          <p className="text-[14px] text-[var(--fg)] truncate">{content.filename}</p>
+          <p className="text-[14px] text-[var(--fg)] truncate">{fileName}</p>
           {content.filesize > 0 && <p className="text-[12px] text-[var(--secondary)]">{formatBytes(content.filesize)}</p>}
         </button>
 
@@ -152,7 +198,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
               </svg>
             )}
           </button>
-          <a href={downloadUrl} download title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
+          <a href={downloadUrl} download={fileName} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7,10 12,15 17,10"/>
@@ -177,7 +223,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
                 <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
                 <span className="text-[13px] text-[var(--accent)] font-medium">Abierto en el visor →</span>
               </div>
-              <a href={downloadUrl} download title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--accent)] hover:opacity-70 transition-opacity">
+              <a href={downloadUrl} download={fileName} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--accent)] hover:opacity-70 transition-opacity">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7,10 12,15 17,10"/>

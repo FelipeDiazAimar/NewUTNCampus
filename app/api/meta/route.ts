@@ -30,12 +30,13 @@ export async function GET(req: NextRequest) {
 
     const contentType = res.headers.get("content-type") ?? "application/octet-stream";
     const disp = res.headers.get("content-disposition") ?? "";
-    const filename =
-      disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1] ??
-      current.split("/").pop()?.split("?")[0] ??
-      "archivo";
+    const fromDisp = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1];
+    const fromUrl  = current.split("/").pop()?.split("?")[0];
+    // Never return a PHP script as the filename — it means we stopped at a redirect page.
+    const raw = fromDisp ?? (fromUrl && !fromUrl.endsWith(".php") ? fromUrl : undefined) ?? "archivo";
+    const filename = decodeURIComponent(raw);
 
-    return NextResponse.json({ contentType, filename: decodeURIComponent(filename) });
+    return NextResponse.json({ contentType, filename });
   }
 
   return NextResponse.json({ contentType: "application/octet-stream", filename: "archivo" });

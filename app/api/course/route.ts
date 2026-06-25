@@ -213,6 +213,36 @@ function parseSectionMeta(mainHtml: string): SectionMeta[] {
   });
 }
 
+// ─── Filename resolver ────────────────────────────────────────────────────────
+// Follows view.php redirects server-side (HEAD only — no body download) to get
+// the real filename from Content-Disposition or the final URL path.
+
+async function resolveFilename(viewUrl: string, cookie: string): Promise<string | null> {
+  let current = viewUrl;
+  for (let i = 0; i < 6; i++) {
+    try {
+      const res = await fetch(current, {
+        method: "HEAD",
+        headers: { Cookie: cookie },
+        redirect: "manual",
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc) break;
+        current = loc.startsWith("http") ? loc : `${MOODLE_BASE}${loc}`;
+        continue;
+      }
+      const disp = res.headers.get("content-disposition") ?? "";
+      const fromDisp = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1];
+      if (fromDisp) return decodeURIComponent(fromDisp);
+      const last = decodeURIComponent(current.split("/").pop()?.split("?")[0] ?? "");
+      if (last && last.includes(".") && !last.endsWith(".php")) return last;
+      break;
+    } catch { break; }
+  }
+  return null;
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
@@ -289,6 +319,23 @@ export async function GET(req: NextRequest) {
         };
       })
     );
+
+    // Resolve real filenames for view.php resources in parallel (HEAD only, no download)
+    const resolveJobs: Promise<void>[] = [];
+    for (const section of sections) {
+      for (const mod of section.modules) {
+        for (const content of mod.contents ?? []) {
+          if (content.fileurl?.includes("view.php")) {
+            resolveJobs.push(
+              resolveFilename(content.fileurl, cookie).then((name) => {
+                if (name) content.filename = name;
+              })
+            );
+          }
+        }
+      }
+    }
+    await Promise.all(resolveJobs);
 
     return NextResponse.json({ data: sections, courseName });
   } catch (err) {

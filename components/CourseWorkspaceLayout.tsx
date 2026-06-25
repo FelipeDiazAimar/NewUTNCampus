@@ -3,11 +3,18 @@
 import React, {
   createContext, useContext, useState, useRef, useEffect, useCallback,
 } from "react";
+import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
 import type { Slide } from "@/app/api/convert/route";
 import AssignmentViewer from "./AssignmentViewer";
 
 const PDFViewer = dynamic(() => import("./CampusPDFViewer"), { ssr: false });
+
+// ─── Panel theme context ───────────────────────────────────────────────────────
+
+type PanelTheme = "dark" | "light";
+const PanelThemeCtx = createContext<PanelTheme>("dark");
+const usePanelTheme = () => useContext(PanelThemeCtx);
 
 // ─── Public types & context ───────────────────────────────────────────────────
 
@@ -63,7 +70,7 @@ const KIND_RATIOS: Record<PanelKind, number> = {
 // ─── Panel internal loading state ─────────────────────────────────────────────
 
 type PanelState =
-  | { phase: "loading"; label: string; progress?: number }
+  | { phase: "loading"; label: string; progress?: number; downloaded?: number; total?: number }
   | { phase: "error"; msg: string }
   | { phase: "pdf"; url: string }
   | { phase: "docx"; buffer: ArrayBuffer }
@@ -74,9 +81,19 @@ type PanelState =
 type CachedPanelState = Exclude<PanelState, { phase: "loading" } | { phase: "error" }>;
 type FileCache = Map<string, CachedPanelState>;
 
+/** True if the buffer is a ZIP (OOXML .docx/.xlsx/.pptx start with "PK"\x03\x04).
+ *  Old binary .doc/.xls/.ppt (OLE, D0 CF 11 E0) return false — they can't be
+ *  parsed by the client-side OOXML viewers and must be downloaded instead. */
+function isZipBuffer(buf: ArrayBuffer): boolean {
+  const b = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+  return b[0] === 0x50 && b[1] === 0x4b; // "PK"
+}
+
 // ─── DOCX viewer (docx-preview client-side) ───────────────────────────────────
 
 function DocxViewer({ buffer, initialScale = 1.0 }: { buffer: ArrayBuffer; initialScale?: number }) {
+  const theme = usePanelTheme();
+  const light = theme === "light";
   const ref = useRef<HTMLDivElement>(null);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
@@ -90,40 +107,42 @@ function DocxViewer({ buffer, initialScale = 1.0 }: { buffer: ArrayBuffer; initi
     // Clear any previous docx-preview DOM before re-rendering
     container.innerHTML = "";
     import("docx-preview")
-      .then(({ renderAsync }) =>
-        renderAsync(buffer, container, undefined, {
+      .then(({ renderAsync }) => {
+        if (cancelled) return;
+        return renderAsync(buffer, container, undefined, {
           inWrapper: true, ignoreWidth: false, ignoreHeight: false,
           renderHeaders: true, renderFooters: true, useBase64URL: true, breakPages: true,
-        })
-      )
+        });
+      })
       .then(() => { if (!cancelled) setDone(true); })
-      .catch((e) => { if (!cancelled) setErr((e as Error).message); });
+      .catch((e) => {
+        if (!cancelled) setErr((e as Error).message ?? "Error al renderizar");
+      });
     return () => {
       cancelled = true;
-      container.innerHTML = "";
+      try { container.innerHTML = ""; } catch { /* ignore DOM errors during unmount */ }
     };
   }, [buffer]);
 
+  const toolbarBg  = light ? "#e8e8ed" : "#38383d";
+  const panelBg    = light ? "#f2f2f7" : "#525659";
+  const btnCls     = light
+    ? "flex items-center justify-center h-7 w-7 rounded text-[#1c1c1e]/70 hover:bg-black/10"
+    : "flex items-center justify-center h-7 w-7 rounded text-white/90 hover:bg-white/[0.12]";
+  const countColor = light ? "text-[#1c1c1e]/60" : "text-white/80";
+
   return (
-    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#525659" }}>
-      <div className="flex items-center justify-end gap-0.5 px-2 shrink-0 border-b border-black/30" style={{ background: "#38383d", height: 36 }}>
-        <button
-          onClick={() => setScale((s) => Math.max(0.5, parseFloat((s - 0.1).toFixed(2))))}
-          className="flex items-center justify-center h-7 w-7 rounded text-white/90 hover:bg-white/[0.12]"
-          title="Alejar"
-        >
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: panelBg }}>
+      <div className="flex items-center justify-end gap-0.5 px-2 shrink-0 border-b" style={{ background: toolbarBg, height: 36, borderColor: light ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.3)" }}>
+        <button onClick={() => setScale((s) => Math.max(0.5, parseFloat((s - 0.1).toFixed(2))))} className={btnCls} title="Alejar">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
-        <span className="text-white/80 text-[12px] tabular-nums select-none" style={{ minWidth: 48, textAlign: "center" }}>
+        <span className={`text-[12px] tabular-nums select-none ${countColor}`} style={{ minWidth: 48, textAlign: "center" }}>
           {Math.round(scale * 100)}%
         </span>
-        <button
-          onClick={() => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))))}
-          className="flex items-center justify-center h-7 w-7 rounded text-white/90 hover:bg-white/[0.12]"
-          title="Acercar"
-        >
+        <button onClick={() => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))))} className={btnCls} title="Acercar">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
@@ -132,8 +151,8 @@ function DocxViewer({ buffer, initialScale = 1.0 }: { buffer: ArrayBuffer; initi
       <div className="flex-1 overflow-auto p-4">
         {!done && !err && (
           <div className="flex items-center justify-center gap-2 h-24">
-            <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
-            <span className="text-[12px] text-white/60">Renderizando documento…</span>
+            <div className={`w-4 h-4 border-2 border-t-transparent rounded-full animate-spin ${light ? "border-[#1c1c1e]/30" : "border-white/40"}`} />
+            <span className={`text-[12px] ${light ? "text-[#1c1c1e]/50" : "text-white/60"}`}>Renderizando documento…</span>
           </div>
         )}
         {err && <p className="text-[#ff6b6b] text-[13px] p-4">{err}</p>}
@@ -148,6 +167,8 @@ function DocxViewer({ buffer, initialScale = 1.0 }: { buffer: ArrayBuffer; initi
 // ─── XLSX viewer (SheetJS client-side) ────────────────────────────────────────
 
 function XlsxViewer({ buffer }: { buffer: ArrayBuffer }) {
+  const theme = usePanelTheme();
+  const light = theme === "light";
   type CellData = { v: string; right: boolean };
   type Sheet = { name: string; cols: string[]; rows: { num: number; cells: CellData[] }[] };
 
@@ -182,25 +203,30 @@ function XlsxViewer({ buffer }: { buffer: ArrayBuffer }) {
   if (err) return <p className="text-[#ff6b6b] text-[13px] p-4">{err}</p>;
   if (!sheets.length) return (
     <div className="flex items-center justify-center gap-2 h-24">
-      <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
-      <span className="text-[12px] text-white/60">Cargando hoja…</span>
+      <div className={`w-4 h-4 border-2 border-t-transparent rounded-full animate-spin ${light ? "border-[#1c1c1e]/30" : "border-white/40"}`} />
+      <span className={`text-[12px] ${light ? "text-[#1c1c1e]/50" : "text-white/60"}`}>Cargando hoja…</span>
     </div>
   );
 
   const sheet = sheets[active];
-  const HEAD = "#2d2d30"; const ROW = "#1e1e1e"; const BORDER = "rgba(255,255,255,0.1)";
+  const HEAD   = light ? "#e8e8ed" : "#2d2d30";
+  const ROW    = light ? "#ffffff" : "#1e1e1e";
+  const BORDER = light ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.1)";
+  const TEXT   = light ? "#1c1c1e" : "#d4d4d4";
+  const MUTED  = light ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.4)";
+  const TABBAR = light ? "#f2f2f7" : "#252526";
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#1e1e1e" }}>
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: ROW }}>
       {/* Sheet tabs */}
       {sheets.length > 1 && (
-        <div className="flex gap-0 shrink-0 border-b overflow-x-auto" style={{ borderColor: BORDER, background: "#252526" }}>
+        <div className="flex gap-0 shrink-0 border-b overflow-x-auto" style={{ borderColor: BORDER, background: TABBAR }}>
           {sheets.map((s, i) => (
             <button key={i} onClick={() => setActive(i)}
               className="px-4 py-1.5 text-[11px] font-medium whitespace-nowrap transition-colors"
               style={{
-                background: i === active ? "#1e1e1e" : "transparent",
-                color: i === active ? "#fff" : "rgba(255,255,255,0.5)",
+                background: i === active ? ROW : "transparent",
+                color: i === active ? TEXT : MUTED,
                 borderTop: i === active ? "2px solid #007aff" : "2px solid transparent",
               }}>
               {s.name}
@@ -210,19 +236,19 @@ function XlsxViewer({ buffer }: { buffer: ArrayBuffer }) {
       )}
       {/* Grid */}
       <div className="overflow-auto flex-1">
-        <table style={{ borderCollapse: "collapse", fontSize: "12px", color: "#d4d4d4" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: "12px", color: TEXT }}>
           <thead>
             <tr>
-              <th style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 8px", position: "sticky", top: 0, left: 0, zIndex: 3, minWidth: 40, fontWeight: 600 }}>#</th>
+              <th style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 8px", position: "sticky", top: 0, left: 0, zIndex: 3, minWidth: 40, fontWeight: 600, color: MUTED }}>#</th>
               {sheet.cols.map((c) => (
-                <th key={c} style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 12px", position: "sticky", top: 0, zIndex: 2, fontWeight: 600, textAlign: "center" }}>{c}</th>
+                <th key={c} style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 12px", position: "sticky", top: 0, zIndex: 2, fontWeight: 600, textAlign: "center", color: TEXT }}>{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {sheet.rows.map((row) => (
               <tr key={row.num}>
-                <td style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 8px", position: "sticky", left: 0, zIndex: 1, textAlign: "right", color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>{row.num}</td>
+                <td style={{ background: HEAD, border: `1px solid ${BORDER}`, padding: "3px 8px", position: "sticky", left: 0, zIndex: 1, textAlign: "right", color: MUTED, fontWeight: 600 }}>{row.num}</td>
                 {row.cells.map((cell, ci) => (
                   <td key={ci} style={{ background: ROW, border: `1px solid ${BORDER}`, padding: "3px 12px", textAlign: cell.right ? "right" : "left", whiteSpace: "nowrap" }}>{cell.v}</td>
                 ))}
@@ -238,13 +264,18 @@ function XlsxViewer({ buffer }: { buffer: ArrayBuffer }) {
 // ─── Slides viewer (PPTX) ─────────────────────────────────────────────────────
 
 function SlideViewer({ slides }: { slides: Slide[] }) {
+  const theme = usePanelTheme();
+  const light = theme === "light";
   const [idx, setIdx] = useState(0);
 
-  if (!slides.length) return <p className="text-white/40 text-[13px] text-center py-8">Sin contenido.</p>;
+  if (!slides.length) return <p className={`text-[13px] text-center py-8 ${light ? "text-[#1c1c1e]/40" : "text-white/40"}`}>Sin contenido.</p>;
 
   const slide = slides[idx];
+  const outerBg   = light ? "#e8e8ed" : "#0d0f14";
+  const stripBg   = light ? "#d8d8dd" : "#161b22";
+  const stripBord = light ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
   return (
-    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#0d0f14" }}>
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: outerBg }}>
       {/* 16:9 canvas */}
       <div className="flex-1 flex items-center justify-center p-3">
         <div style={{ width: "100%", aspectRatio: "16/9", position: "relative", background: "linear-gradient(140deg,#0f1923,#1a2332)", borderRadius: 8, overflow: "hidden" }}>
@@ -270,7 +301,7 @@ function SlideViewer({ slides }: { slides: Slide[] }) {
       </div>
       {/* Thumbnail strip */}
       {slides.length > 1 && (
-        <div style={{ display: "flex", gap: 5, padding: "6px 8px", overflowX: "auto", background: "#161b22", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 5, padding: "6px 8px", overflowX: "auto", background: stripBg, borderTop: `1px solid ${stripBord}`, flexShrink: 0 }}>
           {slides.map((s, i) => (
             <button key={i} onClick={() => setIdx(i)}
               style={{ flexShrink: 0, width: 56, height: 36, borderRadius: 4, border: `2px solid ${i === idx ? "#007aff" : "rgba(255,255,255,0.08)"}`, background: "linear-gradient(140deg,#0f1923,#1a2332)", padding: "3px 4px", cursor: "pointer", position: "relative", overflow: "hidden" }}>
@@ -301,11 +332,12 @@ function NavBtn({ dir, onClick }: { dir: "left" | "right"; onClick: () => void }
 // ─── Text viewer ──────────────────────────────────────────────────────────────
 
 function TextViewer({ text }: { text: string }) {
+  const light = usePanelTheme() === "light";
   const isHtml = /<[a-z][\s\S]*>/i.test(text.slice(0, 500));
   if (isHtml) return <iframe srcDoc={text} title="Vista HTML" sandbox="allow-same-origin" className="flex-1 border-0 w-full" />;
   return (
-    <pre className="flex-1 overflow-auto p-4 text-[12px] text-[#d4d4d4] leading-relaxed whitespace-pre-wrap break-words"
-      style={{ fontFamily: "'SF Mono','Menlo',monospace", background: "#1e1e1e" }}>
+    <pre className="flex-1 overflow-auto p-4 text-[12px] leading-relaxed whitespace-pre-wrap break-words"
+      style={{ fontFamily: "'SF Mono','Menlo',monospace", background: light ? "#f8f8fa" : "#1e1e1e", color: light ? "#1c1c1e" : "#d4d4d4" }}>
       {text}
     </pre>
   );
@@ -342,6 +374,35 @@ async function nativeFallback(
   }
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function streamDownload(url: string, onProgress: (downloaded: number, total: number) => void): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const total = parseInt(res.headers.get("content-length") ?? "0");
+  if (!res.body || total === 0) return res.arrayBuffer();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let downloaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    downloaded += value.length;
+    onProgress(downloaded, total);
+  }
+  const buf = new Uint8Array(downloaded);
+  let offset = 0;
+  for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+  return buf.buffer;
+}
+
 // ─── Panel content loader ─────────────────────────────────────────────────────
 
 function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, fileCache }: {
@@ -374,94 +435,107 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
       fileCache.current?.set(cacheKey, state);
     };
 
+    // Upload the file to Google Drive, convert it to PDF, and stream progress.
+    // Used for modern OOXML (xlsx/pptx) and legacy binary Office (doc/xls/ppt).
+    // Returns true if a PDF was produced; false if Drive was unavailable/failed.
+    async function runDriveConvert(ext: string): Promise<boolean> {
+      setPs({ phase: "loading", label: "Preparando archivo…", progress: 0 });
+      const fd = new FormData();
+      fd.append("url", entry.fileUrl);
+      fd.append("kind", ext);
+      const r = await fetch("/api/convert", { method: "POST", body: fd });
+      if (!r?.ok || !r?.body) return false;
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuf = "";
+      let lastTotal: number | undefined;
+      let lastDownloaded: number | undefined;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuf += decoder.decode(value, { stream: true });
+        const parts = sseBuf.split("\n\n");
+        sseBuf = parts.pop() ?? "";
+        for (const chunk of parts) {
+          const line = chunk.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          let data: { progress?: number; label?: string; pdf?: string; error?: string; downloaded?: number; total?: number };
+          try { data = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (data.error) return false;
+          if (data.total !== undefined) lastTotal = data.total;
+          if (data.downloaded !== undefined) lastDownloaded = data.downloaded;
+          if (data.progress !== undefined && !cancelled)
+            setPs({ phase: "loading", label: data.label ?? "", progress: data.progress, downloaded: lastDownloaded, total: lastTotal });
+          if (data.pdf && !cancelled) {
+            const bytes = Uint8Array.from(atob(data.pdf), (c) => c.charCodeAt(0));
+            const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+            if (cancelled) { URL.revokeObjectURL(url); return true; }
+            const s: CachedPanelState = { phase: "pdf", url }; // blob URL owned by cache
+            cache(s); setPs(s);
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
     async function load() {
+      // Real filename extension — distinguishes legacy binary Office (.doc/.xls/.ppt,
+      // which no JS viewer can read) from modern OOXML (.docx/.xlsx/.pptx).
+      const fileExt = entry.name.split(".").pop()?.toLowerCase() ?? "";
+      const isLegacyOffice = fileExt === "doc" || fileExt === "xls" || fileExt === "ppt";
       try {
         if (entry.kind === "pdf") {
-          // HEAD check to surface session errors before handing the URL to PDF.js
-          setPs({ phase: "loading", label: "Cargando PDF…" });
-          const check = await fetch(entry.proxyUrl, { method: "HEAD" });
-          if (!check.ok) {
-            const err = await check.json().catch(() => ({ error: `HTTP ${check.status}` }));
-            throw new Error(err.error ?? `HTTP ${check.status}`);
-          }
-          // Pass URL directly — PDF.js will stream via range requests
+          // Pass URL directly — PDF.js streams via range requests and surfaces
+          // auth errors through its own onLoadError callback.
           const state: CachedPanelState = { phase: "pdf", url: entry.proxyUrl };
           if (!cancelled) { cache(state); setPs(state); }
           return;
         }
 
+        // Legacy binary Office (.doc/.xls/.ppt) → convert to PDF via Google Drive,
+        // since no client-side JS viewer can read the old OLE format. If Drive isn't
+        // connected/fails, show the download fallback.
+        if (isLegacyOffice) {
+          if (await runDriveConvert(fileExt)) return;
+          if (!cancelled) setPs({ phase: "error", msg: `Este formato (.${fileExt}) requiere Google Drive para previsualizarse. Descargalo para abrirlo.` });
+          return;
+        }
+
         if (entry.kind === "docx") {
           setPs({ phase: "loading", label: "Descargando documento…" });
-          const res = await fetch(entry.proxyUrl);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const buf = await res.arrayBuffer();
-          if (!cancelled) { const s: CachedPanelState = { phase: "docx", buffer: buf }; cache(s); setPs(s); }
+          const buf = await streamDownload(entry.proxyUrl, (dl, tot) => {
+            if (!cancelled) setPs({ phase: "loading", label: "Descargando documento…", progress: Math.min(99, Math.round((dl / tot) * 100)), downloaded: dl, total: tot });
+          });
+          if (cancelled) return;
+          // Safety net: if a file slipped through with a .docx name but is actually a
+          // legacy OLE binary (not a "PK" ZIP), docx-preview would throw "childNodes"/
+          // "body". Send it through Drive instead, falling back to download.
+          if (!isZipBuffer(buf)) {
+            if (await runDriveConvert("doc")) return;
+            if (!cancelled) setPs({ phase: "error", msg: "Este formato no se puede previsualizar. Descargalo para abrirlo." });
+            return;
+          }
+          const s: CachedPanelState = { phase: "docx", buffer: buf }; cache(s); setPs(s);
           return;
         }
 
         // Modo tabla nativa para XLSX
         if (entry.kind === "xlsx" && xlsxMode === "excel") {
           setPs({ phase: "loading", label: "Cargando hoja de cálculo…" });
-          const res = await fetch(entry.proxyUrl);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const buf = await res.arrayBuffer();
+          const buf = await streamDownload(entry.proxyUrl, (dl, tot) => {
+            if (!cancelled) setPs({ phase: "loading", label: "Cargando hoja de cálculo…", progress: Math.min(99, Math.round((dl / tot) * 100)), downloaded: dl, total: tot });
+          });
           if (!cancelled) { const s: CachedPanelState = { phase: "xlsx", buffer: buf }; cache(s); setPs(s); }
           return;
         }
 
         if (entry.kind === "xlsx" || entry.kind === "pptx") {
-          setPs({ phase: "loading", label: "Preparando archivo…", progress: 0 });
-          const fd = new FormData();
-          fd.append("url", entry.fileUrl);
-          fd.append("kind", entry.kind);
-          const r = await fetch("/api/convert", { method: "POST", body: fd });
-
-          // Non-SSE error (auth, bad request, etc.)
-          if (!r.ok || !r.body) {
-            await nativeFallback(entry, setPs, cancelled, cache);
-            return;
-          }
-
-          // Parse SSE stream
-          const reader = r.body.getReader();
-          const decoder = new TextDecoder();
-          let buf = "";
-          let converted = false;
-
-          outer: while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            const parts = buf.split("\n\n");
-            buf = parts.pop() ?? "";
-            for (const chunk of parts) {
-              const line = chunk.split("\n").find((l) => l.startsWith("data: "));
-              if (!line) continue;
-              let data: { progress?: number; label?: string; pdf?: string; error?: string; code?: string };
-              try { data = JSON.parse(line.slice(6)); } catch { continue; }
-
-              if (data.error) { break outer; }
-
-              if (data.progress !== undefined && !cancelled)
-                setPs({ phase: "loading", label: data.label ?? "", progress: data.progress });
-
-              if (data.pdf && !cancelled) {
-                const bytes = Uint8Array.from(atob(data.pdf), (c) => c.charCodeAt(0));
-                const blob = new Blob([bytes], { type: "application/pdf" });
-                const url = URL.createObjectURL(blob);
-                if (cancelled) { URL.revokeObjectURL(url); return; }
-                // Blob URL owned by cache — don't track in blobUrlRef
-                const s: CachedPanelState = { phase: "pdf", url };
-                cache(s);
-                setPs(s);
-                converted = true;
-              }
-            }
-          }
-
-          if (converted) return;
-
-          // Drive failed — fallback to native viewer
+          if (await runDriveConvert(entry.kind)) return;
+          // Drive unavailable/failed — fall back to the native client-side viewer.
           await nativeFallback(entry, setPs, cancelled, cache);
           return;
         }
@@ -490,27 +564,53 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
   }, [entry.kind, entry.proxyUrl, entry.fileUrl, xlsxMode]);
 
   if (ps.phase === "loading") {
+    const light = usePanelTheme() === "light";
+    const bg        = light ? "#f2f2f7" : "#525659";
+    const trackBg   = light ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.15)";
+    const labelClr  = light ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.55)";
+    const pctClr    = light ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.70)";
+    const sizeClr   = light ? "rgba(0,0,0,0.30)" : "rgba(255,255,255,0.35)";
+    const spinClr   = light ? "border-[#1c1c1e]/30" : "border-white/40";
+    const spinTxt   = light ? "text-[#1c1c1e]/50" : "text-white/60";
     const hasProgress = ps.progress !== undefined;
+    const done100     = ps.progress === 100;
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ background: "#525659" }}>
+      <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ background: bg }}>
         {hasProgress ? (
-          <>
-            <div className="w-48 flex flex-col items-center gap-2">
-              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.15)" }}>
+          <div className="w-56 flex flex-col gap-2">
+            {ps.label && (
+              <span className="text-[12px] truncate" style={{ color: labelClr }}>{ps.label}</span>
+            )}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: trackBg }}>
                 <div
                   className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${ps.progress}%`, background: "#007aff" }}
+                  style={{ width: `${ps.progress}%`, background: done100 ? "#30d158" : "#007aff" }}
                 />
               </div>
-              <div className="flex items-center justify-end w-full">
-                <span className="text-[12px] text-white/70 tabular-nums font-medium">{ps.progress}%</span>
-              </div>
+              <span className="text-[12px] tabular-nums font-medium shrink-0" style={{ color: pctClr }}>{ps.progress}%</span>
             </div>
-          </>
+            {ps.total !== undefined && ps.total > 0 && (
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] tabular-nums" style={{ color: sizeClr }}>
+                  {ps.downloaded !== undefined ? formatBytes(ps.downloaded) : "—"}
+                </span>
+                <div className="flex items-center gap-1">
+                  {ps.downloaded !== undefined && ps.downloaded >= ps.total && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="7,12 10,15 17,9" />
+                    </svg>
+                  )}
+                  <span className="text-[11px] tabular-nums" style={{ color: sizeClr }}>{formatBytes(ps.total)}</span>
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex items-center gap-2.5">
-            <div className="w-4 h-4 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
-            <span className="text-[13px] text-white/60">{ps.label}</span>
+            <div className={`w-4 h-4 border-2 border-t-transparent rounded-full animate-spin ${spinClr}`} />
+            <span className={`text-[13px] ${spinTxt}`}>{ps.label}</span>
           </div>
         )}
       </div>
@@ -518,23 +618,27 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
   }
 
   if (ps.phase === "error") {
+    const light = usePanelTheme() === "light";
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6" style={{ background: "#525659" }}>
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6" style={{ background: light ? "#f2f2f7" : "#525659" }}>
         <p className="text-[#ff6b6b] text-[14px]">No se pudo cargar</p>
         <p className="text-[rgba(255,107,107,0.6)] text-[12px] text-center">{ps.msg}</p>
         <a href={`/api/files?url=${encodeURIComponent(entry.fileUrl)}`}
-          className="mt-2 px-4 py-2 bg-white/10 text-white text-[12px] rounded-lg hover:bg-white/20 transition-colors">
+          className={`mt-2 px-4 py-2 text-[12px] rounded-lg transition-colors ${light ? "bg-black/10 text-[#1c1c1e] hover:bg-black/15" : "bg-white/10 text-white hover:bg-white/20"}`}>
           Descargar
         </a>
       </div>
     );
   }
 
-  if (ps.phase === "pdf") return (
-    <div className="flex-1 overflow-hidden">
-      <PDFViewer src={ps.url} maxHeight="100%" onAspectRatio={onAspectRatio} initialScale={initialScale} />
-    </div>
-  );
+  if (ps.phase === "pdf") {
+    const light = usePanelTheme() === "light";
+    return (
+      <div className="flex-1 overflow-hidden">
+        <PDFViewer src={ps.url} maxHeight="100%" onAspectRatio={onAspectRatio} initialScale={initialScale} lightPanel={light} />
+      </div>
+    );
+  }
 
   if (ps.phase === "docx") return <DocxViewer buffer={ps.buffer} initialScale={initialScale} />;
   if (ps.phase === "xlsx") return <XlsxViewer buffer={ps.buffer} />;
@@ -546,10 +650,14 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
 
 // ─── Panel header icon button ─────────────────────────────────────────────────
 
-function IconBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+function IconBtn({ onClick, title, children, light }: { onClick: () => void; title: string; children: React.ReactNode; light?: boolean }) {
   return (
     <button onClick={onClick} title={title}
-      className="flex items-center justify-center w-7 h-7 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0">
+      className={`flex items-center justify-center w-7 h-7 rounded transition-colors shrink-0 ${
+        light
+          ? "text-[#1c1c1e]/50 hover:text-[#1c1c1e] hover:bg-black/10"
+          : "text-white/60 hover:text-white hover:bg-white/10"
+      }`}>
       {children}
     </button>
   );
@@ -557,13 +665,15 @@ function IconBtn({ onClick, title, children }: { onClick: () => void; title: str
 
 // ─── WorkspaceLayout ──────────────────────────────────────────────────────────
 
-export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+export default function WorkspaceLayout({ children, courseTitle }: { children: React.ReactNode; courseTitle?: string }) {
   const [active, setActive] = useState<PanelEntry | null>(null);
   const [assignment, setAssignment] = useState<AssignmentEntry | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const fileCache = useRef<FileCache>(new Map());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSubFullscreen, setIsSubFullscreen] = useState(false);
+  const { resolvedTheme } = useTheme();
+  const lightPanel = resolvedTheme === "light";
   const [isMobileView, setIsMobileView] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false
   );
@@ -631,9 +741,39 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     if (!active && !assignment) setIsMobileOverlayOpen(false);
   }, [active, assignment]);
 
+  useEffect(() => {
+    if (active) {
+      document.title = active.name; // name already includes .ext from FileViewer
+    } else if (courseTitle) {
+      document.title = courseTitle;
+    }
+  }, [active, courseTitle]);
+
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else panelRef.current?.requestFullscreen().catch(() => {});
+  }
+
+  async function handleSaveAs() {
+    if (!active) return;
+    const filename = active.name;
+    const url = `/api/files?url=${encodeURIComponent(active.fileUrl)}`;
+    try {
+      const picker = (window as Window & { showSaveFilePicker?: (o: object) => Promise<{ createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
+      if (!picker) throw new Error("not supported");
+      const handle = await picker({ suggestedName: filename, types: [{ description: "Archivo", accept: { "*/*": [`.${active.kind}`] } }] });
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const wr = await handle.createWritable();
+      await wr.write(blob);
+      await wr.close();
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+    }
   }
 
   function toggleSubFullscreen() {
@@ -660,14 +800,19 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     />
   );
 
+  const headerBg   = lightPanel ? "#e8e8ed" : "#2d2d30";
+  const headerText = lightPanel ? "rgba(0,0,0,0.65)" : "rgba(255,255,255,0.80)";
+  const dotBg      = lightPanel ? "#007aff" : "#007aff";
+
   const panelHeader = (isOverlay: boolean) => (
-    <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: "#2d2d30", height: 36 }}>
-      <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
-      <p className="flex-1 min-w-0 text-white/80 text-[12px] font-medium truncate" title={active?.name}>
+    <div className="flex items-center gap-2 px-3 shrink-0" style={{ background: headerBg, height: 36, borderBottom: lightPanel ? "1px solid rgba(0,0,0,0.08)" : "none" }}>
+      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: dotBg }} />
+      <p className="flex-1 min-w-0 text-[12px] font-medium truncate" style={{ color: headerText }} title={active?.name}>
         {active?.name}
       </p>
+
       {active?.kind === "xlsx" && (
-        <IconBtn onClick={toggleXlsxMode} title={xlsxMode === "pdf" ? "Ver como tabla Excel" : "Ver como PDF"}>
+        <IconBtn light={lightPanel} onClick={toggleXlsxMode} title={xlsxMode === "pdf" ? "Ver como tabla Excel" : "Ver como PDF"}>
           {xlsxMode === "pdf" ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" />
@@ -679,23 +824,36 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           )}
         </IconBtn>
       )}
+
       {active && (
-        <a
-          href={`/api/files?url=${encodeURIComponent(active.fileUrl)}`}
-          download
-          title="Descargar"
-          onClick={(e) => e.stopPropagation()}
-          className="flex items-center justify-center w-7 h-7 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7,10 12,15 17,10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-        </a>
+        <>
+          {/* Quick download (to default Downloads folder) */}
+          <a
+            href={`/api/files?url=${encodeURIComponent(active.fileUrl)}`}
+            download={active.name}
+            title="Descargar"
+            onClick={(e) => e.stopPropagation()}
+            className={`flex items-center justify-center w-7 h-7 rounded transition-colors shrink-0 ${lightPanel ? "text-[#1c1c1e]/50 hover:text-[#1c1c1e] hover:bg-black/10" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7,10 12,15 17,10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </a>
+          {/* Save As (choose location) */}
+          <IconBtn light={lightPanel} onClick={handleSaveAs} title="Guardar como…">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <polyline points="12,11 12,17"/>
+              <polyline points="9,14 12,17 15,14"/>
+            </svg>
+          </IconBtn>
+        </>
       )}
+
       {isOverlay ? (
-        <IconBtn onClick={() => setIsMobileOverlayOpen(false)} title="Minimizar visor">
+        <IconBtn light={lightPanel} onClick={() => setIsMobileOverlayOpen(false)} title="Minimizar visor">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
             <line x1="6" y1="12" x2="18" y2="12" />
           </svg>
@@ -703,7 +861,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       ) : (
         <>
           {/* Sub pantalla completa: ocupa toda la ventana del navegador sin F11 */}
-          <IconBtn onClick={toggleSubFullscreen} title={isSubFullscreen ? "Salir de sub pantalla completa" : "Sub pantalla completa"}>
+          <IconBtn light={lightPanel} onClick={toggleSubFullscreen} title={isSubFullscreen ? "Salir de sub pantalla completa" : "Sub pantalla completa"}>
             {isSubFullscreen ? (
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                 <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
@@ -717,7 +875,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
             )}
           </IconBtn>
           {/* Pantalla completa nativa (F11 del elemento) */}
-          <IconBtn onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
+          <IconBtn light={lightPanel} onClick={toggleFullscreen} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
             {isFullscreen ? (
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                 <polyline points="8,3 3,3 3,8" /><polyline points="21,8 21,3 16,3" />
@@ -732,7 +890,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           </IconBtn>
         </>
       )}
-      <IconBtn onClick={closePanel} title="Cerrar visor">
+      <IconBtn light={lightPanel} onClick={closePanel} title="Cerrar visor">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
           <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
         </svg>
@@ -741,17 +899,19 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   );
 
   const panelShell = (isOverlay: boolean) => (
-    <div className={isOverlay || isSubFullscreen ? "flex flex-col h-full rounded-none overflow-hidden shadow-2xl" : "flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl"}>
-      {panelHeader(isOverlay)}
-      <PanelContent
-        key={active?.fileUrl}
-        entry={active as PanelEntry}
-        onAspectRatio={setAspectRatio}
-        xlsxMode={xlsxMode}
-        initialScale={isMobileView ? 0.75 : 1.0}
-        fileCache={fileCache}
-      />
-    </div>
+    <PanelThemeCtx.Provider value={lightPanel ? "light" : "dark"}>
+      <div className={isOverlay || isSubFullscreen ? "flex flex-col h-full rounded-none overflow-hidden shadow-2xl" : "flex flex-col h-full rounded-2xl overflow-hidden shadow-2xl"}>
+        {panelHeader(isOverlay)}
+        <PanelContent
+          key={active?.fileUrl}
+          entry={active as PanelEntry}
+          onAspectRatio={setAspectRatio}
+          xlsxMode={xlsxMode}
+          initialScale={isMobileView ? 0.75 : 1.0}
+          fileCache={fileCache}
+        />
+      </div>
+    </PanelThemeCtx.Provider>
   );
 
   return (
@@ -777,7 +937,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
               width: isMobileView ? "100%" : undefined,
               transition: "flex 0.38s cubic-bezier(0.4,0,0.2,1)",
               ...(splitTaskFile
-                ? { overflow: "hidden", padding: 0, pointerEvents: "none", opacity: 0 }
+                ? { overflow: "hidden", padding: 0, pointerEvents: "none", opacity: 0, height: 0 }
                 : !isMobileView && isPanelOpen
                 ? { overflowY: "auto", maxHeight: "calc(100vh - 72px)", minWidth: 260, paddingRight: 10 }
                 : {}),
