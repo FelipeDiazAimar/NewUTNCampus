@@ -48,10 +48,16 @@ existente (cookie httpOnly `sysacadws_auth`).
   `"Se ha borrado exitosamente tu inscripción a cursado. "` (200, `text/plain`
   vía JSON string) en éxito.
 
-Los 8 valores de `inscribir`/`desinscribir` salen directo de los campos del
-objeto de materia (`Especialidad, Plan, IdMateria, EspecialidadHomogenea,
-PlanHomogenea, IdMateriaHomogenea`) más `Comision` de la comisión elegida (o
-la ya asignada, para desinscribir).
+Los 8 valores de `inscribir`/`desinscribir` son:
+`{legajo}/{Especialidad}/{Plan}/{IdMateria}/{Especialidad}/{Plan}/{IdMateria}/{comision}`
+— **el trío `Especialidad/Plan/IdMateria` repetido dos veces**, seguido de la
+comisión. Importante: en la captura, cuando `Comision === "0"` los campos
+`EspecialidadHomogenea/PlanHomogenea/IdMateriaHomogenea` vienen en `"0"`, pero
+la llamada real a `inscribir` usó el trío propio de la materia repetido (no
+esos campos en 0). Por eso la implementación arma el trío homogéneo con
+`materia.Especialidad`, `materia.Plan`, `materia.IdMateria` — nunca lee los
+campos `*Homogenea`, que solo sirven como dato informativo mostrado en otras
+pantallas del WS y no se usan en este flujo.
 
 ## Cambios
 
@@ -148,9 +154,10 @@ export interface SysacadInscripcionResult {
   - `postDesinscribir(materia: SysacadMateriaParaCursado): Promise<{ ok:
     true } | { ok: false; motivo: string }>` — usa `materia.Comision` como
     comisión a dar de baja.
-  - Ambas arman la URL de 8 segmentos con los campos de `materia`
-    (`Especialidad, Plan, IdMateria, EspecialidadHomogenea, PlanHomogenea,
-    IdMateriaHomogenea`) + comisión, hacen `POST` sin body.
+  - Ambas arman la URL de 8 segmentos como
+    `{legajo}/{materia.Especialidad}/{materia.Plan}/{materia.IdMateria}/{materia.Especialidad}/{materia.Plan}/{materia.IdMateria}/{comision}`
+    (el trío propio repetido, ver sección de endpoints) y hacen `POST` sin
+    body.
 
 ### 5. Botón aurora en `/sysacad` (`app/sysacad/page.tsx`)
 
