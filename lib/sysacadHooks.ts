@@ -144,18 +144,22 @@ export async function fetchComisiones(
   plan: string,
   idMateria: string
 ): Promise<ComisionesResult> {
-  const r = await fetch(
-    `/api/sysacadws/cursado/comisiones/${legajo}/${especialidad}/${plan}/${idMateria}`,
-    { cache: "no-store" }
-  );
-  if (r.status === 404) {
-    const j = await r.json().catch(() => ({ Message: "" }));
-    const motivo = String(j.Message ?? "").replace(/^\d+\s*-\s*/, "").trim();
-    return { ok: false, motivo: motivo || "No cumplís las correlatividades para esta materia." };
+  try {
+    const r = await fetch(
+      `/api/sysacadws/cursado/comisiones/${legajo}/${especialidad}/${plan}/${idMateria}`,
+      { cache: "no-store" }
+    );
+    if (r.status === 404) {
+      const j = await r.json().catch(() => ({ Message: "" }));
+      const motivo = String(j.Message ?? "").replace(/^\d+\s*-\s*/, "").trim();
+      return { ok: false, motivo: motivo || "No cumplís las correlatividades para esta materia." };
+    }
+    if (!r.ok) return { ok: false, motivo: "No se pudo consultar las comisiones disponibles." };
+    const j = (await r.json()) as SysacadComisionesDisponibles;
+    return { ok: true, comisiones: j.Comisiones ?? [] };
+  } catch {
+    return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
   }
-  if (!r.ok) return { ok: false, motivo: "No se pudo consultar las comisiones disponibles." };
-  const j = (await r.json()) as SysacadComisionesDisponibles;
-  return { ok: true, comisiones: j.Comisiones ?? [] };
 }
 
 export type AccionResult = { ok: true } | { ok: false; motivo: string };
@@ -180,20 +184,31 @@ export async function postInscribir(
   materia: SysacadMateriaParaCursado,
   comision: string
 ): Promise<{ ok: true; data: SysacadInscripcionResult } | { ok: false; motivo: string }> {
-  const r = await fetch(inscripcionUrl("inscribir", legajo, materia, comision), { method: "POST" });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la inscripción." };
-  return { ok: true, data: j as SysacadInscripcionResult };
+  try {
+    const r = await fetch(inscripcionUrl("inscribir", legajo, materia, comision), { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la inscripción." };
+    if (j.Estado !== undefined && j.Estado !== "OK") {
+      return { ok: false, motivo: j.Message ?? j.error ?? "No se pudo completar la inscripción." };
+    }
+    return { ok: true, data: j as SysacadInscripcionResult };
+  } catch {
+    return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
+  }
 }
 
 export async function postDesinscribir(
   legajo: string,
   materia: SysacadMateriaParaCursado
 ): Promise<AccionResult> {
-  const r = await fetch(inscripcionUrl("desinscribir", legajo, materia, materia.Comision), { method: "POST" });
-  if (!r.ok) {
-    const j = await r.json().catch(() => ({}));
-    return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la baja." };
+  try {
+    const r = await fetch(inscripcionUrl("desinscribir", legajo, materia, materia.Comision), { method: "POST" });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la baja." };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
   }
-  return { ok: true };
 }

@@ -674,8 +674,10 @@ export const MOCK_MATERIAS_PARA_CURSADO: SysacadMateriasParaCursado = {
   ],
 };
 
-// El proxy en modo invitado devuelve siempre este mock sin mirar los
-// parámetros de la URL — no hace falta discriminar por materia.
+// Mock de comisiones para materia 5005 (caso "dos comisiones ofertadas").
+// El proxy en modo invitado discrimina por IdMateria: 5008 devuelve un 404
+// (bloqueada por correlatividades) y 5006 devuelve cero comisiones; el resto
+// (5005 y cualquier otra) cae en este mock sin cambios.
 export const MOCK_COMISIONES: SysacadComisionesDisponibles = {
   Estado: "OK",
   Comisiones: [

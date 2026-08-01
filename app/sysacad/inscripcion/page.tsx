@@ -125,7 +125,13 @@ export default function InscripcionPage() {
               <p className="py-8 text-center text-[14px] text-[var(--secondary)]">Cargando materias…</p>
             )}
 
-            {!isLoading && materias.length === 0 && (
+            {!isLoading && error && !sessionExpired && (
+              <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
+                No se pudieron cargar las materias. Reintentá en unos minutos.
+              </p>
+            )}
+
+            {!isLoading && !error && materias.length === 0 && (
               <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
                 No hay materias para cursado en este momento.
               </p>

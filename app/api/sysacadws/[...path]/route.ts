@@ -34,7 +34,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (route.startsWith("cursado/inasistencias/"))         return NextResponse.json(MOCK_INASISTENCIAS);
     if (route.startsWith("cursado/correlatividadcursado/")) return NextResponse.json(MOCK_CORRELATIVIDADES);
     if (route.startsWith("cursado/materiasparacursado/"))   return NextResponse.json(MOCK_MATERIAS_PARA_CURSADO);
-    if (route.startsWith("cursado/comisiones/"))             return NextResponse.json(MOCK_COMISIONES);
+    if (route.startsWith("cursado/comisiones/")) {
+      const idMateria = path[path.length - 1];
+      if (idMateria === "5008") {
+        return NextResponse.json(
+          { Message: "3 - No regularizó Sistemas de Información (Ord. 1878)" },
+          { status: 404 }
+        );
+      }
+      if (idMateria === "5006") {
+        return NextResponse.json({ Estado: "OK", Comisiones: [] });
+      }
+      return NextResponse.json(MOCK_COMISIONES);
+    }
     if (route.startsWith("examenes/"))                      return NextResponse.json(MOCK_EXAMENES);
     if (route.startsWith("plan/"))                          return NextResponse.json(MOCK_PLAN);
     return NextResponse.json({ Estado: "OK", data: [] });
