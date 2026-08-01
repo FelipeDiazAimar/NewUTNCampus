@@ -7,7 +7,13 @@ import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import MateriaInscripcionItem from "@/components/sysacadws/MateriaInscripcionItem";
-import { useMateriasParaCursado, postInscribir, postDesinscribir } from "@/lib/sysacadHooks";
+import {
+  useMateriasParaCursado,
+  postInscribir,
+  postDesinscribir,
+  fetchComisiones,
+  type ComisionesResult,
+} from "@/lib/sysacadHooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import type { SysacadWsUser, SysacadMateriaParaCursado } from "@/lib/sysacadws";
 
@@ -43,6 +49,43 @@ export default function InscripcionPage() {
 
   const materiasKey = legajo ? `/api/sysacadws/cursado/materiasparacursado/${legajo}` : null;
 
+  const materias = data?.Materias ?? [];
+  const inscriptas = materias.filter((m) => m.Comision !== "0");
+  const disponibles = materias.filter((m) => m.Comision === "0");
+
+  // Consulta las comisiones de todas las materias candidatas apenas se
+  // conocen, para poder separar de entrada las bloqueadas por
+  // correlatividades en su propia sección (en vez de descubrirlo recién al
+  // tocar cada una).
+  const [comisionesMap, setComisionesMap] = useState<Record<string, ComisionesResult>>({});
+  const disponiblesKey = disponibles.map((m) => m.IdMateria).join(",");
+
+  useEffect(() => {
+    if (!legajo || disponibles.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        disponibles.map(async (m) => {
+          const r = await fetchComisiones(legajo, m.Especialidad, m.Plan, m.IdMateria);
+          return [m.IdMateria, r] as const;
+        })
+      );
+      if (!cancelled) setComisionesMap(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legajo, disponiblesKey]);
+
+  const comisionesLoaded = disponibles.every((m) => comisionesMap[m.IdMateria] !== undefined);
+  const bloqueadas = comisionesLoaded
+    ? disponibles.filter((m) => comisionesMap[m.IdMateria]?.ok === false)
+    : [];
+  const disponiblesReales = comisionesLoaded
+    ? disponibles.filter((m) => comisionesMap[m.IdMateria]?.ok !== false)
+    : disponibles;
+
   async function handleInscribir(materia: SysacadMateriaParaCursado, comision: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
     if (!legajo) return;
@@ -50,7 +93,7 @@ export default function InscripcionPage() {
     const r = await postInscribir(legajo, materia, comision);
     if (r.ok) {
       setBanner({ tone: "ok", text: `Te inscribiste a ${materia.NombreMateria}.` });
-      if (materiasKey) globalMutate(materiasKey);
+      if (materiasKey) await globalMutate(materiasKey);
     } else {
       setBanner({ tone: "error", text: r.motivo });
     }
@@ -63,7 +106,7 @@ export default function InscripcionPage() {
     const r = await postDesinscribir(legajo, materia);
     if (r.ok) {
       setBanner({ tone: "ok", text: `Te desinscribiste de ${materia.NombreMateria}.` });
-      if (materiasKey) globalMutate(materiasKey);
+      if (materiasKey) await globalMutate(materiasKey);
     } else {
       setBanner({ tone: "error", text: r.motivo });
     }
@@ -81,10 +124,6 @@ export default function InscripcionPage() {
       </div>
     );
   }
-
-  const materias = data?.Materias ?? [];
-  const inscriptas = materias.filter((m) => m.Comision !== "0");
-  const disponibles = materias.filter((m) => m.Comision === "0");
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -157,22 +196,47 @@ export default function InscripcionPage() {
               </section>
             )}
 
-            {!isLoading && disponibles.length > 0 && (
+            {!isLoading && disponiblesReales.length > 0 && (
               <section>
                 <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
                   Podés inscribirte
                 </p>
                 <div className="space-y-2.5">
-                  {disponibles.map((m) => (
+                  {disponiblesReales.map((m) => (
                     <MateriaInscripcionItem
                       key={m.IdMateria}
                       legajo={legajo!}
                       materia={m}
                       mode="disponible"
+                      prefetched={comisionesMap[m.IdMateria]}
                       onInscribir={handleInscribir}
                       onDesinscribir={handleDesinscribir}
                     />
                   ))}
+                </div>
+              </section>
+            )}
+
+            {!isLoading && bloqueadas.length > 0 && (
+              <section>
+                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                  Bloqueadas (correlatividades)
+                </p>
+                <div className="space-y-2.5">
+                  {bloqueadas.map((m) => {
+                    const r = comisionesMap[m.IdMateria];
+                    return (
+                      <MateriaInscripcionItem
+                        key={m.IdMateria}
+                        legajo={legajo!}
+                        materia={m}
+                        mode="bloqueada"
+                        motivo={r?.ok === false ? r.motivo : undefined}
+                        onInscribir={handleInscribir}
+                        onDesinscribir={handleDesinscribir}
+                      />
+                    );
+                  })}
                 </div>
               </section>
             )}
