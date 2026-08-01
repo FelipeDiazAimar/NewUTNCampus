@@ -123,7 +123,8 @@ export default function InscripcionPage() {
       ? matchearCurso(
           materia.NombreMateriaLargo || materia.NombreMateria,
           (catalogo?.grupos ?? []).flatMap((g) => g.cursos),
-          new Date().getFullYear()
+          new Date().getFullYear(),
+          catalogo?.carrera
         )
       : null;
 

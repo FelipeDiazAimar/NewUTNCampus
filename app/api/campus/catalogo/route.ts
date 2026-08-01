@@ -3,6 +3,7 @@ import { isGuestRequest } from "@/lib/guest";
 import { MOCK_CAMPUS_CATALOGO } from "@/lib/guestMockData";
 import {
   extraerAnio,
+  matchearCarrera,
   normalizarNombre,
   stripTags,
   type CampusCatalogo,
@@ -88,17 +89,31 @@ export async function GET(req: NextRequest) {
   try {
     // El árbol completo viene en la página de categorías. Si esa vista no lo
     // trae (depende de la config del sitio), el front page sí lo hace.
-    let arbolHtml = await traer(`${MOODLE_BASE}/course/index.php`);
-    let nodos = parseCategorias(arbolHtml);
-    if (nodos.length === 0) {
-      arbolHtml = await traer(`${MOODLE_BASE}/`);
-      nodos = parseCategorias(arbolHtml);
+    // Se prueban las dos páginas que pueden traer el árbol. No alcanza con caer
+    // al fallback solo cuando no se parsea NADA: /course/index.php devuelve
+    // únicamente las 7 categorías de nivel superior, sin las carreras anidadas,
+    // mientras que el front page trae el árbol completo (~70 nodos).
+    let nodos = parseCategorias(await traer(`${MOODLE_BASE}/course/index.php`));
+    let carrera = matchearCarrera(especialidad, nodos) ?? undefined;
+
+    if (!carrera) {
+      const frontNodos = parseCategorias(await traer(`${MOODLE_BASE}/`));
+      const frontCarrera = matchearCarrera(especialidad, frontNodos) ?? undefined;
+      if (frontCarrera || frontNodos.length > nodos.length) {
+        nodos = frontNodos;
+        carrera = frontCarrera;
+      }
     }
 
-    const objetivo = normalizarNombre(especialidad);
-    const carrera = objetivo
-      ? nodos.find((n) => normalizarNombre(n.nombre) === objetivo)
-      : undefined;
+    if (!carrera) {
+      console.warn(
+        "[campus-catalogo] no se resolvió la carrera",
+        JSON.stringify(especialidad),
+        "entre",
+        nodos.length,
+        "categorías"
+      );
+    }
 
     // Categorías a listar: los "Nivel N" de la carrera + el ciclo corriente de
     // las materias básicas compartidas entre carreras.

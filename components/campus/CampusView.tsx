@@ -131,7 +131,12 @@ export default function CampusView({
   const filas = useMemo(
     () =>
       inscriptas.map((m) => {
-        const curso = matchearCurso(m.NombreMateriaLargo || m.NombreMateria, todosLosCursos, anio);
+        const curso = matchearCurso(
+          m.NombreMateriaLargo || m.NombreMateria,
+          todosLosCursos,
+          anio,
+          catalogo?.carrera
+        );
         return {
           materia: m,
           curso,
@@ -139,7 +144,7 @@ export default function CampusView({
           matriculada: curso ? idsMatriculados.has(curso.id) : false,
         };
       }),
-    [inscriptas, todosLosCursos, idsMatriculados, anio]
+    [inscriptas, todosLosCursos, idsMatriculados, anio, catalogo?.carrera]
   );
 
   const pendientes = filas.filter((f) => !f.matriculada);

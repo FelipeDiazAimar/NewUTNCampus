@@ -74,7 +74,59 @@ export function normalizarNombre(s: string): string {
   out = out.replace(/\b20\d{2}\b/g, " ");         // año del ciclo
   out = out.replace(/\s-\s*ing\b[\s\S]*$/, " ");  // "- Ing. en Sistemas", "- Ing. Química …"
   out = out.replace(/[^a-z0-9\s]/g, " ");         // puntuación
-  return out.replace(/\s+/g, " ").trim();
+  // Singular/plural: Sysacad dice "Sistemas de Apoyo…" y Moodle "Sistema de
+  // Apoyo…". No busca ser lingüísticamente correcto, solo aplicarse igual a
+  // ambos lados; por eso alcanza con sacar la "s" final de las palabras largas.
+  return out
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => (p.length > 3 ? p.replace(/s$/, "") : p))
+    .join(" ")
+    .trim();
+}
+
+/** Palabras que no aportan a identificar una carrera. */
+const VACIAS = new Set(["en", "de", "del", "la", "las", "el", "los", "y"]);
+
+function tokens(s: string): string[] {
+  return normalizarNombre(s)
+    .split(" ")
+    .filter((t) => t && !VACIAS.has(t));
+}
+
+/**
+ * ¿Los tokens de la especialidad aparecen, en orden y como prefijo, en el
+ * nombre de la categoría? Sysacad guarda la carrera abreviada
+ * ("Ing. Sist. Inf.") y Moodle la escribe completa ("Ingeniería en Sistemas de
+ * Información"), así que comparar por igualdad no alcanza.
+ */
+function tokensCoinciden(especialidad: string, categoria: string): boolean {
+  const buscados = tokens(especialidad);
+  if (buscados.length === 0) return false;
+  let i = 0;
+  for (const palabra of tokens(categoria)) {
+    if (i < buscados.length && palabra.startsWith(buscados[i])) i++;
+  }
+  return i === buscados.length;
+}
+
+/**
+ * Resuelve la categoría de Moodle que corresponde a la carrera del alumno.
+ * Primero intenta igualdad exacta y después el matcheo por prefijos; en ambos
+ * casos exige una única candidata, para no elegir una carrera al azar.
+ */
+export function matchearCarrera<T extends { nombre: string }>(
+  especialidad: string,
+  categorias: T[]
+): T | null {
+  const objetivo = normalizarNombre(especialidad);
+  if (!objetivo) return null;
+
+  const exactas = categorias.filter((c) => normalizarNombre(c.nombre) === objetivo);
+  if (exactas.length === 1) return exactas[0];
+
+  const porTokens = categorias.filter((c) => tokensCoinciden(especialidad, c.nombre));
+  return porTokens.length === 1 ? porTokens[0] : null;
 }
 
 /**
@@ -90,7 +142,8 @@ export function normalizarNombre(s: string): string {
 export function matchearCurso(
   nombreMateria: string,
   cursos: CampusCurso[],
-  anio: number
+  anio: number,
+  carrera?: string | null
 ): CampusCurso | null {
   const objetivo = normalizarNombre(nombreMateria);
   if (!objetivo) return null;
@@ -99,7 +152,42 @@ export function matchearCurso(
     if (anioCurso !== null && anioCurso !== anio) return false;
     return normalizarNombre(c.nombre) === objetivo;
   });
-  return candidatos.length === 1 ? candidatos[0] : null;
+  if (candidatos.length === 1) return candidatos[0];
+  if (candidatos.length > 1 && carrera) return desempatarPorCarrera(candidatos, carrera);
+  return null;
+}
+
+/**
+ * Las materias básicas se dictan por carrera y solo se distinguen por el
+ * sufijo que normalizarNombre justamente descarta ("Análisis Matemático I 2026
+ * - Ing. en Sistemas" vs "… - Ing. Electromecánica - Electrónica - Química").
+ * Se queda con el curso que más tokens de la carrera del alumno nombra, y solo
+ * si hay un único ganador.
+ */
+function desempatarPorCarrera(candidatos: CampusCurso[], carrera: string): CampusCurso | null {
+  const buscados = tokens(carrera);
+  if (buscados.length === 0) return null;
+
+  // Bidireccional a propósito: acá la carrera viene completa ("Ingeniería…") y
+  // el curso la abrevia ("Ing. en Sistemas"), al revés que en matchearCarrera.
+  // El largo mínimo evita que una palabra suelta como "I" matchee cualquier cosa.
+  const esPrefijo = (a: string, b: string) =>
+    Math.min(a.length, b.length) >= 3 && (a.startsWith(b) || b.startsWith(a));
+
+  const puntaje = (nombre: string) => {
+    const palabras = sinAcentos(nombre).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    let i = 0;
+    for (const p of palabras) {
+      if (i < buscados.length && esPrefijo(p, buscados[i])) i++;
+    }
+    return i;
+  };
+
+  const puntuados = candidatos.map((c) => ({ curso: c, pts: puntaje(c.nombre) }));
+  const max = Math.max(...puntuados.map((p) => p.pts));
+  if (max === 0) return null;
+  const ganadores = puntuados.filter((p) => p.pts === max);
+  return ganadores.length === 1 ? ganadores[0].curso : null;
 }
 
 /**
