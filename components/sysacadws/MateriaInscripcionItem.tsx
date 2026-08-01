@@ -4,18 +4,7 @@ import { useState } from "react";
 import { CalendarDays, Check, ChevronDown, Clock, Copy, Lock, MapPin } from "lucide-react";
 import type { SysacadComisionDisponible, SysacadMateriaParaCursado } from "@/lib/sysacadws";
 import { fetchComisiones, type ComisionesResult } from "@/lib/sysacadHooks";
-
-/**
- * El campo CheckSum trae dos datos separados por salto de línea:
- * "0V58ZF\nClave matriculación campus virtual = 5202340512026" — el código
- * de seguridad de la inscripción, y la clave para auto-matricularse en el
- * curso del campus virtual (Moodle).
- */
-function parseCheckSum(checkSum: string): { claveMatriculacion: string | null } {
-  const claveLinea = checkSum.split("\n").find((l) => /clave matriculaci/i.test(l));
-  const clave = claveLinea?.split("=")[1]?.trim() ?? null;
-  return { claveMatriculacion: clave || null };
-}
+import { parseCheckSum } from "@/lib/campus";
 
 /** Botón para copiar la clave de matriculación al portapapeles, con feedback visual. */
 function CopiarClaveButton({ clave }: { clave: string }) {

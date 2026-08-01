@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { mutate as globalMutate } from "swr";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import MateriaInscripcionItem from "@/components/sysacadws/MateriaInscripcionItem";
+import SegmentedControl from "@/components/campus/SegmentedControl";
+import CampusView from "@/components/campus/CampusView";
 import {
   useMateriasParaCursado,
   postInscribir,
@@ -14,8 +16,15 @@ import {
   fetchComisiones,
   type ComisionesResult,
 } from "@/lib/sysacadHooks";
+import { useCampusCatalogo, postMatricular } from "@/lib/campusHooks";
+import { matchearCurso, parseCheckSum } from "@/lib/campus";
+import { useCourses } from "@/lib/hooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
-import type { SysacadWsUser, SysacadMateriaParaCursado } from "@/lib/sysacadws";
+import type {
+  SysacadWsUser,
+  SysacadMateriaParaCursado,
+  SysacadMateriasParaCursado,
+} from "@/lib/sysacadws";
 
 function getWsUser(): SysacadWsUser | null {
   if (typeof document === "undefined") return null;
@@ -33,6 +42,7 @@ export default function InscripcionPage() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<SysacadWsUser | null>(null);
   const [banner, setBanner] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [vista, setVista] = useState<"sysacad" | "campus">("sysacad");
 
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) {
@@ -48,6 +58,10 @@ export default function InscripcionPage() {
   const sessionExpired = (error as { status?: number } | undefined)?.status === 401;
 
   const materiasKey = legajo ? `/api/sysacadws/cursado/materiasparacursado/${legajo}` : null;
+
+  const { data: catalogo, isLoading: catalogoLoading } = useCampusCatalogo(user?.especialidad);
+  const { courses, refetch: refetchCourses } = useCourses();
+  const idsMatriculados = useMemo(() => new Set(courses.map((c) => String(c.id))), [courses]);
 
   const materias = data?.Materias ?? [];
   const inscriptas = materias.filter((m) => m.Comision !== "0");
@@ -90,12 +104,49 @@ export default function InscripcionPage() {
     if (isGuestMode()) { triggerGuestBlock(); return; }
     if (!legajo) return;
     setBanner(null);
+
     const r = await postInscribir(legajo, materia, comision);
-    if (r.ok) {
-      setBanner({ tone: "ok", text: `Te inscribiste a ${materia.NombreMateria}.` });
-      if (materiasKey) await globalMutate(materiasKey);
-    } else {
+    if (!r.ok) {
       setBanner({ tone: "error", text: r.motivo });
+      return;
+    }
+
+    // La clave de matriculación al campus recién existe después de inscribirse,
+    // así que hay que releer la materia de la lista revalidada.
+    const actualizado = materiasKey
+      ? ((await globalMutate(materiasKey)) as SysacadMateriasParaCursado | undefined)
+      : undefined;
+
+    const conClave = (actualizado?.Materias ?? []).find((m) => m.IdMateria === materia.IdMateria);
+    const clave = parseCheckSum(conClave?.CheckSum ?? "").claveMatriculacion;
+    const curso = clave
+      ? matchearCurso(
+          materia.NombreMateriaLargo || materia.NombreMateria,
+          (catalogo?.grupos ?? []).flatMap((g) => g.cursos),
+          new Date().getFullYear()
+        )
+      : null;
+
+    if (!clave || !curso) {
+      setBanner({
+        tone: "ok",
+        text: `Te inscribiste a ${materia.NombreMateria} en Sysacad. Matriculate al campus desde la pestaña Campus.`,
+      });
+      return;
+    }
+
+    const rc = await postMatricular(curso.id, clave);
+    if (rc.ok) {
+      refetchCourses();
+      setBanner({
+        tone: "ok",
+        text: `Te inscribiste a ${materia.NombreMateria} en Sysacad y en el campus.`,
+      });
+    } else {
+      setBanner({
+        tone: "error",
+        text: `Te inscribiste a ${materia.NombreMateria} en Sysacad, pero la matrícula al campus falló: ${rc.motivo} Podés hacerla desde la pestaña Campus.`,
+      });
     }
   }
 
@@ -160,6 +211,18 @@ export default function InscripcionPage() {
               </div>
             )}
 
+            <SegmentedControl
+              ariaLabel="Sistema de inscripción"
+              value={vista}
+              onChange={(v) => setVista(v as "sysacad" | "campus")}
+              options={[
+                { value: "sysacad", label: "Sysacad" },
+                { value: "campus", label: "Campus" },
+              ]}
+            />
+
+            {vista === "sysacad" && (
+              <>
             {isLoading && (
               <p className="py-8 text-center text-[14px] text-[var(--secondary)]">Cargando materias…</p>
             )}
@@ -239,6 +302,18 @@ export default function InscripcionPage() {
                   })}
                 </div>
               </section>
+            )}
+              </>
+            )}
+
+            {vista === "campus" && (
+              <CampusView
+                inscriptas={inscriptas}
+                catalogo={catalogo}
+                loading={catalogoLoading}
+                idsMatriculados={idsMatriculados}
+                onMatriculado={refetchCourses}
+              />
             )}
           </div>
         )}
