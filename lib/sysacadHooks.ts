@@ -188,7 +188,10 @@ export async function postInscribir(
     const r = await fetch(inscripcionUrl("inscribir", legajo, materia, comision), { method: "POST" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la inscripción." };
-    if (j.Estado !== undefined && j.Estado !== "OK") {
+    // Sysacad real responde "Estado": "2 - " en éxito (no "OK" — eso es solo
+    // la convención del mock de invitado). "2" es el único código de éxito
+    // observado en la captura real; cualquier otro prefijo se trata como falla.
+    if (typeof j.Estado === "string" && j.Estado.trim() !== "" && !j.Estado.trim().startsWith("2")) {
       return { ok: false, motivo: j.Message ?? j.error ?? "No se pudo completar la inscripción." };
     }
     return { ok: true, data: j as SysacadInscripcionResult };
