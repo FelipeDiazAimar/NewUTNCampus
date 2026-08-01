@@ -133,6 +133,12 @@ body {
   animation: today-ring 1.1s ease-in-out infinite;
 }
 
+/* Botón "aurora" — entrada a inscripción de materias */
+@keyframes aurora {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
 /* ── Prose / section summary ────────────────────────────────────────────────── */
 /* Force the app's system font stack — never let Moodle HTML override it */
 .prose {
