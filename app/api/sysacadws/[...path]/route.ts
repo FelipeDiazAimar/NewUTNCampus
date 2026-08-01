@@ -10,6 +10,8 @@ import {
   MOCK_PLAN,
   MOCK_INASISTENCIAS,
   MOCK_CORRELATIVIDADES,
+  MOCK_MATERIAS_PARA_CURSADO,
+  MOCK_COMISIONES,
 } from "@/lib/guestMockData";
 
 export const runtime = "nodejs";
@@ -31,6 +33,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (route.startsWith("cursado/materias/cantidadesporanio/")) return NextResponse.json(MOCK_AVANCE);
     if (route.startsWith("cursado/inasistencias/"))         return NextResponse.json(MOCK_INASISTENCIAS);
     if (route.startsWith("cursado/correlatividadcursado/")) return NextResponse.json(MOCK_CORRELATIVIDADES);
+    if (route.startsWith("cursado/materiasparacursado/"))   return NextResponse.json(MOCK_MATERIAS_PARA_CURSADO);
+    if (route.startsWith("cursado/comisiones/"))             return NextResponse.json(MOCK_COMISIONES);
     if (route.startsWith("examenes/"))                      return NextResponse.json(MOCK_EXAMENES);
     if (route.startsWith("plan/"))                          return NextResponse.json(MOCK_PLAN);
     return NextResponse.json({ Estado: "OK", data: [] });
@@ -48,6 +52,50 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const url = `${SYSACADWS_BASE}/${path.join("/")}${req.nextUrl.search}`;
   try {
     const res = await fetch(url, { headers: { Authorization: `Basic ${auth}` }, cache: "no-store" });
+    const body = await res.text();
+    return new NextResponse(body, {
+      status: res.status,
+      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
+    });
+  } catch (err) {
+    console.error("[sysacadws-proxy]", (err as Error).message);
+    return NextResponse.json({ error: "No se pudo conectar con Sysacad." }, { status: 502 });
+  }
+}
+
+/**
+ * Igual que GET pero para las mutaciones de cursado (inscribir/desinscribir),
+ * que en Sysacad son POST con body vacío x-www-form-urlencoded.
+ */
+export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
+  const route = (path ?? []).join("/");
+
+  if (isGuestRequest(req)) {
+    if (route.startsWith("cursado/inscribir/") || route.startsWith("cursado/desinscribir/")) {
+      return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
+    }
+    return NextResponse.json({ Estado: "OK" });
+  }
+
+  const auth = req.cookies.get("sysacadws_auth")?.value;
+  if (!auth) {
+    return NextResponse.json({ error: "No autenticado en Sysacad." }, { status: 401 });
+  }
+  if (!path?.length || path.some((seg) => !/^[\w.@-]+$/.test(seg))) {
+    return NextResponse.json({ error: "Ruta inválida." }, { status: 400 });
+  }
+
+  const url = `${SYSACADWS_BASE}/${path.join("/")}${req.nextUrl.search}`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      cache: "no-store",
+    });
     const body = await res.text();
     return new NextResponse(body, {
       status: res.status,
