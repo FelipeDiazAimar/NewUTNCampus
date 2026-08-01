@@ -8,6 +8,11 @@ import type {
   SysacadEstadoAcademico,
   SysacadExamenes,
   SysacadPlan,
+  SysacadMateriasParaCursado,
+  SysacadMateriaParaCursado,
+  SysacadComisionDisponible,
+  SysacadComisionesDisponibles,
+  SysacadInscripcionResult,
 } from "@/lib/sysacadws";
 import type { MateriaEstado, MateriaCorrelativa } from "@/lib/sysacadTypes";
 import { mapCorrelatividades, mapEstadoAcademico } from "@/lib/sysacadMappers";
@@ -47,6 +52,13 @@ export function useExamenes(legajo?: string) {
 }
 export function usePlan(idEspecialidad?: string, plan?: string) {
   return useSWR<SysacadPlan>(idEspecialidad && plan ? `/api/sysacadws/plan/${idEspecialidad}/${plan}` : null, jsonOk, SWR_CFG);
+}
+export function useMateriasParaCursado(legajo?: string) {
+  return useSWR<SysacadMateriasParaCursado>(
+    legajo ? `/api/sysacadws/cursado/materiasparacursado/${legajo}` : null,
+    jsonOk,
+    SWR_CFG
+  );
 }
 
 // Estado académico y correlatividades: ahora desde el web service (antes scraping).
@@ -117,4 +129,89 @@ export function useCorrelatividades(legajo?: string) {
     },
     SWR_CFG
   );
+}
+
+// ─── Inscripción a cursado (mutaciones, no son hooks SWR) ─────────────────────
+
+export type ComisionesResult =
+  | { ok: true; comisiones: SysacadComisionDisponible[] }
+  | { ok: false; motivo: string };
+
+/** Consulta las comisiones ofertadas para una materia candidata. */
+export async function fetchComisiones(
+  legajo: string,
+  especialidad: string,
+  plan: string,
+  idMateria: string
+): Promise<ComisionesResult> {
+  try {
+    const r = await fetch(
+      `/api/sysacadws/cursado/comisiones/${legajo}/${especialidad}/${plan}/${idMateria}`,
+      { cache: "no-store" }
+    );
+    if (r.status === 404) {
+      const j = await r.json().catch(() => ({ Message: "" }));
+      const motivo = String(j.Message ?? "").replace(/^\d+\s*-\s*/, "").trim();
+      return { ok: false, motivo: motivo || "No cumplís las correlatividades para esta materia." };
+    }
+    if (!r.ok) return { ok: false, motivo: "No se pudo consultar las comisiones disponibles." };
+    const j = (await r.json()) as SysacadComisionesDisponibles;
+    return { ok: true, comisiones: j.Comisiones ?? [] };
+  } catch {
+    return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
+  }
+}
+
+export type AccionResult = { ok: true } | { ok: false; motivo: string };
+
+/**
+ * Arma la URL de inscribir/desinscribir. El trío Especialidad/Plan/IdMateria
+ * de la materia se repite dos veces (ver spec: los campos *Homogenea vienen
+ * en "0" cuando Comision === "0" y no sirven para esta llamada).
+ */
+function inscripcionUrl(
+  accion: "inscribir" | "desinscribir",
+  legajo: string,
+  materia: SysacadMateriaParaCursado,
+  comision: string
+): string {
+  const { Especialidad, Plan, IdMateria } = materia;
+  return `/api/sysacadws/cursado/${accion}/${legajo}/${Especialidad}/${Plan}/${IdMateria}/${Especialidad}/${Plan}/${IdMateria}/${comision}`;
+}
+
+export async function postInscribir(
+  legajo: string,
+  materia: SysacadMateriaParaCursado,
+  comision: string
+): Promise<{ ok: true; data: SysacadInscripcionResult } | { ok: false; motivo: string }> {
+  try {
+    const r = await fetch(inscripcionUrl("inscribir", legajo, materia, comision), { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la inscripción." };
+    // Sysacad real responde "Estado": "2 - " en éxito (no "OK" — eso es solo
+    // la convención del mock de invitado). "2" es el único código de éxito
+    // observado en la captura real; cualquier otro prefijo se trata como falla.
+    if (typeof j.Estado === "string" && j.Estado.trim() !== "" && !j.Estado.trim().startsWith("2")) {
+      return { ok: false, motivo: j.Message ?? j.error ?? "No se pudo completar la inscripción." };
+    }
+    return { ok: true, data: j as SysacadInscripcionResult };
+  } catch {
+    return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
+  }
+}
+
+export async function postDesinscribir(
+  legajo: string,
+  materia: SysacadMateriaParaCursado
+): Promise<AccionResult> {
+  try {
+    const r = await fetch(inscripcionUrl("desinscribir", legajo, materia, materia.Comision), { method: "POST" });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la baja." };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
+  }
 }

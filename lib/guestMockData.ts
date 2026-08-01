@@ -12,6 +12,8 @@ import type {
   SysacadAvance,
   SysacadExamenes,
   SysacadPlan,
+  SysacadMateriasParaCursado,
+  SysacadComisionesDisponibles,
 } from "@/lib/sysacadws";
 import type { MoodleConversation } from "@/lib/chat";
 
@@ -604,5 +606,92 @@ export const MOCK_CORRELATIVIDADES = {
     { Año: "5", Plan: "2008", Materia: "5008", Nombre: "Sistemas de Información 2",   CorrelatividadACumplir: "No regularizó Sistemas de Información (Ord. 1878)" },
     { Año: "5", Plan: "2008", Materia: "5009", Nombre: "Investigación Operativa",     CorrelatividadACumplir: "Puede cursar" },
     { Año: "5", Plan: "2008", Materia: "5010", Nombre: "Organización Empresarial",    CorrelatividadACumplir: "Puede cursar" },
+  ],
+};
+
+// ─── Materias para cursado (inscripción) ──────────────────────────────────────
+
+export const MOCK_MATERIAS_PARA_CURSADO: SysacadMateriasParaCursado = {
+  Estado: "OK",
+  Materias: [
+    {
+      Especialidad: "2", Plan: "2008", IdMateria: "4007",
+      NombreMateria: "Sistemas de Información", NombreMateriaLargo: "Sistemas de Información",
+      Comision: "1", Curso: "4K", Año: "4",
+      Horario: "Miércoles 21:30-23:45, Jueves 18:00-21:00",
+      Edificio: "MODALIDAD PRESENCIAL aula 12",
+      CheckSum: "AB12CD\nClave matriculación campus virtual = 520400712026",
+      DatoInscripción: "Ya inscripto (Código de seguridad = AB12CD\nClave matriculación campus virtual = 520400712026)",
+      EspecialidadHomogenea: "2", PlanHomogenea: "2008", IdMateriaHomogenea: "4007",
+      Condicional: "false",
+    },
+    {
+      Especialidad: "2", Plan: "2008", IdMateria: "4008",
+      NombreMateria: "Gestión de Proyectos", NombreMateriaLargo: "Gestión de Proyectos",
+      Comision: "1", Curso: "4K", Año: "4",
+      Horario: "Martes 18:00-21:00, Jueves 21:30-23:45",
+      Edificio: "MODALIDAD PRESENCIAL aula 8",
+      CheckSum: "EF34GH\nClave matriculación campus virtual = 520400812026",
+      DatoInscripción: "Ya inscripto (Código de seguridad = EF34GH\nClave matriculación campus virtual = 520400812026)",
+      EspecialidadHomogenea: "2", PlanHomogenea: "2008", IdMateriaHomogenea: "4008",
+      Condicional: "false",
+    },
+    {
+      Especialidad: "2", Plan: "2008", IdMateria: "4009",
+      NombreMateria: "Seguridad Informática", NombreMateriaLargo: "Seguridad Informática",
+      Comision: "1", Curso: "4K", Año: "4",
+      Horario: "Lunes 18:00-21:00, Miércoles 18:00-21:00",
+      Edificio: "MODALIDAD PRESENCIAL Laboratorio 3",
+      CheckSum: "IJ56KL\nClave matriculación campus virtual = 520400912026",
+      DatoInscripción: "Ya inscripto (Código de seguridad = IJ56KL\nClave matriculación campus virtual = 520400912026)",
+      EspecialidadHomogenea: "2", PlanHomogenea: "2008", IdMateriaHomogenea: "4009",
+      Condicional: "false",
+    },
+    {
+      Especialidad: "2", Plan: "2008", IdMateria: "5005",
+      NombreMateria: "Auditoria de Sistemas", NombreMateriaLargo: "Auditoria de Sistemas",
+      Comision: "0", Curso: "", Año: "5",
+      Horario: "", Edificio: "", CheckSum: "", DatoInscripción: "",
+      EspecialidadHomogenea: "0", PlanHomogenea: "0", IdMateriaHomogenea: "0",
+      Condicional: "false",
+    },
+    {
+      Especialidad: "2", Plan: "2008", IdMateria: "5006",
+      NombreMateria: "Calidad de Software", NombreMateriaLargo: "Calidad de Software",
+      Comision: "0", Curso: "", Año: "5",
+      Horario: "", Edificio: "", CheckSum: "", DatoInscripción: "",
+      EspecialidadHomogenea: "0", PlanHomogenea: "0", IdMateriaHomogenea: "0",
+      Condicional: "false",
+    },
+    {
+      Especialidad: "2", Plan: "2008", IdMateria: "5008",
+      NombreMateria: "Sistemas de Información 2", NombreMateriaLargo: "Sistemas de Información 2",
+      Comision: "0", Curso: "", Año: "5",
+      Horario: "", Edificio: "", CheckSum: "", DatoInscripción: "",
+      EspecialidadHomogenea: "0", PlanHomogenea: "0", IdMateriaHomogenea: "0",
+      Condicional: "false",
+    },
+  ],
+};
+
+// Mock de comisiones para materia 5005 (caso "dos comisiones ofertadas").
+// El proxy en modo invitado discrimina por IdMateria: 5008 devuelve un 404
+// (bloqueada por correlatividades) y 5006 devuelve cero comisiones; el resto
+// (5005 y cualquier otra) cae en este mock sin cambios.
+export const MOCK_COMISIONES: SysacadComisionesDisponibles = {
+  Estado: "OK",
+  Comisiones: [
+    {
+      Especialidad: "2", Comision: "1", Curso: "5K",
+      Horario: "Viernes 18:00-22:30", Plan: "2008", Materia: "5005",
+      Edificio: "MODALIDAD PRESENCIAL aula 4",
+      DatoInscripción: "", NombreEspecialidad: "Ingeniería en Sistemas de Información",
+    },
+    {
+      Especialidad: "2", Comision: "2", Curso: "5K Noche",
+      Horario: "Sábado 08:00-12:30", Plan: "2008", Materia: "5005",
+      Edificio: "MODALIDAD PRESENCIAL aula 6",
+      DatoInscripción: "", NombreEspecialidad: "Ingeniería en Sistemas de Información",
+    },
   ],
 };

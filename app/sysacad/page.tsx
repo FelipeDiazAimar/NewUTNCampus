@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { mutate as globalMutate } from "swr";
-import { ChevronRight, KeyRound, LogOut } from "lucide-react";
+import { ChevronRight, KeyRound, LogOut, CalendarCheck } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
@@ -112,6 +112,16 @@ export default function SysacadPage() {
               avance={avance ?? null}
               cursado={cursado ?? null}
             />
+
+            <Link
+              href="/sysacad/inscripcion"
+              className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-3xl px-5 py-4 shadow-sm
+                         bg-[linear-gradient(120deg,#007aff,#e6f0ff,#007aff)] dark:bg-[linear-gradient(120deg,#0a84ff,#05070d,#0a84ff)]
+                         bg-[length:200%_200%] animate-[aurora_6s_ease_infinite]"
+            >
+              <CalendarCheck className="h-[18px] w-[18px] text-white drop-shadow" />
+              <span className="text-[15px] font-semibold text-white drop-shadow">Inscripción a materias</span>
+            </Link>
 
             {!coreLoading && (
               <>

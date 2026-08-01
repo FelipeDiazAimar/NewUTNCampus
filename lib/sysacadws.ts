@@ -124,6 +124,59 @@ export interface SysacadPlan {
   Materias: SysacadPlanMateria[];
 }
 
+/** Una materia candidata a cursar (/cursado/materiasparacursado/{legajo}). */
+export interface SysacadMateriaParaCursado {
+  Especialidad: string;
+  Plan: string;
+  IdMateria: string;
+  NombreMateria: string;
+  NombreMateriaLargo: string;
+  Comision: string; // "0" = sin inscripción activa; cualquier otro valor = ya inscripto
+  Curso: string;
+  Año: string;
+  Horario: string;
+  Edificio: string;
+  CheckSum: string;
+  DatoInscripción: string;
+  EspecialidadHomogenea: string;
+  PlanHomogenea: string;
+  IdMateriaHomogenea: string;
+  Condicional: string;
+}
+
+/** /cursado/materiasparacursado/{legajo} */
+export interface SysacadMateriasParaCursado {
+  Estado: string;
+  Materias: SysacadMateriaParaCursado[];
+}
+
+/** Una comisión ofertada para una materia. */
+export interface SysacadComisionDisponible {
+  Especialidad: string;
+  Comision: string;
+  Curso: string;
+  Horario: string;
+  Plan: string;
+  Materia: string;
+  Edificio: string;
+  DatoInscripción: string;
+  NombreEspecialidad: string;
+}
+
+/** /cursado/comisiones/{legajo}/{especialidad}/{plan}/{idMateria} */
+export interface SysacadComisionesDisponibles {
+  Estado: string;
+  Comisiones: SysacadComisionDisponible[];
+}
+
+/** Respuesta de POST /cursado/inscribir/... */
+export interface SysacadInscripcionResult {
+  Estado: string;
+  HorarioCursado: string;
+  Checksum: string;
+  Edificio: string;
+}
+
 /** Datos del alumno que guardamos en la cookie legible para gatear la UI. */
 export interface SysacadWsUser {
   legajo: string;

@@ -22,7 +22,7 @@ export default function CollapsibleCard({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] backdrop-blur-md shadow-sm overflow-hidden">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-5 py-4 text-left active:bg-[var(--surface2)]">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-5 py-4 text-left transition-colors hover:bg-[var(--surface2)] active:bg-[var(--surface2)]">
         <Icon className="w-[18px] h-[18px] shrink-0" style={{ color: iconColor }} />
         <span className="flex-1 text-[15px] font-semibold text-[var(--fg)]">{title}</span>
         {right}
