@@ -15,6 +15,7 @@ import type {
   SysacadMateriasParaCursado,
   SysacadComisionesDisponibles,
 } from "@/lib/sysacadws";
+import type { CampusCatalogo } from "@/lib/campus";
 import type { MoodleConversation } from "@/lib/chat";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -692,6 +693,45 @@ export const MOCK_COMISIONES: SysacadComisionesDisponibles = {
       Horario: "Sábado 08:00-12:30", Plan: "2008", Materia: "5005",
       Edificio: "MODALIDAD PRESENCIAL aula 6",
       DatoInscripción: "", NombreEspecialidad: "Ingeniería en Sistemas de Información",
+    },
+  ],
+};
+
+// ─── Campus virtual (catálogo de matriculación) ───────────────────────────────
+// Los ids están elegidos para que el modo invitado muestre los tres estados
+// contra MOCK_MATERIAS_PARA_CURSADO y MOCK_COURSES (ids 1001/1002/1003/1004):
+//   · Sistemas de Información  -> id 1001, que SÍ está en MOCK_COURSES -> matriculada
+//   · Gestión de Proyectos     -> id 3002, que NO está -> pendiente con match
+//   · Seguridad Informática    -> sin entrada en el catálogo -> pendiente sin match
+
+export const MOCK_CAMPUS_CATALOGO: CampusCatalogo = {
+  carrera: "Ingeniería en Sistemas de Información",
+  grupos: [
+    {
+      categoriaId: "43",
+      titulo: "Nivel IV",
+      cursos: [
+        { id: "1001", nombre: "Sistemas de Información 2026", autoMatriculacion: true },
+        { id: "3002", nombre: "Gestión de Proyectos 2026", autoMatriculacion: true },
+        { id: "3005", nombre: "Redes de Computadoras 2026", autoMatriculacion: true },
+      ],
+    },
+    {
+      categoriaId: "44",
+      titulo: "Nivel V",
+      cursos: [
+        { id: "3010", nombre: "Auditoria de Sistemas 2026", autoMatriculacion: true },
+        { id: "3011", nombre: "Calidad de Software 2026", autoMatriculacion: true },
+        { id: "3012", nombre: "Proyecto Final 2026", autoMatriculacion: false },
+      ],
+    },
+    {
+      categoriaId: "205",
+      titulo: "Materias básicas 2026",
+      cursos: [
+        { id: "2232", nombre: "Análisis Matemático I 2026 - Ing. en Sistemas", autoMatriculacion: true },
+        { id: "2370", nombre: "Probabilidad y Estadística 2026", autoMatriculacion: true },
+      ],
     },
   ],
 };
