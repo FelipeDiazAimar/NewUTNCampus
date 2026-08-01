@@ -1,9 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, ChevronDown, Clock, Lock, MapPin } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, Clock, Copy, Lock, MapPin } from "lucide-react";
 import type { SysacadComisionDisponible, SysacadMateriaParaCursado } from "@/lib/sysacadws";
 import { fetchComisiones, type ComisionesResult } from "@/lib/sysacadHooks";
+
+/**
+ * El campo CheckSum trae dos datos separados por salto de línea:
+ * "0V58ZF\nClave matriculación campus virtual = 5202340512026" — el código
+ * de seguridad de la inscripción, y la clave para auto-matricularse en el
+ * curso del campus virtual (Moodle).
+ */
+function parseCheckSum(checkSum: string): { claveMatriculacion: string | null } {
+  const claveLinea = checkSum.split("\n").find((l) => /clave matriculaci/i.test(l));
+  const clave = claveLinea?.split("=")[1]?.trim() ?? null;
+  return { claveMatriculacion: clave || null };
+}
+
+/** Botón para copiar la clave de matriculación al portapapeles, con feedback visual. */
+function CopiarClaveButton({ clave }: { clave: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(clave);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Portapapeles no disponible (permiso denegado, contexto no seguro, etc.) — sin acción.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="flex-1 rounded-xl border border-[#5ac8fa4d] px-2 py-2 text-[11px] font-semibold leading-snug text-[#0a91c9] transition-colors hover:bg-[#5ac8fa1a] active:bg-[#5ac8fa26] dark:text-[#5ac8fa]"
+    >
+      <span className="flex items-center justify-center gap-1.5">
+        {copied ? <Check className="h-3.5 w-3.5 shrink-0" /> : <Copy className="h-3.5 w-3.5 shrink-0" />}
+        {copied ? "Copiada" : `Copiar clave de matriculación al campus virtual (${clave})`}
+      </span>
+    </button>
+  );
+}
 
 /** Fila de chips de color para curso/horario/edificio — reemplaza el texto plano. */
 function InfoChips({
@@ -120,30 +160,29 @@ export default function MateriaInscripcionItem({
   }
 
   if (mode === "inscripta") {
+    const { claveMatriculacion } = materia.CheckSum ? parseCheckSum(materia.CheckSum) : { claveMatriculacion: null };
     return (
       <div className="rounded-2xl border border-[#34c75933] bg-[#34c7590d] px-4 py-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold text-[var(--fg)]">{materia.NombreMateria}</p>
             <InfoChips curso={materia.Curso} horario={materia.Horario} edificio={materia.Edificio} />
-            {materia.CheckSum && (
-              <p className="mt-1.5 whitespace-pre-line text-[11px] leading-snug text-[var(--secondary)]">
-                {materia.CheckSum}
-              </p>
-            )}
           </div>
           <span className="shrink-0 rounded-full bg-[#34c7591a] px-2.5 py-1 text-[11px] font-semibold text-[#34c759]">
             Inscripto
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleDesinscribir}
-          disabled={busy}
-          className="mt-3 w-full rounded-xl border border-[#ff3b3033] py-2 text-[13px] font-semibold text-[#ff3b30] transition-colors hover:bg-[#ff3b301a] active:bg-[#ff3b3026] disabled:opacity-50"
-        >
-          {busy ? "Procesando…" : "Desinscribirme"}
-        </button>
+        <div className="mt-3 flex gap-2">
+          {claveMatriculacion && <CopiarClaveButton clave={claveMatriculacion} />}
+          <button
+            type="button"
+            onClick={handleDesinscribir}
+            disabled={busy}
+            className="flex-1 rounded-xl border border-[#ff3b3033] py-2 text-[13px] font-semibold text-[#ff3b30] transition-colors hover:bg-[#ff3b301a] active:bg-[#ff3b3026] disabled:opacity-50"
+          >
+            {busy ? "Procesando…" : "Desinscribirme"}
+          </button>
+        </div>
       </div>
     );
   }
