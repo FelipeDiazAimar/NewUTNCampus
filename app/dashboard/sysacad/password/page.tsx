@@ -6,6 +6,7 @@ import { KeyRound } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import Spinner from "@/components/Spinner";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 
 export default function CambioPasswordPage() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function CambioPasswordPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     if (nueva !== repetir) {
       setMsg({ ok: false, text: "La nueva contraseña no coincide." });
       return;

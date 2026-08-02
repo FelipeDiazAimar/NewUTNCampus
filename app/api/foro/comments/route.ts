@@ -6,10 +6,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
+import { isGuestRequest } from "@/lib/guest";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
+  }
+
   let body: { post_id?: string; content?: string };
   try {
     body = await req.json();

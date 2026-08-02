@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { EVENT_COLORS } from "@/lib/customEvents";
 import { DAY_LABELS } from "@/lib/horarios";
 import Spinner from "@/components/Spinner";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 
 const DAY_OPTIONS = [1, 2, 3, 4, 5, 6, 0]; // Lun..Dom
 
@@ -33,6 +34,7 @@ export default function CustomEventModal({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (saving) return;
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     if (end <= start) {
       setError("La hora de fin debe ser posterior a la de inicio.");
       return;

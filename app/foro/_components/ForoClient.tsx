@@ -640,6 +640,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
   }
 
   function toggleLikePost(post: ForumPost) {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     const liked = likedPosts.has(post.id);
     const delta = liked ? -1 : 1;
 
@@ -681,6 +682,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
   }
 
   function toggleLikeReply(post: ForumPost, replyId: string) {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     const liked = likedComments.has(replyId);
     const delta = liked ? -1 : 1;
 

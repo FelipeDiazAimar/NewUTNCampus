@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SYSACADWS_BASE, type SysacadDatosPersonales } from "@/lib/sysacadws";
 import { sessionCookieOptions } from "@/lib/cookies";
+import { isGuestRequest } from "@/lib/guest";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,10 @@ export const runtime = "nodejs";
  * credencial actual, que de paso valida que la contraseña actual sea correcta.
  */
 export async function POST(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
+  }
+
   const authCookie = req.cookies.get("sysacadws_auth")?.value;
   if (!authCookie) {
     return NextResponse.json({ error: "No autenticado en Sysacad." }, { status: 401 });

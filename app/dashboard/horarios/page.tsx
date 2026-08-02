@@ -14,6 +14,7 @@ import { hhmmToMin, type CustomScheduleEvent } from "@/lib/customEvents";
 import { getAllMateriaSettings, type MateriaSettings } from "@/lib/materiaSettings";
 import { mapCursadoToMaterias } from "@/lib/sysacadMappers";
 import { useCursado } from "@/lib/sysacadHooks";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0]; // Lunes a Domingo
 
@@ -155,6 +156,7 @@ export default function HorariosPage() {
   };
 
   async function deleteEvent(id: string) {
+    if (isGuestMode()) { triggerGuestBlock(); return; }
     await fetch(`/api/schedule-events?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     mutate();
   }

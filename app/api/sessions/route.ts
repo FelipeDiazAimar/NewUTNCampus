@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listDeviceSessions, revokeDeviceSessions } from "@/lib/deviceSessions";
+import { isGuestRequest } from "@/lib/guest";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,11 @@ function getUserKey(req: NextRequest): string | null {
 
 // Lista las sesiones (dispositivos) activas del usuario, marcando la actual.
 export async function GET(req: NextRequest) {
+  // Todas las sesiones de invitado comparten el mismo userKey ("invitado") —
+  // sin este corte, un invitado podría ver (y cerrar) los "dispositivos" de
+  // cualquier otro invitado.
+  if (isGuestRequest(req)) return NextResponse.json({ sessions: [] });
+
   const userKey = getUserKey(req);
   if (!userKey) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
@@ -38,6 +44,10 @@ export async function GET(req: NextRequest) {
 
 // Revoca sesiones. Body: { scope: "others" } | { deviceId: "..." }.
 export async function DELETE(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
+  }
+
   const userKey = getUserKey(req);
   if (!userKey) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 

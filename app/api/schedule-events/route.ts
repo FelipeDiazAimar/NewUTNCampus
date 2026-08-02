@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
+import { isGuestRequest } from "@/lib/guest";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,11 @@ function getUserId(req: NextRequest): string | null {
 }
 
 export async function GET(req: NextRequest) {
+  // Todas las sesiones de invitado comparten el mismo userId falso (9999) —
+  // sin este corte, el evento personalizado de un invitado aparecería para
+  // cualquier otro. En vez de tocar la tabla real, se devuelve vacío.
+  if (isGuestRequest(req)) return NextResponse.json({ data: [] });
+
   const userId = getUserId(req);
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   try {
@@ -30,6 +36,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
+  }
+
   const userId = getUserId(req);
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
@@ -62,6 +72,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (isGuestRequest(req)) {
+    return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
+  }
+
   const userId = getUserId(req);
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const id = req.nextUrl.searchParams.get("id");
