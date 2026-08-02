@@ -97,7 +97,12 @@ function SubfolderRow({ node, depth }: { node: Extract<FolderNode, { type: "fold
 // ─── FolderViewer — the folder module row + its expandable contents ──────────
 export default function FolderViewer({ mod }: { mod: MoodleModule }) {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<FolderData | null>(null);
+  // Carpetas "en la página del curso" traen el árbol resuelto de antemano
+  // (mod.folderEntries) — no hace falta pedir nada al abrir el desplegable.
+  const inlineData: FolderData | null = mod.folderEntries
+    ? { name: mod.name, entries: mod.folderEntries as FolderNode[], downloadUrl: mod.folderDownloadUrl ?? "" }
+    : null;
+  const [data, setData] = useState<FolderData | null>(inlineData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,7 +111,8 @@ export default function FolderViewer({ mod }: { mod: MoodleModule }) {
   const toggle = useCallback(async () => {
     const next = !open;
     setOpen(next);
-    // Lazy-load the folder contents on first expand.
+    // Lazy-load the folder contents on first expand (solo para carpetas "en
+    // página separada", que no traen mod.folderEntries de antemano).
     if (next && !data && !loading && id) {
       setLoading(true);
       setError(null);
@@ -181,7 +187,7 @@ export default function FolderViewer({ mod }: { mod: MoodleModule }) {
               {data.entries.length > 0 && (
                 <div className="px-4 py-3 border-t border-[rgba(60,60,67,0.08)]">
                   <a
-                    href={`/api/files?url=${encodeURIComponent(data.downloadUrl)}`}
+                    href={`/api/files?ref=${encodeURIComponent(data.downloadUrl)}`}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[var(--surface)] border border-[var(--separator)] text-[13px] font-semibold text-[var(--accent)] active:opacity-70 transition-opacity"
                   >
                     <DownloadIcon className="w-4 h-4" />

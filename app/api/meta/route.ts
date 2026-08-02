@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
+import { decodeUrlRef } from "@/lib/urlToken";
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
-  const url = req.nextUrl.searchParams.get("url");
+  const ref = req.nextUrl.searchParams.get("ref");
+  const url = ref ? decodeUrlRef(ref) : null;
 
   if (!sessionToken || !url) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });

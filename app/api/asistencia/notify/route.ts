@@ -7,13 +7,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
 import { sendPushNotification } from "@/lib/webPush";
+import { isAdminRequest } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
 
-const ADMIN_TOKEN = "campus-admin-2024-internal";
-
 export async function POST(req: NextRequest) {
-  if (req.cookies.get("admin_session_token")?.value !== ADMIN_TOKEN) {
+  if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

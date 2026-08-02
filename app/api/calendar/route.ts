@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCourses, callMoodleService, type MoodleCourse } from "@/lib/moodle";
+import { getCourses, callMoodleService, MOODLE_BASE, absMoodleUrl, type MoodleCourse } from "@/lib/moodle";
 import { isGuestRequest } from "@/lib/guest";
 import { MOCK_TAREAS } from "@/lib/guestMockData";
 import { CALENDAR_MONTHS } from "@/lib/calendario";
+import { encodeUrlRef } from "@/lib/urlToken";
 
 export const runtime = "nodejs";
-
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
 export interface TareaEvent {
   date: string; // YYYY-MM-DD
@@ -21,6 +20,11 @@ export interface TareaEvent {
   taskId?: string;
   /** Detalle enriquecido en la Fase 2 (descripción / comentarios del profesor). */
   detail?: string;
+}
+
+/** Tokeniza el enlace real de Moodle de cada evento antes de mandarlo al cliente. */
+function tokenizeEvents(events: TareaEvent[]): TareaEvent[] {
+  return events.map((e) => (e.url ? { ...e, url: encodeUrlRef(absMoodleUrl(e.url)) } : e));
 }
 
 function isoFromUnix(ts: number): string {
@@ -313,7 +317,7 @@ export async function GET(req: NextRequest) {
   if (phase === "quick") {
     try {
       const events = await fromMonthlyView(cookie, sesskey);
-      return NextResponse.json({ events, source: "monthly" });
+      return NextResponse.json({ events: tokenizeEvents(events), source: "monthly" });
     } catch (err) {
       console.error("[calendar] monthly view error:", (err as Error).message);
       return NextResponse.json({ events: [], error: (err as Error).message });
@@ -324,14 +328,14 @@ export async function GET(req: NextRequest) {
   // (default y phase=deep) — web service de assign primero, scraping de respaldo.
   try {
     const events = await fromWebService(cookie, sesskey);
-    if (events.length > 0) return NextResponse.json({ events, source: "ws" });
+    if (events.length > 0) return NextResponse.json({ events: tokenizeEvents(events), source: "ws" });
   } catch (err) {
     console.log("[calendar] mod_assign_get_assignments no disponible:", (err as Error).message);
   }
 
   try {
     const events = await fromScrape(cookie, sesskey, userid);
-    return NextResponse.json({ events, source: "scrape" });
+    return NextResponse.json({ events: tokenizeEvents(events), source: "scrape" });
   } catch (err) {
     console.error("[calendar] scrape error:", (err as Error).message);
     return NextResponse.json({ events: [], error: (err as Error).message });

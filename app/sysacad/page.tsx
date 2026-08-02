@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { mutate as globalMutate } from "swr";
+import { useSWRConfig } from "swr";
 import { ChevronRight, KeyRound, LogOut, CalendarCheck } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
-import { SpinnerBlock } from "@/components/Spinner";
+import { AccordionSkeleton } from "@/components/Spinner";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import ProfileHeader from "@/components/sysacadws/ProfileHeader";
 import ResumenHero from "@/components/sysacadws/ResumenHero";
@@ -36,8 +36,13 @@ function getWsUser(): SysacadWsUser | null {
 
 export default function SysacadPage() {
   const router = useRouter();
+  // /sysacad vive dentro de un SWRConfig con caché propia (persistida en
+  // localStorage) — hay que usar el mutate de ESE contexto, no el `mutate`
+  // global de "swr", que apunta a la caché por defecto de la app.
+  const { mutate } = useSWRConfig();
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<SysacadWsUser | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) {
@@ -65,10 +70,36 @@ export default function SysacadPage() {
 
   const coreLoading = !!user && !sessionExpired && (!avance || !cursado || !examenes || !plan);
 
+  // Cada acordeón depende de un subconjunto distinto de estos cuatro fetches
+  // (todos corren en paralelo, no todos tardan lo mismo). En vez de esperar a
+  // que terminen todos para recién ahí mostrar algo, cada uno aparece apenas
+  // su propio dato está listo — el resto sigue mostrando su placeholder.
+  //
+  // `!refreshing` es necesario además de `!!avance` etc.: estos hooks usan
+  // keepPreviousData, así que cuando el botón "Recargar" borra la caché y
+  // revalida, `avance`/`cursado`/`examenes`/`plan` NUNCA vuelven a undefined
+  // (SWR sigue devolviendo el último dato conocido a propósito, para no
+  // parpadear en una revalidación silenciosa normal). La única señal
+  // confiable de "hay un refresh explícito en curso" es este flag manual.
+  const avanceReady = !!avance && !refreshing;
+  const cursadoReady = !!cursado && !refreshing;
+  const examenesReady = !!examenes && !refreshing;
+  const planReady = !!plan && !refreshing;
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await mutate(() => true, undefined, { revalidate: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   function handleLoginSuccess() {
     setUser(getWsUser());
     // Revalida los datos del WS (limpia errores 401 cacheados de una sesión vencida).
-    globalMutate(() => true);
+    mutate(() => true);
     const next = new URLSearchParams(window.location.search).get("next");
     if (next) router.replace(next);
   }
@@ -103,10 +134,10 @@ export default function SysacadPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <ProfileHeader user={user} />
+            <ProfileHeader user={user} refreshing={refreshing} onRefresh={handleRefresh} />
 
             <ResumenHero
-              loading={coreLoading || estadoLoading}
+              loading={coreLoading || estadoLoading || refreshing}
               estado={estado}
               examenes={examenes?.Examenes ?? []}
               plan={plan ?? null}
@@ -124,48 +155,93 @@ export default function SysacadPage() {
               <span className="text-[15px] font-semibold text-white drop-shadow">Inscripción a materias</span>
             </Link>
 
-            {coreLoading && <SpinnerBlock label="Cargando tu estado académico…" minHeight={140} />}
-
-            {!coreLoading && (
-              <>
-                <EgresoCard estado={estado} plan={plan!} avance={avance!} />
-                <PlanRoadmap estado={estado} cursado={cursado!} plan={plan!} legajo={legajo} />
-                <AsistenciaCard
-                  cursado={cursado!}
-                  plan={plan!}
-                  especialidad={user.especialidad}
-                  legajo={legajo}
-                />
-                <PlanificacionCard estado={estado} cursado={cursado!} legajo={legajo} />
-                <EstadisticasCard examenes={examenes!.Examenes ?? []} />
-                <AvanceWidget avance={avance!} examenes={examenes!.Examenes ?? []} estado={estado} estadoLoading={estadoLoading} />
-                <CursadoWidget cursado={cursado!} />
-                <HistorialAcademico
-                  estado={estado}
-                  examenes={examenes!.Examenes ?? []}
-                  planMaterias={plan!.Materias ?? []}
-                />
-                <CorrelatividadesAccordion legajo={legajo} />
-
-                <Link
-                  href="/dashboard/sysacad/password"
-                  className="flex items-center gap-3 px-5 py-3.5 rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] backdrop-blur-md shadow-sm active:bg-[var(--surface2)]"
-                >
-                  <KeyRound className="w-[18px] h-[18px] text-[#8e8e93]" />
-                  <span className="flex-1 text-[15px] font-medium text-[var(--fg)]">Cambiar contraseña</span>
-                  <ChevronRight className="w-4 h-4 text-[var(--secondary)]" />
-                </Link>
-
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="w-full py-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--separator)] text-[#ff3b30] font-semibold text-[15px] active:opacity-80 transition-opacity shadow-sm flex items-center justify-center gap-2"
-                >
-                  <LogOut className="w-[18px] h-[18px]" />
-                  Salir de Sysacad
-                </button>
-              </>
+            {/* Historial académico */}
+            {examenesReady && planReady && !estadoLoading ? (
+              <HistorialAcademico
+                estado={estado}
+                examenes={examenes!.Examenes ?? []}
+                planMaterias={plan!.Materias ?? []}
+                comisiones={cursado?.Comisiones ?? []}
+              />
+            ) : (
+              <AccordionSkeleton title="Historial académico" />
             )}
+
+            {/* Mapa del plan */}
+            {cursadoReady && planReady && !estadoLoading ? (
+              <PlanRoadmap estado={estado} cursado={cursado!} plan={plan!} legajo={legajo} />
+            ) : (
+              <AccordionSkeleton title="Mapa del plan" />
+            )}
+
+            {cursadoReady && planReady ? (
+              <AsistenciaCard
+                cursado={cursado!}
+                plan={plan!}
+                especialidad={user.especialidad}
+                legajo={legajo}
+              />
+            ) : (
+              <AccordionSkeleton title="Asistencia" />
+            )}
+
+            {cursadoReady && !estadoLoading ? (
+              <PlanificacionCard estado={estado} cursado={cursado!} legajo={legajo} />
+            ) : (
+              <AccordionSkeleton title="Planificación" />
+            )}
+
+            {examenesReady ? (
+              <EstadisticasCard examenes={examenes!.Examenes ?? []} comisiones={cursado?.Comisiones ?? []} />
+            ) : (
+              <AccordionSkeleton title="Estadísticas" />
+            )}
+
+            {avanceReady && examenesReady ? (
+              <AvanceWidget avance={avance!} examenes={examenes!.Examenes ?? []} estado={estado} estadoLoading={estadoLoading} />
+            ) : (
+              <AccordionSkeleton title="Avance" />
+            )}
+
+            {cursadoReady ? (
+              <CursadoWidget cursado={cursado!} />
+            ) : (
+              <AccordionSkeleton title="Cursado" />
+            )}
+
+            {/* No depende de los fetches de arriba (se fetchea sola), pero
+                igual respeta el refresh manual: se desmonta y se vuelve a
+                montar, lo que resetea su loading interno. */}
+            {!refreshing ? (
+              <CorrelatividadesAccordion legajo={legajo} />
+            ) : (
+              <AccordionSkeleton title="Correlatividades" />
+            )}
+
+            {/* Estimación de egreso: casi al final, antes de cambiar contraseña. */}
+            {planReady && avanceReady && !estadoLoading ? (
+              <EgresoCard estado={estado} plan={plan!} avance={avance!} />
+            ) : (
+              <AccordionSkeleton title="Estimación de egreso" />
+            )}
+
+            <Link
+              href="/dashboard/sysacad/password"
+              className="flex items-center gap-3 px-5 py-3.5 rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] backdrop-blur-md shadow-sm active:bg-[var(--surface2)]"
+            >
+              <KeyRound className="w-[18px] h-[18px] text-[#8e8e93]" />
+              <span className="flex-1 text-[15px] font-medium text-[var(--fg)]">Cambiar contraseña</span>
+              <ChevronRight className="w-4 h-4 text-[var(--secondary)]" />
+            </Link>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full py-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--separator)] text-[#ff3b30] font-semibold text-[15px] active:opacity-80 transition-opacity shadow-sm flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-[18px] h-[18px]" />
+              Salir de Sysacad
+            </button>
           </div>
         )}
       </main>

@@ -105,8 +105,8 @@ export function FileViewer({ content }: { content: MoodleContent }) {
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const { openPanel, closePanel, activeKey } = usePdfPreview();
 
-  const proxyUrl    = `/api/files?url=${encodeURIComponent(content.fileurl!)}&inline=1`;
-  const downloadUrl = `/api/files?url=${encodeURIComponent(content.fileurl!)}`;
+  const proxyUrl    = `/api/files?ref=${encodeURIComponent(content.fileurl!)}&inline=1`;
+  const downloadUrl = `/api/files?ref=${encodeURIComponent(content.fileurl!)}`;
   const fileName    = resolvedName ?? realFilename(content.fileurl, content.filename, content.fileType);
   const isActive    = activeKey === content.fileurl;
 
@@ -119,7 +119,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     // (it will have an extension). Skip the fetch if that's the case.
     const dot = content.filename.lastIndexOf(".");
     if (dot > 0 && content.filename.length - dot <= 6) return;
-    fetch(`/api/meta?url=${encodeURIComponent(content.fileurl)}`)
+    fetch(`/api/meta?ref=${encodeURIComponent(content.fileurl)}`)
       .then((r) => r.json())
       .then((j) => { if (j.filename) setResolvedName(j.filename); })
       .catch(() => { /* ignore — display name is the fallback */ });
@@ -138,7 +138,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     if (kind === "none") {
       setState({ phase: "detecting" });
       try {
-        const r = await fetch(`/api/meta?url=${encodeURIComponent(content.fileurl!)}`);
+        const r = await fetch(`/api/meta?ref=${encodeURIComponent(content.fileurl!)}`);
         const j = await r.json();
         kind = kindFromCT(j.contentType) !== "none"
           ? kindFromCT(j.contentType)

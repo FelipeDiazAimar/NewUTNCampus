@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
+import { decodeUrlRef } from "@/lib/urlToken";
 
 async function fetchWithCookie(
   url: string,
@@ -27,7 +28,8 @@ async function fetchWithCookie(
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
-  const fileurl = req.nextUrl.searchParams.get("url");
+  const ref = req.nextUrl.searchParams.get("ref");
+  const fileurl = ref ? decodeUrlRef(ref) : null;
 
   if (!sessionToken || !fileurl) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });

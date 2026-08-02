@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { MOODLE_BASE, absMoodleUrl } from "@/lib/moodle";
+import { decodeUrlRef, encodeUrlRef } from "@/lib/urlToken";
 
 function stripTags(html: string) {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -59,7 +61,11 @@ function parseFileBlocks(html: string): SubmittedFile[] {
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
-  const url = req.nextUrl.searchParams.get("url");
+  const ref = req.nextUrl.searchParams.get("ref");
+  const id = req.nextUrl.searchParams.get("id");
+  // `id` (el cmid numérico) es una alternativa a `ref` para páginas que solo
+  // conocen el id de la tarea (route param propio, no una URL de Moodle).
+  const url = ref ? decodeUrlRef(ref) : id && /^\d+$/.test(id) ? `${MOODLE_BASE}/mod/assign/view.php?id=${id}` : null;
   if (!sessionToken || !url) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
   }
@@ -141,8 +147,9 @@ export async function GET(req: NextRequest) {
     // archivos realmente entregados por el alumno (submission_files).
     const allBlocks = parseFileBlocks(html);
     const isIntro = (f: SubmittedFile) => /introattachment/i.test(f.url);
-    const introFiles = allBlocks.filter(isIntro);
-    const files = allBlocks.filter((f) => !isIntro(f));
+    const tokenize = (f: SubmittedFile): SubmittedFile => ({ ...f, url: encodeUrlRef(absMoodleUrl(f.url)) });
+    const introFiles = allBlocks.filter(isIntro).map(tokenize);
+    const files = allBlocks.filter((f) => !isIntro(f)).map(tokenize);
 
     const cmid = url.match(/[?&]id=(\d+)/)?.[1] ?? "";
     const courseid =

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { MoodleCourse } from "@/lib/moodle";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE, toProxyPath } from "@/lib/moodle";
 
 function decodeEntities(value: string) {
   return value
@@ -126,7 +126,7 @@ function parseCourses(html: string): MoodleCourse[] {
       fullname: name,
       shortname: name,
       courseimage: "",
-      viewurl: `${MOODLE_BASE}/course/view.php?id=${id}`,
+      viewurl: toProxyPath(`${MOODLE_BASE}/course/view.php?id=${id}`),
       progress: 0,
       hasprogress: false,
       coursecategory: "",
@@ -160,7 +160,7 @@ function parseCourses(html: string): MoodleCourse[] {
       fullname: name,
       shortname: name,
       courseimage: "",
-      viewurl: `${MOODLE_BASE}/course/view.php?id=${id}`,
+      viewurl: toProxyPath(`${MOODLE_BASE}/course/view.php?id=${id}`),
       progress: 0,
       hasprogress: false,
       coursecategory: "",
@@ -192,7 +192,7 @@ function parseCourses(html: string): MoodleCourse[] {
       fullname: name,
       shortname: name,
       courseimage: "",
-      viewurl: `${MOODLE_BASE}/course/view.php?id=${id}`,
+      viewurl: toProxyPath(`${MOODLE_BASE}/course/view.php?id=${id}`),
       progress: 0,
       hasprogress: false,
       coursecategory: "",

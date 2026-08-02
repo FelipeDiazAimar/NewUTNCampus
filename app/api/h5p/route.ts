@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
 
 function decodeEntities(s: string) {
   return s.replace(/&amp;/g, "&").replace(/&#0?39;/g, "'").replace(/&quot;/g, '"');

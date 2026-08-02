@@ -2,6 +2,7 @@
 
 import { GitBranch } from "lucide-react";
 import { useCorrelatividades } from "@/lib/sysacadHooks";
+import { AccordionSkeleton } from "@/components/Spinner";
 import CollapsibleCard from "./CollapsibleCard";
 
 /** Píldora disponible/bloqueada. */
@@ -28,6 +29,10 @@ export default function CorrelatividadesAccordion({ legajo }: { legajo?: string 
   }
   const ordenado = [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0], "es", { numeric: true }));
 
+  if (isLoading && items.length === 0) {
+    return <AccordionSkeleton title="Correlatividades" />;
+  }
+
   return (
     <CollapsibleCard
       title="Correlatividades"
@@ -35,9 +40,7 @@ export default function CorrelatividadesAccordion({ legajo }: { legajo?: string 
       iconColor="#af52de"
       right={items.length > 0 ? <span className="text-[12px] text-[var(--secondary)]">{items.length}</span> : undefined}
     >
-      {isLoading && items.length === 0 ? (
-        <p className="text-[14px] text-[var(--secondary)] text-center py-4">Cargando…</p>
-      ) : ordenado.length === 0 ? (
+      {ordenado.length === 0 ? (
         <p className="text-[14px] text-[var(--secondary)] text-center py-4">
           Disponible al iniciar sesión en Sysacad.
         </p>

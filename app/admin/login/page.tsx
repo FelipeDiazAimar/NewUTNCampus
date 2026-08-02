@@ -27,7 +27,7 @@ function AdminLoginForm() {
   const nextUrl = searchParams.get("next") ?? "/admin/dashboard";
 
   useEffect(() => {
-    if (document.cookie.includes("admin_session_token=campus-admin")) {
+    if (document.cookie.includes("admin_ui=1")) {
       router.replace(nextUrl);
     }
   }, [router, nextUrl]);

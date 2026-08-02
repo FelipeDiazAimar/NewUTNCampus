@@ -8,10 +8,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendPushToUser } from "@/lib/webPush";
+import { isAdminRequest } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
-
-const SESSION_TOKEN = "campus-admin-2024-internal";
 
 type EventType =
   | "NUEVA_TAREA"
@@ -106,8 +105,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   // Verificar sesión admin
-  const token = req.cookies.get("admin_session_token")?.value;
-  if (token !== SESSION_TOKEN) {
+  if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

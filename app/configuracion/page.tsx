@@ -23,8 +23,6 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import { clearCourseCache } from "@/lib/hooks";
 
-const ADMIN_TOKEN = "campus-admin-2024-internal";
-
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 type DeviceSession = {
@@ -102,7 +100,7 @@ export default function ConfiguracionPage() {
       router.push("/");
       return;
     }
-    setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
+    setIsAdmin(document.cookie.includes("admin_ui=1"));
   }, [router]);
 
   const { data, isLoading, mutate } = useSWR<{ sessions: DeviceSession[] }>("/api/sessions", fetcher, {

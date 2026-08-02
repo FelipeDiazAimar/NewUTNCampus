@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CalendarOff } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { mutate as globalMutate } from "swr";
+import { useSWRConfig } from "swr";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
@@ -40,6 +41,12 @@ function getWsUser(): SysacadWsUser | null {
 
 export default function InscripcionPage() {
   const router = useRouter();
+  // Esta página vive bajo app/sysacad/layout.tsx, que envuelve /sysacad y
+  // /sysacad/inscripcion en un SWRConfig con caché propia (persistida en
+  // localStorage). Hay que usar el mutate de ESE contexto, no el `mutate`
+  // global de "swr" — ese apunta a la caché por defecto y no revalida nada
+  // de lo que se ve acá.
+  const { mutate } = useSWRConfig();
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<SysacadWsUser | null>(null);
   const [banner, setBanner] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -57,6 +64,13 @@ export default function InscripcionPage() {
   const legajo = user?.legajo;
   const { data, error, isLoading } = useMateriasParaCursado(legajo);
   const sessionExpired = (error as { status?: number } | undefined)?.status === 401;
+  // No sabemos con certeza cómo señaliza Sysacad el cierre del período de
+  // inscripción (nunca lo capturamos), pero en la práctica la sección
+  // desaparece de la app oficial. Ante cualquier fallo que no sea sesión
+  // vencida, se asume que la inscripción no está disponible ahora mismo (fin
+  // de temporada o el servicio caído) y se griséa toda la sección en vez de
+  // dejar pasar errores sueltos a la pantalla.
+  const inscripcionNoDisponible = !isLoading && !!error && !sessionExpired;
 
   const materiasKey = legajo ? `/api/sysacadws/cursado/materiasparacursado/${legajo}` : null;
 
@@ -136,7 +150,7 @@ export default function InscripcionPage() {
     // La clave de matriculación al campus recién existe después de inscribirse,
     // así que hay que releer la materia de la lista revalidada.
     const actualizado = materiasKey
-      ? ((await globalMutate(materiasKey)) as SysacadMateriasParaCursado | undefined)
+      ? ((await mutate(materiasKey)) as SysacadMateriasParaCursado | undefined)
       : undefined;
 
     const conClave = (actualizado?.Materias ?? []).find((m) => m.IdMateria === materia.IdMateria);
@@ -180,7 +194,7 @@ export default function InscripcionPage() {
     const r = await postDesinscribir(legajo, materia);
     if (r.ok) {
       setBanner({ tone: "ok", text: `Te desinscribiste de ${materia.NombreMateria}.` });
-      if (materiasKey) await globalMutate(materiasKey);
+      if (materiasKey) await mutate(materiasKey);
     } else {
       setBanner({ tone: "error", text: r.motivo });
     }
@@ -188,7 +202,7 @@ export default function InscripcionPage() {
 
   function handleLoginSuccess() {
     setUser(getWsUser());
-    globalMutate(() => true);
+    mutate(() => true);
   }
 
   if (!ready) {
@@ -234,121 +248,130 @@ export default function InscripcionPage() {
               </div>
             )}
 
-            <SegmentedControl
-              ariaLabel="Sistema de inscripción"
-              value={vista}
-              onChange={(v) => setVista(v as "sysacad" | "campus")}
-              options={[
-                { value: "sysacad", label: "Sysacad" },
-                { value: "campus", label: "Campus" },
-              ]}
-            />
-
-            {vista === "sysacad" && (
-              <>
             {isLoading && <SpinnerBlock label="Cargando materias…" />}
 
-            {!isLoading && error && !sessionExpired && (
-              <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
-                No se pudieron cargar las materias. Reintentá en unos minutos.
-              </p>
-            )}
-
-            {!isLoading && !error && materias.length === 0 && (
-              <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
-                No hay materias para cursado en este momento.
-              </p>
-            )}
-
-            {!isLoading && inscriptas.length > 0 && (
-              <section>
-                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-                  Inscripto
+            {inscripcionNoDisponible && (
+              <div className="rounded-3xl border border-[var(--separator)] bg-[var(--surface2)] px-5 py-10 text-center opacity-80">
+                <CalendarOff className="mx-auto h-8 w-8 text-[var(--secondary)]" />
+                <p className="mt-3 text-[15px] font-semibold text-[var(--fg)]">Inscripción no disponible</p>
+                <p className="mx-auto mt-1 max-w-xs text-[13px] leading-relaxed text-[var(--secondary)]">
+                  Puede que el período de inscripción a materias esté cerrado o que el servicio de
+                  Sysacad no esté respondiendo. Volvé a intentarlo más tarde.
                 </p>
-                <div className="space-y-2.5">
-                  {inscriptas.map((m) => (
-                    <MateriaInscripcionItem
-                      key={m.IdMateria}
-                      legajo={legajo!}
-                      materia={m}
-                      mode="inscripta"
-                      onInscribir={handleInscribir}
-                      onDesinscribir={handleDesinscribir}
-                    />
-                  ))}
-                </div>
-              </section>
+              </div>
             )}
 
-            {/* Hasta que vuelven las comisiones de cada materia no se sabe
-                cuáles están bloqueadas por correlatividades, y mostrarlas
-                todas bajo "Podés inscribirte" para después reacomodarlas es
-                peor que esperar. */}
-            {!isLoading && disponibles.length > 0 && !comisionesLoaded && (
-              <section>
-                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-                  Podés inscribirte
-                </p>
-                <SpinnerBlock label="Consultando correlatividades…" />
-              </section>
-            )}
+            {!isLoading && !inscripcionNoDisponible && (
+              <>
+                <SegmentedControl
+                  ariaLabel="Sistema de inscripción"
+                  value={vista}
+                  onChange={(v) => setVista(v as "sysacad" | "campus")}
+                  options={[
+                    { value: "sysacad", label: "Sysacad" },
+                    { value: "campus", label: "Campus" },
+                  ]}
+                />
 
-            {!isLoading && comisionesLoaded && disponiblesReales.length > 0 && (
-              <section>
-                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-                  Podés inscribirte
-                </p>
-                <div className="space-y-2.5">
-                  {disponiblesReales.map((m) => (
-                    <MateriaInscripcionItem
-                      key={m.IdMateria}
-                      legajo={legajo!}
-                      materia={m}
-                      mode="disponible"
-                      prefetched={comisionesMap[m.IdMateria]}
-                      onInscribir={handleInscribir}
-                      onDesinscribir={handleDesinscribir}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+                {vista === "sysacad" && (
+                  <>
+                    {materias.length === 0 && (
+                      <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
+                        No hay materias para cursado en este momento.
+                      </p>
+                    )}
 
-            {!isLoading && bloqueadas.length > 0 && (
-              <section>
-                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-                  Bloqueadas (correlatividades)
-                </p>
-                <div className="space-y-2.5">
-                  {bloqueadas.map((m) => {
-                    const r = comisionesMap[m.IdMateria];
-                    return (
-                      <MateriaInscripcionItem
-                        key={m.IdMateria}
-                        legajo={legajo!}
-                        materia={m}
-                        mode="bloqueada"
-                        motivo={r?.ok === false ? r.motivo : undefined}
-                        onInscribir={handleInscribir}
-                        onDesinscribir={handleDesinscribir}
-                      />
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+                    {inscriptas.length > 0 && (
+                      <section>
+                        <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                          Inscripto
+                        </p>
+                        <div className="space-y-2.5">
+                          {inscriptas.map((m) => (
+                            <MateriaInscripcionItem
+                              key={m.IdMateria}
+                              legajo={legajo!}
+                              materia={m}
+                              mode="inscripta"
+                              onInscribir={handleInscribir}
+                              onDesinscribir={handleDesinscribir}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Hasta que vuelven las comisiones de cada materia no se sabe
+                        cuáles están bloqueadas por correlatividades, y mostrarlas
+                        todas bajo "Podés inscribirte" para después reacomodarlas es
+                        peor que esperar. */}
+                    {disponibles.length > 0 && !comisionesLoaded && (
+                      <section>
+                        <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                          Podés inscribirte
+                        </p>
+                        <SpinnerBlock label="Consultando correlatividades…" />
+                      </section>
+                    )}
+
+                    {comisionesLoaded && disponiblesReales.length > 0 && (
+                      <section>
+                        <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                          Podés inscribirte
+                        </p>
+                        <div className="space-y-2.5">
+                          {disponiblesReales.map((m) => (
+                            <MateriaInscripcionItem
+                              key={m.IdMateria}
+                              legajo={legajo!}
+                              materia={m}
+                              mode="disponible"
+                              prefetched={comisionesMap[m.IdMateria]}
+                              onInscribir={handleInscribir}
+                              onDesinscribir={handleDesinscribir}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {bloqueadas.length > 0 && (
+                      <section>
+                        <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                          Bloqueadas (correlatividades)
+                        </p>
+                        <div className="space-y-2.5">
+                          {bloqueadas.map((m) => {
+                            const r = comisionesMap[m.IdMateria];
+                            return (
+                              <MateriaInscripcionItem
+                                key={m.IdMateria}
+                                legajo={legajo!}
+                                materia={m}
+                                mode="bloqueada"
+                                motivo={r?.ok === false ? r.motivo : undefined}
+                                onInscribir={handleInscribir}
+                                onDesinscribir={handleDesinscribir}
+                              />
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
+                  </>
+                )}
+
+                {vista === "campus" && (
+                  <CampusView
+                    inscriptas={inscriptas}
+                    catalogo={catalogo}
+                    loading={catalogoLoading}
+                    idsMatriculados={idsMatriculados}
+                    sincronizando={sincronizandoCampus}
+                    onMatriculado={confirmarMatricula}
+                  />
+                )}
               </>
-            )}
-
-            {vista === "campus" && (
-              <CampusView
-                inscriptas={inscriptas}
-                catalogo={catalogo}
-                loading={catalogoLoading}
-                idsMatriculados={idsMatriculados}
-                sincronizando={sincronizandoCampus}
-                onMatriculado={confirmarMatricula}
-              />
             )}
           </div>
         )}

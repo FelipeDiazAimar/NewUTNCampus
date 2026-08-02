@@ -10,10 +10,11 @@ function isDefaultAvatar(url?: string | null): boolean {
   return !url || /\/theme\/image\.php\/[^?]*\/u\/f\d/.test(url);
 }
 
+// El avatar ya viene reescrito a /api/cvg desde /api/moodle (ver
+// rewriteMoodleUrlsDeep); esto es solo una red de seguridad.
 function proxiedAvatar(url: string): string {
-  return /frsfco\.cvg\.utn\.edu\.ar/.test(url)
-    ? `/api/files?url=${encodeURIComponent(url)}&inline=1`
-    : url;
+  if (url.startsWith("/api/")) return url;
+  return url.startsWith("/") ? `/api/cvg${url}` : url;
 }
 
 /** En móvil usa mailto:, en PC abre Gmail web. */

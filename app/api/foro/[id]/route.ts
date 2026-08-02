@@ -5,13 +5,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
+import { isAdminRequest } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
 
-const ADMIN_TOKEN = "campus-admin-2024-internal";
-
 function isAdmin(req: NextRequest): boolean {
-  return req.cookies.get("admin_session_token")?.value === ADMIN_TOKEN;
+  return isAdminRequest(req);
 }
 
 export async function PATCH(

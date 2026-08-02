@@ -3,7 +3,9 @@ import type { MoodleCourseSection, MoodleModule, MoodleContent } from "@/lib/moo
 import { isGuestRequest } from "@/lib/guest";
 import { MOCK_COURSE_SECTIONS } from "@/lib/guestMockData";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE, absMoodleUrl, toProxyPath, rewriteMoodleHtml } from "@/lib/moodle";
+import { encodeUrlRef } from "@/lib/urlToken";
+import { parseFolderTree } from "@/lib/folderTree";
 
 function decodeEntities(s: string) {
   return s
@@ -49,9 +51,21 @@ function parseModules(html: string): MoodleModule[] {
       stripTags(chunk.match(/class="[^"]*instancename[^"]*">([\s\S]*?)<\/span>/)?.[1] ?? "");
     const name = decodeEntities(nameRaw || `Módulo ${modId}`);
 
-    const url =
+    let rawUrl =
       chunk.match(/class="[^"]*aalink[^"]*"[^>]*href="([^"]+)"/)?.[1] ??
       chunk.match(/<a[^>]+href="([^"]*\/mod\/[^"]+)"/)?.[1];
+    // Carpetas con "Mostrar contenido en la página del curso" (display inline)
+    // no traen un <a href> a mod/folder/view.php — el árbol de archivos viene
+    // embebido directo en el HTML de la sección. view.php?id=cmid sigue
+    // existiendo igual (el display mode no afecta esa página), así que la
+    // reconstruimos a partir del cmid para que el flujo de /api/folder funcione.
+    if (!rawUrl && modname === "folder") {
+      rawUrl = `/mod/folder/view.php?id=${modId}`;
+    }
+    // Resuelto a absoluta acá (necesario para resolveFilename/HEAD más abajo);
+    // se convierte a token opaco o a ruta /api/cvg recién en finalizeModule,
+    // justo antes de mandar la respuesta al cliente.
+    const url = rawUrl ? absMoodleUrl(rawUrl) : undefined;
 
     const visible =
       chunk.includes("dimmed_text") || chunk.includes('"dimmed"') ? 0 : 1;
@@ -96,6 +110,14 @@ function parseModules(html: string): MoodleModule[] {
       mod.contents = [content];
     }
 
+    // Carpetas con "Mostrar en la página del curso": el árbol de archivos ya
+    // está embebido acá mismo (mod/folder/view.php redirige de vuelta al
+    // curso para este modo, así que pedirlo aparte no sirve — ver lib/folderTree.ts).
+    if (modname === "folder" && /class="[^"]*\bfilemanager\b[^"]*"/.test(chunk)) {
+      mod.folderEntries = parseFolderTree(chunk);
+      mod.folderDownloadUrl = encodeUrlRef(`${MOODLE_BASE}/mod/folder/download_folder.php?id=${modId}`);
+    }
+
     modules.push(mod);
   }
 
@@ -129,12 +151,35 @@ function sanitizeSummaryHtml(html: string): string {
     // Strip inline styles and Moodle classes so they never override the app's typography
     .replace(/\s+style="[^"]*"/gi, "")
     .replace(/\s+class="[^"]*"/gi, "")
-    // Make Moodle-relative URLs absolute so images and links resolve correctly
-    .replace(/\b(href|src)="\/(?!\/)/g, `$1="${MOODLE_BASE}/`)
     // Remove empty paragraphs and stacked <br> left by Moodle's editor
     .replace(/<p>\s*(<br\s*\/?>)?\s*<\/p>/gi, "")
     .replace(/(<br\s*\/?>\s*){2,}/gi, "<br>")
     .trim();
+}
+
+/** Módulos internos de Moodle (páginas navegables) vs. módulos "archivo"/"link
+ *  externo" que necesitan pasar por el flujo de tokens (descarga autenticada o
+ *  resolución de URL externa vía /api/resolve). */
+function needsUrlToken(modname: string): boolean {
+  return modname === "assign" || modname === "url";
+}
+
+/** Última pasada antes de mandar la respuesta al cliente: convierte cada URL
+ *  real de Moodle en un token opaco (assign/url externo) o en una ruta same-
+ *  origin /api/cvg (todo lo demás), y reescribe el HTML embebido (labels,
+ *  resúmenes de sección) para que sus links/imágenes tampoco expongan el
+ *  dominio real. Se hace acá, no en parseModules, porque resolveFilename
+ *  necesita las URLs absolutas reales para poder hacer el HEAD request. */
+function finalizeModule(mod: MoodleModule): MoodleModule {
+  const url = mod.url
+    ? needsUrlToken(mod.modname) ? encodeUrlRef(mod.url) : toProxyPath(mod.url)
+    : mod.url;
+  const contents = mod.contents?.map((c) => ({
+    ...c,
+    fileurl: c.fileurl ? encodeUrlRef(c.fileurl) : c.fileurl,
+  }));
+  const description = mod.description ? rewriteMoodleHtml(mod.description) : mod.description;
+  return { ...mod, url, contents, description };
 }
 
 /** Walk an HTML string and return content up to the matching closing </div>. */
@@ -189,7 +234,7 @@ function extractSummaryHtml(sectionHtml: string): string {
       ? inner.slice(noOverflowM.index! + noOverflowM[0].length)
       : inner;
 
-    const content = sanitizeSummaryHtml(extractUntilClosingDiv(contentSrc).trim());
+    const content = rewriteMoodleHtml(sanitizeSummaryHtml(extractUntilClosingDiv(contentSrc).trim()));
     if (content) return content;
   }
 
@@ -336,6 +381,12 @@ export async function GET(req: NextRequest) {
       }
     }
     await Promise.all(resolveJobs);
+
+    // Última pasada: convertir URLs reales de Moodle en tokens opacos o rutas
+    // /api/cvg antes de que la respuesta salga al cliente (ver finalizeModule).
+    for (const section of sections) {
+      section.modules = section.modules.map(finalizeModule);
+    }
 
     return NextResponse.json({ data: sections, courseName });
   } catch (err) {

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCourses, callMoodleService, type MoodleCourse } from "@/lib/moodle";
+import { getCourses, callMoodleService, MOODLE_BASE, type MoodleCourse } from "@/lib/moodle";
 import { isGuestRequest } from "@/lib/guest";
 import { MOCK_TAREAS } from "@/lib/guestMockData";
+import { encodeUrlRef } from "@/lib/urlToken";
 
 export const runtime = "nodejs";
-
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
 /**
  * Tarea consolidada de todos los cursos del alumno. Reúne — vía scraping — el
@@ -280,7 +279,7 @@ export async function GET(req: NextRequest) {
         const id = j.url.match(/[?&]id=(\d+)/)?.[1] ?? "";
         return {
           id,
-          url: j.url,
+          url: encodeUrlRef(j.url),
           title: detail.title,
           course: j.course,
           courseId: j.courseId,

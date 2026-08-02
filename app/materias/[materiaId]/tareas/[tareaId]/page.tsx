@@ -10,8 +10,6 @@ import AssignmentStatusList from "@/components/AssignmentStatusList";
 import SubmissionUploader from "@/components/SubmissionUploader";
 import type { AssignInfo } from "@/app/api/assign/route";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
-
 export default function TareaPage({
   params,
 }: {
@@ -27,11 +25,10 @@ export default function TareaPage({
 
   const loadAssignment = useCallback(
     async (opts?: { silent?: boolean }) => {
-      const assignUrl = `${MOODLE_BASE}/mod/assign/view.php?id=${tareaId}`;
       if (!opts?.silent) setLoading(true);
       setError("");
       try {
-        const res = await fetch(`/api/assign?url=${encodeURIComponent(assignUrl)}`, {
+        const res = await fetch(`/api/assign?id=${encodeURIComponent(tareaId)}`, {
           cache: "no-store",
         });
         const json = await res.json();

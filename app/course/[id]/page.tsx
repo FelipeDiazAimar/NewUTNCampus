@@ -14,8 +14,6 @@ import FolderViewer from "@/components/FolderViewer";
 import H5pViewer from "@/components/H5pViewer";
 import { FileViewer } from "@/components/CourseFileViewer";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
-
 function getUserInfo() {
   if (typeof document === "undefined") return {};
   const m = document.cookie.match(/moodle_user=([^;]+)/);
@@ -99,18 +97,15 @@ function sanitizeHtml(html: string) {
     });
 }
 
-/** Route Moodle-protected images (pluginfile.php) through the authenticated
- *  proxy so the session cookie is attached; leave external images untouched. */
+/** Las imágenes embebidas ya vienen reescritas a /api/cvg desde el servidor
+ *  (ver rewriteMoodleHtml en /api/course). Esto es solo una red de seguridad
+ *  por si algo se coló sin proxear — nunca construye un link al dominio real. */
 function proxyImageSrc(src?: string): string | undefined {
   if (!src) return undefined;
-  if (src.startsWith("/api/")) return src; // already proxied
-  let abs = src;
-  if (src.startsWith("//")) abs = `https:${src}`;
-  else if (src.startsWith("/")) abs = `${MOODLE_BASE}${src}`;
-  if (abs.includes("pluginfile.php") || abs.includes("frsfco.cvg.utn.edu.ar")) {
-    return `/api/files?url=${encodeURIComponent(abs)}&inline=1`;
-  }
-  return abs;
+  if (src.startsWith("/api/")) return src;
+  if (src.startsWith("/")) return `/api/cvg${src}`;
+  const relative = src.replace(/^https?:\/\/[^/]*cvg\.utn\.edu\.ar/, "");
+  return relative !== src ? `/api/cvg${relative}` : src;
 }
 
 function safeParseHtml(html: string) {
@@ -153,12 +148,13 @@ function UrlModuleRow({ mod }: { mod: MoodleModule }) {
     if (!mod.url) return;
     setResolving(true);
     try {
-      const r = await fetch(`/api/resolve?url=${encodeURIComponent(mod.url)}`);
+      const r = await fetch(`/api/resolve?ref=${encodeURIComponent(mod.url)}`);
       const { url } = await r.json();
       setExternalUrl(url);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch {
-      window.open(mod.url, "_blank", "noopener,noreferrer");
+      // mod.url es un token opaco: sin la resolución del servidor no hay
+      // destino válido para abrir.
     } finally {
       setResolving(false);
     }

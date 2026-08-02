@@ -34,10 +34,14 @@ export async function POST(req: NextRequest) {
 
   const keep = remember === true;
 
-  console.log("[auth] Login attempt for user:", username, keep ? "(remember)" : "");
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[auth] Login attempt", keep ? "(remember)" : "");
+  }
   try {
     const session = await moodleLogin(username, password);
-    console.log("[auth] Login successful:", { userid: session.userid, fullname: session.fullname });
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth] Login successful");
+    }
     const response = NextResponse.json({ ok: true, session });
     setSessionCookies(response, session, keep);
 

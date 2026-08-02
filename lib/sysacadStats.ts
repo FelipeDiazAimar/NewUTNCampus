@@ -4,7 +4,14 @@
  * de notas, promedio por año, estimación de egreso, mapa del plan, materias
  * desbloqueadoras y materias disponibles para inscribir.
  */
-import { parseNota, type SysacadAvance, type SysacadCursado, type SysacadExamen, type SysacadPlan } from "./sysacadws";
+import {
+  parseNota,
+  type SysacadAvance,
+  type SysacadComision,
+  type SysacadCursado,
+  type SysacadExamen,
+  type SysacadPlan,
+} from "./sysacadws";
 import type { MateriaCorrelativa, MateriaEstado } from "./sysacadTypes";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -116,6 +123,55 @@ export function computeHistograma(examenes: SysacadExamen[]): HistogramaStats {
   }
 
   return { buckets, ausentes, total, maxCount };
+}
+
+/** "Par. 1: 9 (nueve), Par. 2: 8 (ocho)" → [9, 8]. Ignora lo que no matchee. */
+function parseParcialesNumeros(raw: string | undefined): number[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((part) => part.trim().match(/:\s*(\d+)/))
+    .filter((m): m is RegExpMatchArray => m !== null)
+    .map((m) => Number(m[1]))
+    .filter((n) => n >= 1 && n <= 10);
+}
+
+/**
+ * Mismo histograma que computeHistograma, pero de los parciales/integradores
+ * del ciclo lectivo vigente (campo Parciales de /cursado/coninasistencia) en
+ * vez de los finales rendidos. No tiene fecha por entrada — el desglose por
+ * materia sigue funcionando igual para el tooltip.
+ */
+export function computeHistogramaParciales(comisiones: SysacadComision[], anioAcademico: number): HistogramaStats {
+  const map = new Map<number, Map<string, number>>();
+  let total = 0;
+
+  for (const c of comisiones) {
+    if (c.AñoAcademico && c.AñoAcademico !== String(anioAcademico)) continue;
+    const notas = parseParcialesNumeros(c.Parciales);
+    if (notas.length === 0) continue;
+    const name = (c.NombreMateria ?? "Materia").trim();
+    for (const nota of notas) {
+      total++;
+      if (!map.has(nota)) map.set(nota, new Map());
+      const mm = map.get(nota)!;
+      mm.set(name, (mm.get(name) ?? 0) + 1);
+    }
+  }
+
+  const buckets: NotaBucket[] = [];
+  let maxCount = 0;
+  for (let n = 1; n <= 10; n++) {
+    const mm = map.get(n);
+    const count = mm ? [...mm.values()].reduce((a, b) => a + b, 0) : 0;
+    maxCount = Math.max(maxCount, count);
+    const materias = mm
+      ? [...mm.entries()].map(([name, c]) => ({ name, count: c })).sort((a, b) => b.count - a.count)
+      : [];
+    buckets.push({ nota: n, count, tone: notaTone(n), materias });
+  }
+
+  return { buckets, ausentes: 0, total, maxCount };
 }
 
 // ─── 4 · Promedio por año ─────────────────────────────────────────────────────

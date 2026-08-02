@@ -7,7 +7,8 @@ import { Readable } from "stream";
 
 export const maxDuration = 60;
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
+import { decodeUrlRef } from "@/lib/urlToken";
 
 async function fetchWithCookie(url: string, cookie: string, maxRedirects = 5): Promise<Response> {
   let current = url;
@@ -137,11 +138,12 @@ export async function POST(req: NextRequest) {
   try { formData = await req.formData(); }
   catch { return NextResponse.json({ error: "FormData inválido" }, { status: 400 }); }
 
-  const urlField  = formData.get("url");
+  const refField  = formData.get("ref");
   const kindField = (formData.get("kind") as string | null)?.toLowerCase() ?? "";
 
-  if (typeof urlField !== "string" || !urlField)
-    return NextResponse.json({ error: "Campo 'url' requerido" }, { status: 400 });
+  const urlField = typeof refField === "string" ? decodeUrlRef(refField) : null;
+  if (!urlField)
+    return NextResponse.json({ error: "Campo 'ref' requerido" }, { status: 400 });
 
   const ext = kindField || urlField.split(".").pop()?.toLowerCase() || "";
   if (!SUPPORTED_EXTS.has(ext))
@@ -269,7 +271,8 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
-  const url = req.nextUrl.searchParams.get("url");
+  const ref = req.nextUrl.searchParams.get("ref");
+  const url = ref ? decodeUrlRef(ref) : null;
   const filename = req.nextUrl.searchParams.get("filename") ?? "archivo";
   // `type` overrides extension-based detection (useful when filename has no extension)
   const typeHint = req.nextUrl.searchParams.get("type")?.toLowerCase() ?? "";

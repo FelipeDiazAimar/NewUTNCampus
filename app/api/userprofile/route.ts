@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { MOODLE_BASE } from "@/lib/moodle";
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
   let html: string;
   try {
     const res = await fetch(
-      `https://frsfco.cvg.utn.edu.ar/user/profile.php?id=${userid}`,
+      `${MOODLE_BASE}/user/profile.php?id=${userid}`,
       { headers: { Cookie: auth.cookie }, redirect: "follow" }
     );
     if (res.status === 403 || res.status === 404) {

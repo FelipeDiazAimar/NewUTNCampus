@@ -6,6 +6,7 @@ import type { SysacadCursado } from "@/lib/sysacadws";
 import type { MateriaEstado } from "@/lib/sysacadTypes";
 import { useCorrelatividades } from "@/lib/sysacadHooks";
 import { computeDesbloqueadoras, computeDisponibles } from "@/lib/sysacadStats";
+import { AccordionSkeleton } from "@/components/Spinner";
 import CollapsibleCard from "./CollapsibleCard";
 
 /** Planificación del próximo cuatrimestre: qué podés inscribir y qué conviene priorizar. */
@@ -32,11 +33,7 @@ export default function PlanificacionCard({
   const totalInscribibles = disponibles.inscribibles.length;
 
   if (isLoading && correlativCount === 0) {
-    return (
-      <CollapsibleCard title="Planificación" icon={Sparkles} iconColor="#ff9500">
-        <p className="py-4 text-center text-[14px] text-[var(--secondary)]">Cargando…</p>
-      </CollapsibleCard>
-    );
+    return <AccordionSkeleton title="Planificación" />;
   }
 
   return (

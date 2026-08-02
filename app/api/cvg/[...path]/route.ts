@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { MOODLE_BASE } from "@/lib/moodle";
 
 export const runtime = "nodejs";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 const MOODLE_HOST = "frsfco.cvg.utn.edu.ar";
 
 /**

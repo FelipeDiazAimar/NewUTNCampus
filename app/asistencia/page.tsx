@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
   Bell,
-  BellRing,
   CalendarX,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   KeyRound,
@@ -79,21 +77,6 @@ function formatDate(value: string): string {
   return value;
 }
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-
-  return outputArray;
-}
-
-const ADMIN_TOKEN = "campus-admin-2024-internal";
-
 export default function AsistenciaPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -115,7 +98,7 @@ export default function AsistenciaPage() {
       router.push("/");
       return;
     }
-    setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
+    setIsAdmin(document.cookie.includes("admin_ui=1"));
     queueMicrotask(() => setReady(true));
   }, [router]);
 
@@ -241,92 +224,30 @@ export default function AsistenciaPage() {
 }
 
 function PushPermissionCard() {
-  const [supported, setSupported] = useState(false);
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    queueMicrotask(() => setSupported(true));
-
-    navigator.serviceWorker
-      .register("/sw.js", { scope: "/", updateViaCache: "none" })
-      .then((registration) => registration.pushManager.getSubscription())
-      .then((sub) => setSubscription(sub))
-      .catch(() => setMessage("No se pudo registrar el servicio push."));
-  }, []);
-
-  async function subscribe() {
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!publicKey) {
-      setMessage("Falta configurar NEXT_PUBLIC_VAPID_PUBLIC_KEY.");
-      return;
-    }
-
-    setBusy(true);
-    setMessage(null);
-
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const sub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
-
-      const res = await fetch("/api/notifications/push-subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sub),
-      });
-
-      if (!res.ok) throw new Error("No se pudo guardar la suscripcion.");
-      setSubscription(sub);
-      setMessage("Notificaciones activadas.");
-    } catch (error) {
-      setMessage((error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function unsubscribe() {
-    if (!subscription) return;
-    setBusy(true);
-
-    try {
-      await fetch("/api/notifications/push-subscription", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: subscription.endpoint }),
-      });
-      await subscription.unsubscribe();
-      setSubscription(null);
-      setMessage("Notificaciones desactivadas.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  // Próximamente: la suscripción a alertas push todavía no está habilitada
+  // para los alumnos. Se deja el botón siempre inactivo y visualmente
+  // apagado en vez de sacar la tarjeta, para no perder el lugar reservado
+  // en la pantalla el día que se habilite.
   return (
-    <div className="rounded-[26px] border border-[var(--separator)] bg-[rgba(255,255,255,0.72)] p-5 shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.76)]">
+    <div className="rounded-[26px] border border-[var(--separator)] bg-[rgba(255,255,255,0.72)] p-5 shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.76)] opacity-70">
       <div className="flex items-start justify-between gap-4">
-        <span className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#007aff1a] text-[#007aff] dark:text-[#0a84ff]">
-          {subscription ? <BellRing className="h-6 w-6" /> : <Bell className="h-6 w-6" />}
+        <span className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-[var(--surface2)] text-[var(--secondary)]">
+          <Bell className="h-6 w-6" />
         </span>
-        {subscription && <CheckCircle2 className="h-5 w-5 text-[#34c759]" />}
+        <span className="rounded-full bg-[var(--surface2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--secondary)]">
+          Próximamente
+        </span>
       </div>
       <h2 className="mt-4 text-[18px] font-semibold text-[var(--fg)]">Alertas push</h2>
       <p className="mt-1 min-h-10 text-[13px] leading-relaxed text-[var(--secondary)]">
-        {message ?? (supported ? "Aviso inmediato cuando el agente detecte una asistencia abierta." : "Este navegador no soporta Web Push.")}
+        Estamos trabajando en esta función. Todavía no está disponible.
       </p>
       <button
         type="button"
-        disabled={!supported || busy}
-        onClick={subscription ? unsubscribe : subscribe}
-        className="mt-3 min-h-11 w-full rounded-[16px] bg-[var(--fg)] px-4 text-[14px] font-semibold text-[var(--bg)] transition active:opacity-80 disabled:opacity-55"
+        disabled
+        className="mt-3 min-h-11 w-full rounded-[16px] bg-[var(--surface2)] px-4 text-[14px] font-semibold text-[var(--secondary)] opacity-70"
       >
-        {busy ? "Procesando..." : subscription ? "Desactivar" : "Activar"}
+        Próximamente
       </button>
     </div>
   );

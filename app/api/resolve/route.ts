@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE, toProxyPath } from "@/lib/moodle";
+import { decodeUrlRef } from "@/lib/urlToken";
 
 function isExternal(u: string) {
   return (
@@ -46,7 +47,8 @@ function extractFromHtml(html: string): string | null {
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
-  const url = req.nextUrl.searchParams.get("url");
+  const ref = req.nextUrl.searchParams.get("ref");
+  const url = ref ? decodeUrlRef(ref) : null;
 
   if (!sessionToken || !url) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
@@ -92,5 +94,7 @@ export async function GET(req: NextRequest) {
     break;
   }
 
-  return NextResponse.json({ url });
+  // No se encontró un destino externo: en vez de devolver la URL real de
+  // Moodle al cliente, devolvemos la ruta same-origin del proxy autenticado.
+  return NextResponse.json({ url: toProxyPath(current) });
 }

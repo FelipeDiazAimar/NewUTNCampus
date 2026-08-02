@@ -13,7 +13,7 @@ import {
 
 export const runtime = "nodejs";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
 /** Los "Nivel N" acumulan los cursos de todos los ciclos; el default de 20 pagina. */
 const PER_PAGE = 200;
 

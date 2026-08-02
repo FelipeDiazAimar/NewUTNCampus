@@ -1,8 +1,7 @@
 "use client";
 
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { SysacadExamen } from "@/lib/sysacadws";
-import { computeHistograma, type NotaBucket } from "@/lib/sysacadStats";
+import type { HistogramaStats, NotaBucket } from "@/lib/sysacadStats";
 import { useChartColors } from "./common";
 
 /** Tooltip con desglose: qué materias y cuántas veces se sacó esa nota. */
@@ -30,13 +29,25 @@ function HistTooltip({ active, payload }: { active?: boolean; payload?: { payloa
   );
 }
 
-/** Histograma: cuántas veces se obtuvo cada nota (1–10), con desglose por materia. */
-export default function NotasHistogramChart({ examenes }: { examenes: SysacadExamen[] }) {
+/**
+ * Histograma: cuántas veces se obtuvo cada nota (1–10), con desglose por
+ * materia. Puramente presentacional — el llamador decide si `stats` viene de
+ * finales o de parciales del ciclo vigente.
+ */
+export default function NotasHistogramChart({
+  stats,
+  emptyMessage,
+  footerLabel,
+}: {
+  stats: HistogramaStats;
+  emptyMessage: string;
+  footerLabel: string;
+}) {
   const colors = useChartColors();
-  const { buckets, ausentes, total } = computeHistograma(examenes);
+  const { buckets, ausentes, total } = stats;
 
   if (total === 0) {
-    return <p className="py-6 text-center text-[13px] text-[var(--secondary)]">Sin finales numéricos registrados.</p>;
+    return <p className="py-6 text-center text-[13px] text-[var(--secondary)]">{emptyMessage}</p>;
   }
 
   return (
@@ -54,7 +65,7 @@ export default function NotasHistogramChart({ examenes }: { examenes: SysacadExa
         </BarChart>
       </ResponsiveContainer>
       <p className="mt-1 px-1 text-[11px] text-[var(--secondary)]">
-        {total} finales numéricos{ausentes > 0 ? ` · ${ausentes} ausente${ausentes === 1 ? "" : "s"}` : ""} · tocá una barra para ver el detalle
+        {total} {footerLabel}{ausentes > 0 ? ` · ${ausentes} ausente${ausentes === 1 ? "" : "s"}` : ""} · tocá una barra para ver el detalle
       </p>
     </div>
   );

@@ -4,7 +4,7 @@ import { decodeEntities, stripTags } from "@/lib/campus";
 
 export const runtime = "nodejs";
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
 
 /** El <form> de la página de matriculación que pide la clave. */
 function formConClave(html: string): string | null {

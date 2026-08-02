@@ -1,4 +1,49 @@
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+export const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+
+/** Resuelve un href de Moodle (relativo o absoluto) a una URL absoluta. */
+export function absMoodleUrl(url: string): string {
+  if (url.startsWith("http")) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+  if (url.startsWith("/")) return `${MOODLE_BASE}${url}`;
+  return url;
+}
+
+/** Convierte una URL de Moodle (absoluta o relativa) en una ruta same-origin
+ *  bajo /api/cvg, para que el navegador nunca navegue directo al campus viejo. */
+export function toProxyPath(url: string): string {
+  const abs = absMoodleUrl(url);
+  return abs.startsWith(MOODLE_BASE) ? abs.replace(MOODLE_BASE, "/api/cvg") : abs;
+}
+
+/** Reescribe hrefs/srcs de Moodle (relativos o absolutos) dentro de un bloque de
+ *  HTML (summaries, labels) para que apunten a /api/cvg en vez de al dominio real. */
+export function rewriteMoodleHtml(html: string): string {
+  const escapedBase = MOODLE_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return html
+    .replace(new RegExp(`\\b(href|src)="${escapedBase}`, "g"), '$1="/api/cvg')
+    .replace(/\b(href|src)="\/(?!\/)/g, '$1="/api/cvg/');
+}
+
+/** Recorre cualquier valor JSON (de una respuesta cruda de Moodle vía
+ *  /api/moodle) y reemplaza toda aparición del dominio real por /api/cvg, para
+ *  que ningún campo de ninguna llamada AJAX (avatares, perfiles, etc.) filtre
+ *  el dominio del campus viejo al cliente. */
+export function rewriteMoodleUrlsDeep<T>(value: T): T {
+  if (typeof value === "string") {
+    return value.split(MOODLE_BASE).join("/api/cvg") as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => rewriteMoodleUrlsDeep(v)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = rewriteMoodleUrlsDeep(v);
+    }
+    return out as T;
+  }
+  return value;
+}
 
 export interface MoodleSession {
   cookie: string;
@@ -37,6 +82,11 @@ export interface MoodleModule {
   url?: string;
   contents?: MoodleContent[];
   description?: string;
+  /** Solo para carpetas con "Mostrar en la página del curso": el árbol de
+   *  archivos ya viene resuelto acá porque mod/folder/view.php no sirve para
+   *  ese modo (Moodle lo redirige de vuelta al curso). */
+  folderEntries?: import("@/lib/folderTree").FolderTreeNode[];
+  folderDownloadUrl?: string;
   visible: number;
 }
 
@@ -203,9 +253,11 @@ export async function moodleLogin(
 
   const usernameMatch = html.match(/"username"\s*:\s*"([^"]+)"/)?.[1] ?? username;
 
-  console.log("[moodle] sesskey:", sesskey ? sesskey.slice(0, 8) + "..." : "NOT FOUND");
-  console.log("[moodle] userid:", userid, uidFromUrl ? "(from testsession URL)" : "(from HTML)");
-  console.log("[moodle] fullname:", fullname || "not found (will use username)");
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[moodle] sesskey:", sesskey ? "found" : "NOT FOUND");
+    console.log("[moodle] userid:", userid, uidFromUrl ? "(from testsession URL)" : "(from HTML)");
+    console.log("[moodle] fullname:", fullname || "not found (will use username)");
+  }
 
   if (!sesskey) {
     throw new Error("No se pudo obtener la sesión. Intentá de nuevo.");

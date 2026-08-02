@@ -1,7 +1,7 @@
 "use client";
 
 import React, {
-  createContext, useContext, useState, useRef, useEffect, useCallback,
+  createContext, useContext, useState, useRef, useEffect, useLayoutEffect, useCallback,
 } from "react";
 import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
@@ -22,8 +22,8 @@ export type PanelKind = "pdf" | "docx" | "xlsx" | "pptx" | "text";
 
 export interface PanelEntry {
   kind: PanelKind;
-  proxyUrl: string;  // /api/files?url=...&inline=1  (DOCX / XLSX fetch source)
-  fileUrl: string;   // original Moodle URL           (/api/convert source)
+  proxyUrl: string;  // /api/files?ref=...&inline=1  (DOCX / XLSX fetch source)
+  fileUrl: string;   // token opaco de la URL real     (/api/convert source)
   name: string;
 }
 
@@ -353,7 +353,7 @@ async function nativeFallback(
 ) {
   if (entry.kind === "pptx") {
     setPs({ phase: "loading", label: "Cargando presentación…" });
-    const res = await fetch(`/api/convert?url=${encodeURIComponent(entry.fileUrl)}&filename=file.pptx`);
+    const res = await fetch(`/api/convert?ref=${encodeURIComponent(entry.fileUrl)}&filename=file.pptx`);
     if (!res.ok) { setPs({ phase: "error", msg: `HTTP ${res.status}` }); return; }
     const data = await res.json();
     if (!cancelled && data.kind === "slides") {
@@ -441,7 +441,7 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
     async function runDriveConvert(ext: string): Promise<boolean> {
       setPs({ phase: "loading", label: "Preparando archivo…", progress: 0 });
       const fd = new FormData();
-      fd.append("url", entry.fileUrl);
+      fd.append("ref", entry.fileUrl);
       fd.append("kind", ext);
       const r = await fetch("/api/convert", { method: "POST", body: fd });
       if (!r?.ok || !r?.body) return false;
@@ -623,7 +623,7 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
       <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6" style={{ background: light ? "#f2f2f7" : "#525659" }}>
         <p className="text-[#ff6b6b] text-[14px]">No se pudo cargar</p>
         <p className="text-[rgba(255,107,107,0.6)] text-[12px] text-center">{ps.msg}</p>
-        <a href={`/api/files?url=${encodeURIComponent(entry.fileUrl)}`}
+        <a href={`/api/files?ref=${encodeURIComponent(entry.fileUrl)}`}
           className={`mt-2 px-4 py-2 text-[12px] rounded-lg transition-colors ${light ? "bg-black/10 text-[#1c1c1e] hover:bg-black/15" : "bg-white/10 text-white hover:bg-white/20"}`}>
           Descargar
         </a>
@@ -680,8 +680,49 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
   const [isMobileOverlayOpen, setIsMobileOverlayOpen] = useState(false);
   const [xlsxMode, setXlsxMode] = useState<"pdf" | "excel">("excel");
   const panelRef = useRef<HTMLDivElement>(null);
+  const indexColumnRef = useRef<HTMLDivElement>(null);
+
+  const taskOpen = !!assignment;
+  const fileOpen = !!active;
+  const isPanelOpen = taskOpen || fileOpen;
+
+  // Al abrir/cerrar un preview, la columna del índice pasa de scrollear con
+  // toda la ventana a tener su propio scroll interno (o viceversa). Sin esto,
+  // ese cambio de modo resetea la posición visual a 0 aunque el contenido no
+  // se haya movido — acá guardamos la posición justo antes del cambio para
+  // restaurarla en el modo nuevo.
+  const pendingScrollRef = useRef<{ mode: "toContainer" | "toWindow"; value: number } | null>(null);
+
+  const snapshotIndexScroll = useCallback(() => {
+    const el = indexColumnRef.current;
+    if (!el) return;
+    const isSplit = el.style.overflowY === "auto";
+    const rect = el.getBoundingClientRect();
+    if (isSplit) {
+      // Va a volver a modo ventana: guardamos la posición absoluta del
+      // documento que corresponde a lo que se está viendo ahora.
+      pendingScrollRef.current = { mode: "toWindow", value: rect.top + window.scrollY + el.scrollTop };
+    } else {
+      // Va a pasar a modo columna con scroll propio: convertimos el scroll
+      // de ventana actual al scrollTop equivalente dentro del contenedor.
+      const containerDocTop = rect.top + window.scrollY;
+      pendingScrollRef.current = { mode: "toContainer", value: Math.max(0, window.scrollY - containerDocTop) };
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    const pending = pendingScrollRef.current;
+    if (!pending) return;
+    pendingScrollRef.current = null;
+    if (pending.mode === "toContainer") {
+      if (indexColumnRef.current) indexColumnRef.current.scrollTop = pending.value;
+    } else {
+      window.scrollTo(0, pending.value);
+    }
+  }, [isPanelOpen]);
 
   const openPanel = useCallback((entry: PanelEntry) => {
+    snapshotIndexScroll();
     // Abrir un archivo NO cierra la tarea: si hay tarea abierta, se pasa al
     // modo dividido (tarea a la izquierda, preview a la derecha).
     setActive((prev) => {
@@ -691,16 +732,20 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
       return entry;
     });
     if (isMobileView) setIsMobileOverlayOpen(true);
-  }, [isMobileView]);
+  }, [isMobileView, snapshotIndexScroll]);
 
   const openAssignment = useCallback((entry: AssignmentEntry) => {
+    snapshotIndexScroll();
     setActive(null); // abrir una tarea cierra el visor de archivos
     setAspectRatio(null);
     setAssignment((prev) => (prev?.key === entry.key ? null : entry)); // toggle
     if (isMobileView) setIsMobileOverlayOpen(true);
-  }, [isMobileView]);
+  }, [isMobileView, snapshotIndexScroll]);
 
-  const closeAssignment = useCallback(() => setAssignment(null), []);
+  const closeAssignment = useCallback(() => {
+    snapshotIndexScroll();
+    setAssignment(null);
+  }, [snapshotIndexScroll]);
 
   const toggleXlsxMode = useCallback(() => {
     setXlsxMode((m) => {
@@ -710,7 +755,12 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
     });
   }, []);
 
-  const closePanel = useCallback(() => { setActive(null); setAspectRatio(null); setIsSubFullscreen(false); }, []);
+  const closePanel = useCallback(() => {
+    snapshotIndexScroll();
+    setActive(null);
+    setAspectRatio(null);
+    setIsSubFullscreen(false);
+  }, [snapshotIndexScroll]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -757,7 +807,7 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
   async function handleSaveAs() {
     if (!active) return;
     const filename = active.name;
-    const url = `/api/files?url=${encodeURIComponent(active.fileUrl)}`;
+    const url = `/api/files?ref=${encodeURIComponent(active.fileUrl)}`;
     try {
       const picker = (window as Window & { showSaveFilePicker?: (o: object) => Promise<{ createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
       if (!picker) throw new Error("not supported");
@@ -780,8 +830,6 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
     setIsSubFullscreen((v) => !v);
   }
 
-  const taskOpen = !!assignment;
-  const fileOpen = !!active;
   const splitTaskFile = taskOpen && fileOpen; // tarea a la izquierda + preview a la derecha
 
   // Ancho del visor de archivo según relación de aspecto del documento.
@@ -789,7 +837,6 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
     ? Math.max(0.6, Math.min(1.8, aspectRatio ?? KIND_RATIOS[active.kind]))
     : 0.9;
 
-  const isPanelOpen = taskOpen || fileOpen;
   const panelTop = 96;
 
   const assignmentShell = (
@@ -829,7 +876,7 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
         <>
           {/* Quick download (to default Downloads folder) */}
           <a
-            href={`/api/files?url=${encodeURIComponent(active.fileUrl)}`}
+            href={`/api/files?ref=${encodeURIComponent(active.fileUrl)}`}
             download={active.name}
             title="Descargar"
             onClick={(e) => e.stopPropagation()}
@@ -930,6 +977,7 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
 
           {/* Índice del curso — se colapsa cuando hay tarea + preview a la vez */}
           <div
+            ref={indexColumnRef}
             className="min-w-0"
             style={{
               order: 1,

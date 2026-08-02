@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { BarChart3 } from "lucide-react";
-import type { SysacadExamen } from "@/lib/sysacadws";
+import type { SysacadComision, SysacadExamen } from "@/lib/sysacadws";
+import { computeHistograma, computeHistogramaParciales } from "@/lib/sysacadStats";
 import CollapsibleCard from "./CollapsibleCard";
+import SegmentedControl from "@/components/campus/SegmentedControl";
 import NotasHistogramChart from "./charts/NotasHistogramChart";
 import PromedioAnualChart from "./charts/PromedioAnualChart";
 
@@ -16,8 +19,20 @@ function Block({ title, hint, children }: { title: string; hint?: string; childr
   );
 }
 
-/** Estadísticas de notas: histograma de notas + evolución del promedio anual. */
-export default function EstadisticasCard({ examenes }: { examenes: SysacadExamen[] }) {
+/** Estadísticas de notas: histograma de notas (finales o parciales) + evolución del promedio anual. */
+export default function EstadisticasCard({
+  examenes,
+  comisiones,
+}: {
+  examenes: SysacadExamen[];
+  comisiones: SysacadComision[];
+}) {
+  const anioActual = new Date().getFullYear();
+  const [tipoNotas, setTipoNotas] = useState<"finales" | "parciales">("finales");
+
+  const statsFinales = computeHistograma(examenes);
+  const statsParciales = computeHistogramaParciales(comisiones, anioActual);
+
   return (
     <CollapsibleCard
       title="Estadísticas de notas"
@@ -27,7 +42,30 @@ export default function EstadisticasCard({ examenes }: { examenes: SysacadExamen
     >
       <div className="space-y-3">
         <Block title="Distribución de notas" hint="Cuántas veces sacaste cada nota">
-          <NotasHistogramChart examenes={examenes} />
+          <SegmentedControl
+            ariaLabel="Tipo de notas"
+            value={tipoNotas}
+            onChange={(v) => setTipoNotas(v as "finales" | "parciales")}
+            options={[
+              { value: "finales", label: "Finales" },
+              { value: "parciales", label: `Parciales ${anioActual}` },
+            ]}
+          />
+          <div className="mt-2">
+            {tipoNotas === "finales" ? (
+              <NotasHistogramChart
+                stats={statsFinales}
+                emptyMessage="Sin finales numéricos registrados."
+                footerLabel="finales numéricos"
+              />
+            ) : (
+              <NotasHistogramChart
+                stats={statsParciales}
+                emptyMessage={`Todavía no hay parciales cargados del ciclo ${anioActual}.`}
+                footerLabel={`parciales de ${anioActual}`}
+              />
+            )}
+          </div>
         </Block>
         <Block title="Promedio por año" hint="Cómo evolucionó tu promedio de finales">
           <PromedioAnualChart examenes={examenes} />

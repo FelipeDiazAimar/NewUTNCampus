@@ -86,6 +86,22 @@ export function SpinnerBlock({
   );
 }
 
+/**
+ * Placeholder de un acordeón que todavía no tiene su dato. Mismo look tanto si
+ * lo usa la página (mientras espera el fetch que habilita el widget) como el
+ * propio widget (mientras espera un fetch interno suyo) — para que la
+ * transición entre ambos sea invisible en vez de sentirse como dos loaders
+ * distintos en fila.
+ */
+export function AccordionSkeleton({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] px-5 py-4 shadow-sm">
+      <Spinner size={16} />
+      <span className="text-[15px] font-semibold text-[var(--secondary)]">{title}</span>
+    </div>
+  );
+}
+
 export function SpinnerOverlay({ label, visible }: { label?: string; visible: boolean }) {
   if (!visible) return null;
   return (

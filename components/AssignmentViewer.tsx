@@ -145,7 +145,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
       if (!opts?.silent) setLoading(true);
       setError("");
       try {
-        const res = await fetch(`/api/assign?url=${encodeURIComponent(url)}`, { cache: "no-store" });
+        const res = await fetch(`/api/assign?ref=${encodeURIComponent(url)}`, { cache: "no-store" });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "No se pudo cargar la tarea.");
         setInfo(json as AssignInfo);
@@ -366,7 +366,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                         onClick={() =>
                           openPanel({
                             kind,
-                            proxyUrl: `/api/files?url=${encodeURIComponent(file.url)}&inline=1`,
+                            proxyUrl: `/api/files?ref=${encodeURIComponent(file.url)}&inline=1`,
                             fileUrl: file.url,
                             name: file.name,
                           })
@@ -378,7 +378,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                     ) : (
                       <a
                         key={i}
-                        href={`/api/files?url=${encodeURIComponent(file.url)}`}
+                        href={`/api/files?ref=${encodeURIComponent(file.url)}`}
                         target="_blank"
                         rel="noreferrer"
                         className={rowClass}
@@ -446,7 +446,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                         onClick={() =>
                           openPanel({
                             kind,
-                            proxyUrl: `/api/files?url=${encodeURIComponent(file.url)}&inline=1`,
+                            proxyUrl: `/api/files?ref=${encodeURIComponent(file.url)}&inline=1`,
                             fileUrl: file.url,
                             name: file.name,
                           })
@@ -458,7 +458,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                     ) : (
                       <a
                         key={i}
-                        href={`/api/files?url=${encodeURIComponent(file.url)}`}
+                        href={`/api/files?ref=${encodeURIComponent(file.url)}`}
                         target="_blank"
                         rel="noreferrer"
                         className={rowClass}

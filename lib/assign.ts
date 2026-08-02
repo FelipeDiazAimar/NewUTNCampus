@@ -13,7 +13,7 @@
  * Endpoints/params verificados contra el HAR real (draftfiles_ajax/repository_ajax).
  */
 
-const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
+import { MOODLE_BASE } from "@/lib/moodle";
 
 export interface SubmissionContext {
   cmid: string;                         // id del módulo assign

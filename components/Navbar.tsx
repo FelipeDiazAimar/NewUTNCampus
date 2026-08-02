@@ -11,8 +11,6 @@ import SessionGuard from "./SessionGuard";
 import { clearCourseCache } from "@/lib/hooks";
 import { isGuestMode } from "@/lib/guest";
 
-const ADMIN_TOKEN = "campus-admin-2024-internal";
-
 export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -24,7 +22,7 @@ export default function Navbar({ fullname }: { fullname?: string }) {
   useEffect(() => {
     setMounted(true);
     setIsAndroid(/Android/i.test(navigator.userAgent));
-    setIsAdmin(document.cookie.includes(`admin_session_token=${ADMIN_TOKEN}`));
+    setIsAdmin(document.cookie.includes("admin_ui=1"));
     setIsGuest(isGuestMode());
   }, []);
 

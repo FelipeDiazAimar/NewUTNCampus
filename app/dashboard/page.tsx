@@ -19,6 +19,7 @@ import {
   Video,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import InstallAppCard from "@/components/InstallAppCard";
 
 type HomeItem = {
   type: "widget" | "app";
@@ -115,7 +116,7 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        popup: false,
+        popup: true,
         // Desktop: debajo de Materias (col 2, fila 3)
         rowMd: 3,
         colMd: 2,
@@ -394,6 +395,10 @@ export default function DashboardPage() {
               </Link>
             );
           })}
+        </div>
+
+        <div className="mt-6">
+          <InstallAppCard mobileOnly />
         </div>
         </div>
       </main>
