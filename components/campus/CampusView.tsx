@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, Copy, GraduationCap, KeyRound } from "lucide-react";
 import CollapsibleCard from "@/components/sysacadws/CollapsibleCard";
 import EstadoSincronizacion from "@/components/campus/EstadoSincronizacion";
+import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import { matchearCurso, parseCheckSum, type CampusCatalogo, type CampusCurso } from "@/lib/campus";
 import { postMatricular } from "@/lib/campusHooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
@@ -109,13 +110,16 @@ export default function CampusView({
   catalogo,
   loading,
   idsMatriculados,
+  sincronizando,
   onMatriculado,
 }: {
   inscriptas: SysacadMateriaParaCursado[];
   catalogo: CampusCatalogo | undefined;
   loading: boolean;
   idsMatriculados: Set<string>;
-  onMatriculado: () => void;
+  /** Hay una matrícula confirmada esperando a que Moodle la refleje. */
+  sincronizando?: boolean;
+  onMatriculado: (courseId: string) => void | Promise<void>;
 }) {
   const [aviso, setAviso] = useState<{ tono: "ok" | "error"; texto: string } | null>(null);
   const [ocupada, setOcupada] = useState<string | null>(null);
@@ -161,7 +165,7 @@ export default function CampusView({
       const r = await postMatricular(curso.id, clave);
       if (r.ok) {
         setAviso({ tono: "ok", texto: `Te matriculaste en ${curso.nombre}.` });
-        onMatriculado();
+        await onMatriculado(curso.id);
       } else {
         setAviso({ tono: "error", texto: r.motivo });
       }
@@ -171,7 +175,7 @@ export default function CampusView({
   }
 
   if (loading && !catalogo) {
-    return <p className="py-8 text-center text-[14px] text-[var(--secondary)]">Cargando catálogo…</p>;
+    return <SpinnerBlock label="Cargando catálogo del campus…" />;
   }
 
   return (
@@ -234,11 +238,15 @@ export default function CampusView({
         </section>
       )}
 
-      {matriculadas.length > 0 && (
+      {(matriculadas.length > 0 || sincronizando) && (
         <section>
-          <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+          <p className="mb-2 flex items-center gap-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
             Matriculadas
+            {sincronizando && <Spinner size={13} />}
           </p>
+          {matriculadas.length === 0 && sincronizando && (
+            <SpinnerBlock label="Confirmando la matrícula en el campus…" minHeight={72} />
+          )}
           <div className="space-y-2.5">
             {matriculadas.map(({ materia }) => (
               <div

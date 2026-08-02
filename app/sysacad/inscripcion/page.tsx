@@ -9,6 +9,7 @@ import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import MateriaInscripcionItem from "@/components/sysacadws/MateriaInscripcionItem";
 import SegmentedControl from "@/components/campus/SegmentedControl";
 import CampusView from "@/components/campus/CampusView";
+import { SpinnerBlock } from "@/components/Spinner";
 import {
   useMateriasParaCursado,
   postInscribir,
@@ -61,7 +62,28 @@ export default function InscripcionPage() {
 
   const { data: catalogo, isLoading: catalogoLoading } = useCampusCatalogo(user?.especialidad);
   const { courses, refetch: refetchCourses } = useCourses();
-  const idsMatriculados = useMemo(() => new Set(courses.map((c) => String(c.id))), [courses]);
+
+  // Moodle tarda en reflejar una matriculación recién hecha en el web service
+  // de cursos, así que los cursos que el servidor ya nos confirmó se suman a
+  // mano: la confirmación es la redirección al curso, no hace falta esperarla.
+  const [matriculadosLocal, setMatriculadosLocal] = useState<Set<string>>(new Set());
+  const [sincronizandoCampus, setSincronizandoCampus] = useState(false);
+
+  const idsMatriculados = useMemo(
+    () => new Set([...courses.map((c) => String(c.id)), ...matriculadosLocal]),
+    [courses, matriculadosLocal]
+  );
+
+  /** Marca el curso como matriculado y revalida la lista real en segundo plano. */
+  async function confirmarMatricula(courseId: string) {
+    setMatriculadosLocal((previos) => new Set(previos).add(courseId));
+    setSincronizandoCampus(true);
+    try {
+      await refetchCourses();
+    } finally {
+      setSincronizandoCampus(false);
+    }
+  }
 
   const materias = data?.Materias ?? [];
   const inscriptas = materias.filter((m) => m.Comision !== "0");
@@ -98,7 +120,7 @@ export default function InscripcionPage() {
     : [];
   const disponiblesReales = comisionesLoaded
     ? disponibles.filter((m) => comisionesMap[m.IdMateria]?.ok !== false)
-    : disponibles;
+    : [];
 
   async function handleInscribir(materia: SysacadMateriaParaCursado, comision: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
@@ -138,11 +160,11 @@ export default function InscripcionPage() {
 
     const rc = await postMatricular(curso.id, clave);
     if (rc.ok) {
-      refetchCourses();
       setBanner({
         tone: "ok",
         text: `Te inscribiste a ${materia.NombreMateria} en Sysacad y en el campus.`,
       });
+      await confirmarMatricula(curso.id);
     } else {
       setBanner({
         tone: "error",
@@ -224,9 +246,7 @@ export default function InscripcionPage() {
 
             {vista === "sysacad" && (
               <>
-            {isLoading && (
-              <p className="py-8 text-center text-[14px] text-[var(--secondary)]">Cargando materias…</p>
-            )}
+            {isLoading && <SpinnerBlock label="Cargando materias…" />}
 
             {!isLoading && error && !sessionExpired && (
               <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
@@ -260,7 +280,20 @@ export default function InscripcionPage() {
               </section>
             )}
 
-            {!isLoading && disponiblesReales.length > 0 && (
+            {/* Hasta que vuelven las comisiones de cada materia no se sabe
+                cuáles están bloqueadas por correlatividades, y mostrarlas
+                todas bajo "Podés inscribirte" para después reacomodarlas es
+                peor que esperar. */}
+            {!isLoading && disponibles.length > 0 && !comisionesLoaded && (
+              <section>
+                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                  Podés inscribirte
+                </p>
+                <SpinnerBlock label="Consultando correlatividades…" />
+              </section>
+            )}
+
+            {!isLoading && comisionesLoaded && disponiblesReales.length > 0 && (
               <section>
                 <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
                   Podés inscribirte
@@ -313,7 +346,8 @@ export default function InscripcionPage() {
                 catalogo={catalogo}
                 loading={catalogoLoading}
                 idsMatriculados={idsMatriculados}
-                onMatriculado={refetchCourses}
+                sincronizando={sincronizandoCampus}
+                onMatriculado={confirmarMatricula}
               />
             )}
           </div>
