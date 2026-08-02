@@ -7,6 +7,7 @@ import { mutate as globalMutate } from "swr";
 import { ChevronRight, KeyRound, LogOut, CalendarCheck } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
+import { SpinnerBlock } from "@/components/Spinner";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import ProfileHeader from "@/components/sysacadws/ProfileHeader";
 import ResumenHero from "@/components/sysacadws/ResumenHero";
@@ -122,6 +123,8 @@ export default function SysacadPage() {
               <CalendarCheck className="h-[18px] w-[18px] text-white drop-shadow" />
               <span className="text-[15px] font-semibold text-white drop-shadow">Inscripción a materias</span>
             </Link>
+
+            {coreLoading && <SpinnerBlock label="Cargando tu estado académico…" minHeight={140} />}
 
             {!coreLoading && (
               <>

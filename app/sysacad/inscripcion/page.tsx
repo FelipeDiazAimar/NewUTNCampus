@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { mutate as globalMutate } from "swr";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import SysacadWsLogin from "@/components/sysacadws/LoginForm";
 import MateriaInscripcionItem from "@/components/sysacadws/MateriaInscripcionItem";
+import SegmentedControl from "@/components/campus/SegmentedControl";
+import CampusView from "@/components/campus/CampusView";
+import { SpinnerBlock } from "@/components/Spinner";
 import {
   useMateriasParaCursado,
   postInscribir,
@@ -14,8 +17,15 @@ import {
   fetchComisiones,
   type ComisionesResult,
 } from "@/lib/sysacadHooks";
+import { useCampusCatalogo, postMatricular } from "@/lib/campusHooks";
+import { matchearCurso, parseCheckSum } from "@/lib/campus";
+import { useCourses } from "@/lib/hooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
-import type { SysacadWsUser, SysacadMateriaParaCursado } from "@/lib/sysacadws";
+import type {
+  SysacadWsUser,
+  SysacadMateriaParaCursado,
+  SysacadMateriasParaCursado,
+} from "@/lib/sysacadws";
 
 function getWsUser(): SysacadWsUser | null {
   if (typeof document === "undefined") return null;
@@ -33,6 +43,7 @@ export default function InscripcionPage() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<SysacadWsUser | null>(null);
   const [banner, setBanner] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [vista, setVista] = useState<"sysacad" | "campus">("sysacad");
 
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) {
@@ -48,6 +59,31 @@ export default function InscripcionPage() {
   const sessionExpired = (error as { status?: number } | undefined)?.status === 401;
 
   const materiasKey = legajo ? `/api/sysacadws/cursado/materiasparacursado/${legajo}` : null;
+
+  const { data: catalogo, isLoading: catalogoLoading } = useCampusCatalogo(user?.especialidad);
+  const { courses, refetch: refetchCourses } = useCourses();
+
+  // Moodle tarda en reflejar una matriculación recién hecha en el web service
+  // de cursos, así que los cursos que el servidor ya nos confirmó se suman a
+  // mano: la confirmación es la redirección al curso, no hace falta esperarla.
+  const [matriculadosLocal, setMatriculadosLocal] = useState<Set<string>>(new Set());
+  const [sincronizandoCampus, setSincronizandoCampus] = useState(false);
+
+  const idsMatriculados = useMemo(
+    () => new Set([...courses.map((c) => String(c.id)), ...matriculadosLocal]),
+    [courses, matriculadosLocal]
+  );
+
+  /** Marca el curso como matriculado y revalida la lista real en segundo plano. */
+  async function confirmarMatricula(courseId: string) {
+    setMatriculadosLocal((previos) => new Set(previos).add(courseId));
+    setSincronizandoCampus(true);
+    try {
+      await refetchCourses();
+    } finally {
+      setSincronizandoCampus(false);
+    }
+  }
 
   const materias = data?.Materias ?? [];
   const inscriptas = materias.filter((m) => m.Comision !== "0");
@@ -84,18 +120,56 @@ export default function InscripcionPage() {
     : [];
   const disponiblesReales = comisionesLoaded
     ? disponibles.filter((m) => comisionesMap[m.IdMateria]?.ok !== false)
-    : disponibles;
+    : [];
 
   async function handleInscribir(materia: SysacadMateriaParaCursado, comision: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
     if (!legajo) return;
     setBanner(null);
+
     const r = await postInscribir(legajo, materia, comision);
-    if (r.ok) {
-      setBanner({ tone: "ok", text: `Te inscribiste a ${materia.NombreMateria}.` });
-      if (materiasKey) await globalMutate(materiasKey);
-    } else {
+    if (!r.ok) {
       setBanner({ tone: "error", text: r.motivo });
+      return;
+    }
+
+    // La clave de matriculación al campus recién existe después de inscribirse,
+    // así que hay que releer la materia de la lista revalidada.
+    const actualizado = materiasKey
+      ? ((await globalMutate(materiasKey)) as SysacadMateriasParaCursado | undefined)
+      : undefined;
+
+    const conClave = (actualizado?.Materias ?? []).find((m) => m.IdMateria === materia.IdMateria);
+    const clave = parseCheckSum(conClave?.CheckSum ?? "").claveMatriculacion;
+    const curso = clave
+      ? matchearCurso(
+          materia.NombreMateriaLargo || materia.NombreMateria,
+          (catalogo?.grupos ?? []).flatMap((g) => g.cursos),
+          new Date().getFullYear(),
+          catalogo?.carrera
+        )
+      : null;
+
+    if (!clave || !curso) {
+      setBanner({
+        tone: "ok",
+        text: `Te inscribiste a ${materia.NombreMateria} en Sysacad. Matriculate al campus desde la pestaña Campus.`,
+      });
+      return;
+    }
+
+    const rc = await postMatricular(curso.id, clave);
+    if (rc.ok) {
+      setBanner({
+        tone: "ok",
+        text: `Te inscribiste a ${materia.NombreMateria} en Sysacad y en el campus.`,
+      });
+      await confirmarMatricula(curso.id);
+    } else {
+      setBanner({
+        tone: "error",
+        text: `Te inscribiste a ${materia.NombreMateria} en Sysacad, pero la matrícula al campus falló: ${rc.motivo} Podés hacerla desde la pestaña Campus.`,
+      });
     }
   }
 
@@ -160,9 +234,19 @@ export default function InscripcionPage() {
               </div>
             )}
 
-            {isLoading && (
-              <p className="py-8 text-center text-[14px] text-[var(--secondary)]">Cargando materias…</p>
-            )}
+            <SegmentedControl
+              ariaLabel="Sistema de inscripción"
+              value={vista}
+              onChange={(v) => setVista(v as "sysacad" | "campus")}
+              options={[
+                { value: "sysacad", label: "Sysacad" },
+                { value: "campus", label: "Campus" },
+              ]}
+            />
+
+            {vista === "sysacad" && (
+              <>
+            {isLoading && <SpinnerBlock label="Cargando materias…" />}
 
             {!isLoading && error && !sessionExpired && (
               <p className="py-8 text-center text-[14px] text-[var(--secondary)]">
@@ -196,7 +280,20 @@ export default function InscripcionPage() {
               </section>
             )}
 
-            {!isLoading && disponiblesReales.length > 0 && (
+            {/* Hasta que vuelven las comisiones de cada materia no se sabe
+                cuáles están bloqueadas por correlatividades, y mostrarlas
+                todas bajo "Podés inscribirte" para después reacomodarlas es
+                peor que esperar. */}
+            {!isLoading && disponibles.length > 0 && !comisionesLoaded && (
+              <section>
+                <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                  Podés inscribirte
+                </p>
+                <SpinnerBlock label="Consultando correlatividades…" />
+              </section>
+            )}
+
+            {!isLoading && comisionesLoaded && disponiblesReales.length > 0 && (
               <section>
                 <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
                   Podés inscribirte
@@ -239,6 +336,19 @@ export default function InscripcionPage() {
                   })}
                 </div>
               </section>
+            )}
+              </>
+            )}
+
+            {vista === "campus" && (
+              <CampusView
+                inscriptas={inscriptas}
+                catalogo={catalogo}
+                loading={catalogoLoading}
+                idsMatriculados={idsMatriculados}
+                sincronizando={sincronizandoCampus}
+                onMatriculado={confirmarMatricula}
+              />
             )}
           </div>
         )}
