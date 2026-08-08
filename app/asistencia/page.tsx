@@ -1,22 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
+  AlertTriangle,
   Bell,
+  Ban,
   CalendarX,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock,
   KeyRound,
   Loader2,
   Send,
   ShieldCheck,
+  WifiOff,
+  X,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
+import DropdownSelect from "@/components/DropdownSelect";
+import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { buildSchedule, fmtRemaining } from "@/lib/horarios";
+import { normalizeMateriaName } from "@/lib/officialSchedule";
+import { mapCursadoToMaterias } from "@/lib/sysacadMappers";
+import { useCursado } from "@/lib/sysacadHooks";
 
 type InasItem = { CodMateria?: string; NombreMateria?: string; Materia?: string; Fecha?: string };
 type InasResp = {
@@ -130,9 +143,7 @@ export default function AsistenciaPage() {
           </span>
         </div>
 
-        <section className="mb-4">
-          <PushPermissionCard />
-        </section>
+        <MarcarAsistenciaCard />
 
         <section className="mb-4 rounded-[24px] border border-[var(--separator)] bg-[rgba(255,255,255,0.68)] p-2 shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.72)]">
           <div className="flex gap-1 overflow-x-auto">
@@ -218,7 +229,315 @@ export default function AsistenciaPage() {
             )}
           </section>
         )}
+
+        <section className="mt-4">
+          <PushPermissionCard />
+        </section>
       </main>
+    </div>
+  );
+}
+
+// ─── Marcar asistencia (sistema viejo asistencia.frsfco.utn.edu.ar) ───────────
+
+type LegacyMateria = {
+  id: string;
+  anio: string;
+  especialidad: string;
+  plan: string;
+  comision: string;
+  condicional: boolean;
+  habilitada: boolean;
+  nombre: string;
+};
+type LegacyRegistrada = { materia: string; hora: string };
+type LegacyStatus = { materias: LegacyMateria[]; registradasHoy: LegacyRegistrada[] };
+
+type ToastState = { ok: boolean; msg: string; materia: string } | null;
+
+function MarcarAsistenciaCard() {
+  const guest = isGuestMode();
+  const legajo = guest ? null : getLegajo();
+  const [status, setStatus] = useState<LegacyStatus | null>(null);
+  const [loading, setLoading] = useState(() => !guest);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<ToastState>(null);
+  const [now, setNow] = useState(() => new Date());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/asistencia-legacy/status", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo conectar con el sistema de asistencias.");
+        setStatus(null);
+        return;
+      }
+      setStatus(data);
+      const marcadas = new Set(data.registradasHoy.map((r: LegacyRegistrada) => normalizeMateriaName(r.materia)));
+      const pend = data.materias.filter((m: LegacyMateria) => !marcadas.has(normalizeMateriaName(m.nombre)));
+      setSelectedId((prev) => (prev && pend.some((m: LegacyMateria) => m.id === prev) ? prev : (pend[0]?.id ?? "")));
+    } catch {
+      setError("Error de conexión con el sistema de asistencias.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (guest) return;
+    load();
+  }, [guest, load]);
+
+  // Tira del countdown de la materia seleccionada — se necesita el reloj vivo.
+  useEffect(() => {
+    if (guest) return;
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [guest]);
+
+  // Cuenta regresiva hasta que termina la clase: el sistema viejo solo dice
+  // "habilitada sí/no", no hasta qué hora. Se cruza la materia seleccionada
+  // con el horario real (Sysacad) de hoy para saber cuándo se corta.
+  const { data: cursado } = useCursado(legajo ?? undefined);
+  const notas = useMemo(() => mapCursadoToMaterias(cursado?.Comisiones ?? []), [cursado]);
+  const slots = useMemo(() => buildSchedule(notas), [notas]);
+
+  // Materias habilitadas que TODAVÍA no se marcaron hoy — una vez registrada,
+  // desaparece del select en vez de quedar ahí invitando a marcarla de nuevo.
+  const pendientes = useMemo(() => {
+    if (!status) return [];
+    const marcadas = new Set(status.registradasHoy.map((r) => normalizeMateriaName(r.materia)));
+    return status.materias.filter((m) => !marcadas.has(normalizeMateriaName(m.nombre)));
+  }, [status]);
+
+  // Si la materia elegida deja de estar pendiente (se marcó, o cambió la
+  // grilla), se recalcula acá en vez de sincronizarlo con un efecto aparte.
+  const effectiveSelectedId = pendientes.some((m) => m.id === selectedId) ? selectedId : (pendientes[0]?.id ?? "");
+  const selected = pendientes.find((m) => m.id === effectiveSelectedId) ?? null;
+
+  async function handleMarcar() {
+    if (guest) {
+      triggerGuestBlock();
+      return;
+    }
+    if (!effectiveSelectedId || submitting) return;
+    setSubmitting(true);
+    setToast(null);
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = (await ipRes.json()) as { ip: string };
+
+      const res = await fetch("/api/asistencia-legacy/marcar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip, idMateria: effectiveSelectedId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ ok: false, msg: data.error ?? "No se pudo marcar la asistencia.", materia: "" });
+        return;
+      }
+      setStatus({ materias: data.materias, registradasHoy: data.registradasHoy });
+      setToast({
+        ok: data.ok,
+        materia: data.materia,
+        msg: data.ok
+          ? data.yaEstaba
+            ? "Ya tenías asistencia registrada hoy"
+            : "¡Asistencia marcada!"
+          : "No se pudo confirmar el registro — revisá el historial en un momento.",
+      });
+    } catch {
+      setToast({ ok: false, msg: "No se pudo obtener tu IP pública — revisá tu conexión.", materia: "" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const options = useMemo(() => pendientes.map((m) => ({ value: m.id, label: m.nombre })), [pendientes]);
+
+  const remainingSec = useMemo(() => {
+    if (!selected) return null;
+    const nombreSel = normalizeMateriaName(selected.nombre);
+    const slot = slots.find((s) => s.day === now.getDay() && normalizeMateriaName(s.materia) === nombreSel);
+    if (!slot) return null;
+    const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const remaining = slot.endMin * 60 - nowSec;
+    return remaining > 0 ? remaining : null;
+  }, [selected, slots, now]);
+
+  return (
+    <section className="relative mb-4 overflow-hidden rounded-[26px] border border-[var(--separator)] bg-[rgba(255,255,255,0.72)] shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.76)]">
+      <ResultToast toast={toast} onClose={() => setToast(null)} />
+
+      <div className="flex items-center gap-3.5 px-5 py-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[rgba(52,199,89,0.14)]">
+          <CheckCircle2 className="h-5 w-5 text-[#34c759]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-semibold text-[var(--fg)]">Marcar asistencia</p>
+          <p className="mt-0.5 text-[12px] text-[var(--secondary)]">Solo funciona conectado a la red de la facultad</p>
+        </div>
+        {remainingSec != null && (
+          <span
+            className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold tabular-nums ${
+              remainingSec < 300 ? "bg-[#ff3b301a] text-[#ff3b30]" : "bg-[#ff95001a] text-[#ff9500]"
+            }`}
+          >
+            <Clock className="h-3 w-3" />
+            {fmtRemaining(remainingSec)}
+          </span>
+        )}
+      </div>
+
+      <div className="border-t border-[var(--separator)] px-5 py-4">
+        {guest ? (
+          <button
+            type="button"
+            onClick={() => triggerGuestBlock()}
+            className="w-full rounded-[16px] bg-[var(--surface2)] py-3 text-[14px] font-semibold text-[var(--secondary)]"
+          >
+            No disponible en modo invitado
+          </button>
+        ) : loading ? (
+          <p className="text-[13px] text-[var(--secondary)]">Consultando materias habilitadas…</p>
+        ) : error ? (
+          <div className="flex items-center gap-2 text-[13px] text-[#ff3b30]">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : !status || status.materias.length === 0 ? (
+          <p className="text-[13px] text-[var(--secondary)]">Ninguna materia tiene la asistencia habilitada en este momento.</p>
+        ) : (
+          <>
+            {pendientes.length === 0 ? (
+              <div className="flex items-center gap-2 text-[13px] text-[#34c759]">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>Ya marcaste asistencia en todo lo habilitado por ahora.</span>
+              </div>
+            ) : (
+              <>
+                <DropdownSelect
+                  value={effectiveSelectedId}
+                  options={options}
+                  onChange={(v) => {
+                    setSelectedId(v);
+                    setToast(null);
+                  }}
+                  placeholder="Elegí una materia"
+                />
+
+                {selected?.condicional && (
+                  <InlineAlert tone="warning" icon={AlertTriangle}>
+                    Estás cursando <strong>{selected.nombre}</strong> de forma condicional.
+                  </InlineAlert>
+                )}
+                {selected && !selected.habilitada && (
+                  <InlineAlert tone="danger" icon={Ban}>
+                    El docente todavía no habilitó la asistencia para <strong>{selected.nombre}</strong>.
+                  </InlineAlert>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleMarcar}
+                  disabled={submitting || !selected?.habilitada}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#34c759] py-3 text-[14px] font-semibold text-white transition-opacity active:opacity-80 disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {submitting ? "Marcando…" : "Marcar asistencia"}
+                </button>
+              </>
+            )}
+
+            {status.registradasHoy.length > 0 && (
+              <div className="mt-4 border-t border-[var(--separator)] pt-3">
+                <p className="mb-2 text-[12px] font-semibold text-[var(--secondary)]">Asistencias registradas hoy</p>
+                <div className="flex flex-col gap-1.5">
+                  {status.registradasHoy.map((r, i) => (
+                    <div
+                      key={`${r.materia}-${i}`}
+                      className="flex items-center justify-between rounded-[12px] bg-[var(--surface2)] px-3 py-2 text-[13px]"
+                    >
+                      <span className="text-[var(--fg)]">{r.materia}</span>
+                      <span className="text-[var(--secondary)]">{r.hora}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Chip de aviso inline — reemplaza los textos rojos/naranjas sueltos de antes. */
+function InlineAlert({
+  tone,
+  icon: Icon,
+  children,
+}: {
+  tone: "warning" | "danger";
+  icon: typeof AlertTriangle;
+  children: React.ReactNode;
+}) {
+  const styles =
+    tone === "warning"
+      ? "bg-[#ff95001a] text-[#ff9500] border-[#ff950033]"
+      : "bg-[#ff3b301a] text-[#ff3b30] border-[#ff3b3033]";
+  return (
+    <div className={`mt-2.5 flex items-start gap-2 rounded-[14px] border px-3 py-2.5 text-[12.5px] leading-snug ${styles}`}>
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+/** Toast flotante para el resultado de marcar asistencia (éxito o error). */
+function ResultToast({ toast, onClose }: { toast: ToastState; onClose: () => void }) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    timerRef.current = setTimeout(onClose, 4500);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]);
+
+  if (!toast) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-3 top-3 z-20 flex justify-center"
+      style={{ animation: "toast-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)" }}
+    >
+      <div
+        className={`pointer-events-auto flex w-full items-center gap-3 rounded-[18px] border px-4 py-3.5 shadow-lg backdrop-blur-xl ${
+          toast.ok
+            ? "border-[#34c75933] bg-[rgba(52,199,89,0.95)] text-white"
+            : "border-[#ff3b3033] bg-[rgba(255,59,48,0.95)] text-white"
+        }`}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20">
+          {toast.ok ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-bold leading-tight">{toast.msg}</p>
+          {toast.materia && <p className="mt-0.5 truncate text-[12px] font-medium text-white/85">{toast.materia}</p>}
+        </div>
+        <button type="button" onClick={onClose} className="shrink-0 rounded-full p-1 active:bg-white/20" aria-label="Cerrar">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -286,7 +605,7 @@ function AdminNotifyCard() {
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-semibold text-[var(--fg)]">Admin — Disparar notificación</p>
           <p className="mt-0.5 text-[12px] text-[var(--secondary)]">
-            Envía push "asistencia disponible" a todos los suscriptores.
+            Envía push &quot;asistencia disponible&quot; a todos los suscriptores.
           </p>
         </div>
       </div>
