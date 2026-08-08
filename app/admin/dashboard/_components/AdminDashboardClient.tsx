@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell, ChevronRight, LogOut, Radio } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
+import LoginStatsSection from "./LoginStatsSection";
 
 const TOOLS: {
   href: string;
@@ -50,6 +51,8 @@ export default function AdminDashboardClient() {
             <h1 className="text-[26px] font-bold tracking-tight text-[var(--fg)] leading-none">Administración</h1>
           </div>
         </div>
+
+        <LoginStatsSection />
 
         <section className="mb-7">
           <p className="px-4 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
