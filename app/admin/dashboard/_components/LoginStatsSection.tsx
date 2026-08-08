@@ -88,7 +88,7 @@ export default function LoginStatsSection() {
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[rgba(52,199,89,0.12)] text-[#34c759]">
             <Users className="h-[22px] w-[22px]" />
           </span>
-          <div>
+          <div className="flex-1">
             <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
               Personas distintas hoy
             </p>
@@ -96,6 +96,16 @@ export default function LoginStatsSection() {
               {data ? data.todayDistinctUsers : "—"}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setModalKey((k) => k + 1);
+              setModalOpen(true);
+            }}
+            className="rounded-full bg-[var(--surface2)] px-3.5 py-1.5 text-[13px] font-semibold text-[#007aff] active:opacity-70"
+          >
+            Ver mails
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -131,16 +141,6 @@ export default function LoginStatsSection() {
               className="rounded-lg border border-[var(--separator)] bg-[var(--surface2)] px-2 py-1.5 text-[var(--fg)]"
             />
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setModalKey((k) => k + 1);
-              setModalOpen(true);
-            }}
-            className="ml-auto rounded-full bg-[var(--surface2)] px-3.5 py-1.5 text-[13px] font-semibold text-[#007aff] active:opacity-70"
-          >
-            Ver mails
-          </button>
         </div>
 
         {loading ? (
