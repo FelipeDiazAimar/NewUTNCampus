@@ -238,7 +238,7 @@ export default function AsistenciaPage() {
   );
 }
 
-// ─── Marcar asistencia (sistema viejo asistencia.frsfco.utn.edu.ar) ───────────
+// ─── Marcar asistencia (proxied server-side; ver lib/asistenciaLegacy.ts) ─────
 
 type LegacyMateria = {
   id: string;

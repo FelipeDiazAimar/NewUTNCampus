@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import useSWR from "swr";
 import {
   ArrowUpRight,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Clock,
   FileText,
   KeyRound,
   ListTodo,
+  Search,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
@@ -75,23 +77,142 @@ function urgency(dueIso: string | null, now: Date): Urgency {
   return { label: `${due.getDate()} ${MONTHS[due.getMonth()]}`, ...gray };
 }
 
-// ─── Fetcher ──────────────────────────────────────────────────────────────────
+// ─── Stream NDJSON ──────────────────────────────────────────────────────────
+//
+// /api/tareas devuelve una línea de meta ({years, year}) y después una línea
+// por tarea apenas Moodle responde, en vez de un único JSON al final. Así la
+// lista se va llenando incrementalmente en vez de esperar a la más lenta.
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-interface TareasResp {
-  tareas: TareaItem[];
-  years: number[];
-  year: number;
+type StreamLine =
+  | { type: "meta"; years: number[]; year: number }
+  | { type: "tarea"; item: TareaItem };
+
+interface TareasError extends Error {
+  status?: number;
 }
 
-const fetcher = async (url: string): Promise<TareasResp> => {
-  const res = await fetch(url, { cache: "no-store" });
-  if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? "No se pudieron cargar las tareas.");
-  return { tareas: json.tareas ?? [], years: json.years ?? [CURRENT_YEAR], year: json.year ?? CURRENT_YEAR };
-};
+// Caché por año a nivel de módulo (no por instancia de componente): al salir
+// de /tareas y volver, la página se remonta pero este Map sigue vivo mientras
+// dure la pestaña, así que no hay que re-streamear todo de nuevo.
+const tareasCache = new Map<number, { tareas: TareaItem[]; years: number[] }>();
+
+/** Lee /api/tareas?year= como NDJSON y va empujando tareas a medida que llegan. */
+function useTareasStream(year: number | null) {
+  const [tareas, setTareas] = useState<TareaItem[]>([]);
+  const [years, setYears] = useState<number[]>([CURRENT_YEAR]);
+  const [streamYear, setStreamYear] = useState<number | null>(null);
+  const [error, setError] = useState<TareasError | null>(null);
+  // true mientras el stream del año pedido sigue trayendo tareas — distinto de
+  // "no hay datos todavía": permite no mostrar "no tenés tareas" en falso
+  // mientras siguen llegando líneas.
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (year === null) return;
+
+    // Caché en memoria por año: si ya lo cargamos en esta sesión, no re-streameamos.
+    const cached = tareasCache.get(year);
+    if (cached) {
+      setTareas(cached.tareas);
+      setYears(cached.years);
+      setStreamYear(year);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    setError(null);
+    setLoading(true);
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/tareas?year=${year}`, { cache: "no-store", signal: controller.signal });
+        if (res.status === 401) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+        if (!res.ok || !res.body) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? "No se pudieron cargar las tareas.");
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        const collected: TareaItem[] = [];
+        let metaYears = [year];
+        let started = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const parsed = JSON.parse(line) as StreamLine;
+            if (parsed.type === "meta") {
+              metaYears = parsed.years;
+              if (cancelled) continue;
+              if (!started) { setTareas([]); started = true; }
+              setYears(parsed.years);
+              setStreamYear(parsed.year);
+            } else if (parsed.type === "tarea") {
+              collected.push(parsed.item);
+              if (!cancelled) setTareas((prev) => [...prev, parsed.item]);
+            }
+          }
+        }
+
+        if (!cancelled) {
+          tareasCache.set(year, { tareas: collected, years: metaYears });
+          setLoading(false);
+        }
+      } catch (err) {
+        if (cancelled || (err as Error).name === "AbortError") return;
+        setError(err as TareasError);
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [year]);
+
+  return { tareas, years, streamYear, error, loading };
+}
+
+// ─── Agrupado por materia ───────────────────────────────────────────────────
+
+interface CourseGroup {
+  course: string;
+  courseId: number;
+  color: string;
+  items: TareaItem[];
+  earliest: number;
+}
+
+const dueMs = (t: TareaItem) => (t.due ? new Date(t.due).getTime() : Number.POSITIVE_INFINITY);
+
+/** Agrupa por materia; cada grupo ordenado por cierre más próximo, grupos por su ítem más urgente. */
+function groupByCourseDueAsc(items: TareaItem[]): CourseGroup[] {
+  const byCourse = new Map<string, TareaItem[]>();
+  for (const t of items) {
+    const arr = byCourse.get(t.course) ?? [];
+    arr.push(t);
+    byCourse.set(t.course, arr);
+  }
+  const out = [...byCourse.entries()].map(([course, list]) => {
+    const sorted = [...list].sort((a, b) => dueMs(a) - dueMs(b));
+    return { course, courseId: sorted[0].courseId, color: courseColor(course), items: sorted, earliest: dueMs(sorted[0]) };
+  });
+  out.sort((a, b) => a.earliest - b.earliest);
+  return out;
+}
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +222,26 @@ export default function TareasPage() {
   const [tab, setTab] = useState<Tab>("pendientes");
   const [year, setYear] = useState(CURRENT_YEAR);
   const [now, setNow] = useState(() => new Date());
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [collapsedCourses, setCollapsedCourses] = useState<Set<string>>(new Set());
+
+  const toggleCourse = (course: string) => {
+    setCollapsedCourses((prev) => {
+      const next = new Set(prev);
+      if (next.has(course)) next.delete(course);
+      else next.add(course);
+      return next;
+    });
+  };
+
+  const toggleSearch = () => {
+    setSearchOpen((open) => {
+      const next = !open;
+      if (!next) setQuery("");
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!document.cookie.includes("moodle_user")) { router.replace("/"); return; }
@@ -113,24 +254,19 @@ export default function TareasPage() {
     return () => clearInterval(id);
   }, []);
 
-  const { data, error } = useSWR(
-    authed ? `/api/tareas?year=${year}` : null,
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5 * 60_000, keepPreviousData: true }
-  );
+  const { tareas: streamedTareas, years, streamYear, error, loading: streaming } = useTareasStream(authed ? year : null);
 
-  const tareas = data?.tareas;
-  // Años disponibles: del último response (estable, siempre el set completo).
-  const years = data?.years ?? [CURRENT_YEAR];
-  // "Listo" cuando los datos mostrados corresponden al año seleccionado.
-  const ready = !!data && data.year === year;
+  const tareas = streamYear === year ? streamedTareas : undefined;
+  // "Listo" en cuanto arrancó el stream del año pedido (aunque sigan llegando
+  // tareas de a una) — así la lista se puede ir pintando incrementalmente.
+  const ready = streamYear === year;
 
   // Si el año pedido no existe (p.ej. el alumno no cursa nada este año), el
   // backend resuelve el más reciente — sincronizamos la selección para no
   // quedarnos esperando datos de un año que nunca llega.
   useEffect(() => {
-    if (data && !data.years.includes(year)) setYear(data.year);
-  }, [data, year]);
+    if (streamYear !== null && streamYear !== year && !years.includes(year)) setYear(streamYear);
+  }, [years, year, streamYear]);
 
   // Sesión del Campus expirada: en vez de expulsar, mostramos un aviso con un
   // botón para reingresar y volver acá. Las tareas vienen del Campus (Moodle).
@@ -143,31 +279,44 @@ export default function TareasPage() {
   // Agrupa por materia. Pendientes ordenadas por urgencia; grupos por su tarea
   // más urgente. Completadas alfabéticas.
   const groups = useMemo(() => {
-    const source = tab === "pendientes" ? pending : completed;
+    if (tab === "pendientes") return groupByCourseDueAsc(pending);
     const byCourse = new Map<string, TareaItem[]>();
-    for (const t of source) {
+    for (const t of completed) {
       const arr = byCourse.get(t.course) ?? [];
       arr.push(t);
       byCourse.set(t.course, arr);
     }
-
-    const dueMs = (t: TareaItem) => (t.due ? new Date(t.due).getTime() : Number.POSITIVE_INFINITY);
-
     const out = [...byCourse.entries()].map(([course, items]) => {
-      const sorted = [...items].sort((a, b) =>
-        tab === "pendientes" ? dueMs(a) - dueMs(b) : a.title.localeCompare(b.title)
-      );
+      const sorted = [...items].sort((a, b) => a.title.localeCompare(b.title));
       return { course, courseId: sorted[0].courseId, color: courseColor(course), items: sorted, earliest: dueMs(sorted[0]) };
     });
-
-    out.sort((a, b) =>
-      tab === "pendientes" ? a.earliest - b.earliest : a.course.localeCompare(b.course)
-    );
+    out.sort((a, b) => a.course.localeCompare(b.course));
     return out;
   }, [tab, pending, completed]);
 
+  // Búsqueda global (título o materia) sobre todas las tareas del año, sin
+  // distinguir pendiente/completada — ordenada por cierre más próximo y
+  // agrupada por materia cuando hay varias coincidencias.
+  const trimmedQuery = query.trim().toLowerCase();
+  const isSearching = trimmedQuery.length > 0;
+  const searchGroups = useMemo(() => {
+    if (!trimmedQuery) return [];
+    const matches = all.filter(
+      (t) => t.title.toLowerCase().includes(trimmedQuery) || t.course.toLowerCase().includes(trimmedQuery)
+    );
+    return groupByCourseDueAsc(matches);
+  }, [trimmedQuery, all]);
+
+  const visibleGroups = isSearching ? searchGroups : groups;
+
   const errorMsg = error && error.message !== "UNAUTHORIZED" ? error.message : "";
   const showSpinner = !ready && !errorMsg && !sessionExpired;
+  // Todavía no terminó de traer todas las tareas del año — evita mostrar el
+  // estado vacío ("no tenés tareas...") mientras siguen llegando de a una.
+  const stillLoadingList = !showSpinner && streaming;
+  const showEmpty = !showSpinner && !errorMsg && !sessionExpired && !stillLoadingList && visibleGroups.length === 0;
+  const showInlineLoader = !showSpinner && !errorMsg && !sessionExpired && stillLoadingList && visibleGroups.length === 0;
+  const showList = !showSpinner && !errorMsg && !sessionExpired && visibleGroups.length > 0;
 
   return (
     <div className="min-h-screen bg-[var(--bg)] overflow-x-hidden">
@@ -213,40 +362,89 @@ export default function TareasPage() {
             </section>
           )}
 
-          {/* Segmented control */}
-          <div className="relative grid grid-cols-2 p-1 rounded-full bg-[var(--surface2)] mb-5 select-none">
-            <span
-              className="absolute inset-y-1 rounded-full bg-[var(--surface)] shadow-sm transition-all duration-300 ease-out"
-              style={{ width: "calc(50% - 4px)", left: tab === "completadas" ? "50%" : "4px" }}
-            />
-            {(["pendientes", "completadas"] as Tab[]).map((t) => {
-              const active = tab === t;
-              const count = t === "pendientes" ? pending.length : completed.length;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTab(t)}
-                  className={`relative z-10 flex items-center justify-center gap-1.5 py-2 text-[14px] font-semibold rounded-full transition-colors ${
-                    active ? "text-[var(--fg)]" : "text-[var(--secondary)]"
-                  }`}
-                >
-                  {t === "pendientes" ? "Pendientes" : "Completadas"}
-                  {tareas && count > 0 && (
-                    <span
-                      className="min-w-[20px] px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none"
-                      style={{
-                        backgroundColor: active ? (t === "pendientes" ? "rgba(255,59,48,0.14)" : "rgba(52,199,89,0.14)") : "transparent",
-                        color: active ? (t === "pendientes" ? "#ff3b30" : "#34c759") : "var(--secondary)",
-                      }}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          {/* Segmented control + botón de búsqueda */}
+          <div className="flex items-center gap-2 mb-3">
+            <div className="relative flex-1 grid grid-cols-2 h-11 p-1 rounded-full bg-[var(--surface2)] select-none">
+              {/* Loader "alrededor" de la píldora: el propio borde se va rellenando
+                  de transparente a azul mientras el stream sigue trayendo tareas,
+                  y se desvanece apenas termina de cargar. Dos capas: el gradiente
+                  gira detrás, una tapa sólida del mismo color deja ver solo el
+                  borde. */}
+              <span aria-hidden className="pill-loader-ring-outer" style={{ opacity: streaming ? 1 : 0 }} />
+              <span aria-hidden className="pill-loader-ring-inner" />
+
+              <span
+                className="absolute z-10 inset-y-1 rounded-full bg-[var(--surface)] shadow-sm transition-all duration-300 ease-out"
+                style={{ width: "calc(50% - 4px)", left: tab === "completadas" ? "50%" : "4px" }}
+              />
+              {(["pendientes", "completadas"] as Tab[]).map((t) => {
+                const active = tab === t;
+                const count = t === "pendientes" ? pending.length : completed.length;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTab(t)}
+                    className={`relative z-10 flex items-center justify-center gap-1.5 text-[14px] font-semibold rounded-full transition-colors ${
+                      active ? "text-[var(--fg)]" : "text-[var(--secondary)]"
+                    }`}
+                  >
+                    {t === "pendientes" ? "Pendientes" : "Completadas"}
+                    {tareas && count > 0 && (
+                      <span
+                        className="min-w-[20px] px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none"
+                        style={{
+                          backgroundColor: active ? (t === "pendientes" ? "rgba(255,59,48,0.14)" : "rgba(52,199,89,0.14)") : "transparent",
+                          color: active ? (t === "pendientes" ? "#ff3b30" : "#34c759") : "var(--secondary)",
+                        }}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleSearch}
+              aria-label={searchOpen ? "Cerrar búsqueda" : "Buscar tarea"}
+              aria-pressed={searchOpen}
+              className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center transition-colors ${
+                searchOpen ? "bg-[var(--fg)] text-[var(--bg)]" : "bg-[var(--surface2)] text-[var(--secondary)] active:bg-[var(--surface2)]"
+              }`}
+            >
+              <Search className="w-[18px] h-[18px]" />
+            </button>
           </div>
+
+          {searchOpen && (
+            <div className="mb-5" style={{ animation: "fade-in 0.15s ease" }}>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--secondary)]" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar por tarea o materia…"
+                  className="w-full h-11 rounded-full bg-[var(--surface2)] pl-10 pr-10 text-[14px] text-[var(--fg)] placeholder:text-[var(--secondary)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Limpiar búsqueda"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-[var(--secondary)] hover:text-[var(--fg)]"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!searchOpen && <div className="mb-2" />}
 
           {showSpinner && <SpinnerBlock label="Buscando tus tareas…" />}
 
@@ -274,41 +472,74 @@ export default function TareasPage() {
             </div>
           )}
 
-          {!showSpinner && !errorMsg && !sessionExpired && (
-            groups.length === 0 ? (
-              <EmptyState tab={tab} />
-            ) : (
-              <div key={tab} style={{ animation: "fade-in 0.2s ease" }} className="space-y-6">
-                {groups.map((g) => (
-                  <section key={g.course}>
-                    {/* Cabecera pegajosa de la materia */}
-                    <div className="px-1 py-1.5 mb-2 flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
-                      <Link
-                        href={`/course/${g.courseId}`}
-                        className="flex-1 min-w-0 text-[13px] font-bold uppercase tracking-wide truncate transition-opacity active:opacity-60 hover:opacity-70"
-                        style={{ color: g.color }}
-                      >
-                        {g.course}
-                        <ArrowUpRight className="inline-block ml-1 w-3 h-3 opacity-60 shrink-0" />
-                      </Link>
-                      <span className="text-[12px] font-semibold text-[var(--secondary)] tabular-nums shrink-0">{g.items.length}</span>
-                    </div>
+          {showInlineLoader && <SpinnerBlock label={isSearching ? "Buscando…" : "Buscando tus tareas…"} minHeight={72} />}
 
-                    {/* Inset grouped list */}
-                    <div className="bg-[var(--surface)] rounded-3xl border border-[var(--separator)] overflow-hidden shadow-sm divide-y divide-[var(--separator)]">
-                      {g.items.map((t) => (
-                        <TareaRow key={t.id} tarea={t} now={now} />
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            )
+          {showEmpty && (isSearching ? <SearchEmptyState query={query} /> : <EmptyState tab={tab} />)}
+
+          {showList && (
+            <div key={isSearching ? "search" : tab} style={{ animation: "fade-in 0.2s ease" }} className="space-y-6">
+              {visibleGroups.map((g) => (
+                <CourseAccordion
+                  key={g.course}
+                  group={g}
+                  now={now}
+                  collapsed={collapsedCourses.has(g.course)}
+                  onToggle={toggleCourse}
+                />
+              ))}
+            </div>
           )}
         </div>
       </WorkspaceLayout>
     </div>
+  );
+}
+
+// ─── Acordeón por materia ──────────────────────────────────────────────────
+
+function CourseAccordion({
+  group,
+  now,
+  collapsed,
+  onToggle,
+}: {
+  group: CourseGroup;
+  now: Date;
+  collapsed: boolean;
+  onToggle: (course: string) => void;
+}) {
+  return (
+    <section>
+      <div className="px-1 py-1.5 mb-2 flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+        <Link
+          href={`/course/${group.courseId}`}
+          className="flex-1 min-w-0 text-[13px] font-bold uppercase tracking-wide truncate transition-opacity active:opacity-60 hover:opacity-70"
+          style={{ color: group.color }}
+        >
+          {group.course}
+          <ArrowUpRight className="inline-block ml-1 w-3 h-3 opacity-60 shrink-0" />
+        </Link>
+        <span className="text-[12px] font-semibold text-[var(--secondary)] tabular-nums shrink-0">{group.items.length}</span>
+        <button
+          type="button"
+          onClick={() => onToggle(group.course)}
+          aria-label={collapsed ? `Expandir ${group.course}` : `Colapsar ${group.course}`}
+          aria-expanded={!collapsed}
+          className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full active:bg-[var(--surface2)]"
+        >
+          <ChevronDown className={`w-4 h-4 text-[var(--secondary)] transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div className="bg-[var(--surface)] rounded-3xl border border-[var(--separator)] overflow-hidden shadow-sm divide-y divide-[var(--separator)]">
+          {group.items.map((t) => (
+            <TareaRow key={t.id} tarea={t} now={now} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -381,6 +612,20 @@ function EmptyState({ tab }: { tab: Tab }) {
         {pend
           ? "No tenés tareas pendientes de entrega."
           : "Cuando entregues una tarea, va a aparecer acá."}
+      </p>
+    </div>
+  );
+}
+
+function SearchEmptyState({ query }: { query: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-16 px-6">
+      <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-4" style={{ backgroundColor: "var(--surface2)" }}>
+        <Search className="w-8 h-8 text-[var(--secondary)]" />
+      </div>
+      <p className="text-[16px] font-bold text-[var(--fg)]">Sin resultados</p>
+      <p className="text-[14px] text-[var(--secondary)] mt-1 max-w-xs">
+        No encontramos tareas ni materias que coincidan con &ldquo;{query}&rdquo;.
       </p>
     </div>
   );

@@ -96,7 +96,7 @@ export default function HorariosPage() {
   }, [expired, router]);
 
   const { data: customRes, mutate } = useSWR("/api/schedule-events", evFetcher, { revalidateOnFocus: false });
-  // Grilla oficial de la carrera (sanfrancisco.utn.edu.ar): se cachea 1 día en
+  // Grilla oficial de la carrera (ver lib/officialSchedule.ts): se cachea 1 día en
   // el servidor, así que acá alcanza con traerla una vez por sesión.
   const { data: oficialRes } = useSWR("/api/horarios-oficiales", oficialFetcher, { revalidateOnFocus: false });
 

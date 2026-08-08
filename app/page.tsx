@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { ChevronDown, X, Eye, EyeOff } from "lucide-react";
@@ -19,6 +19,11 @@ export default function LoginPage() {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  // null = todavía no sabemos si ya hay sesión.
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
+  // Splash con el logo UTN al iniciar la web, con sesión o sin ella —
+  // así nunca se ve el formulario "de pasada" antes de redirigir.
+  const [splashPhase, setSplashPhase] = useState<"enter" | "exit" | "done">("enter");
   const passwordRef = useRef<HTMLInputElement>(null);
 
   // Destino tras autenticarse: ?next= si es una ruta interna válida, o /dashboard.
@@ -27,9 +32,29 @@ export default function LoginPage() {
     return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   }
 
+  // useLayoutEffect corre antes de que el navegador pinte, así que si ya hay
+  // sesión el usuario nunca alcanza a ver el formulario de login.
+  useLayoutEffect(() => {
+    setHasSession(document.cookie.includes("moodle_user"));
+  }, []);
+
+  // Deja terminar la animación de entrada del logo y recién ahí dispara
+  // la salida: hacia /dashboard si hay sesión, o revelando el login si no.
   useEffect(() => {
-    if (document.cookie.includes("moodle_user")) router.push(destination());
-  }, [router]);
+    const ENTER_MS = 320;
+    const t = setTimeout(() => setSplashPhase("exit"), ENTER_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (splashPhase !== "exit" || hasSession === null) return;
+    const EXIT_MS = 280;
+    const t = setTimeout(() => {
+      if (hasSession) router.replace(destination());
+      else setSplashPhase("done");
+    }, EXIT_MS);
+    return () => clearTimeout(t);
+  }, [splashPhase, hasSession, router]);
 
   useEffect(() => {
     setMounted(true);
@@ -77,6 +102,24 @@ export default function LoginPage() {
     // Guardar la cuenta en el dispositivo solo si pidió mantener sesión.
     if (remember) addRememberedUser(username);
     router.push(destination());
+  }
+
+  // Splash inicial: logo UTN centrado con animación de entrada/salida.
+  // Se muestra siempre al cargar, haya o no sesión activa.
+  if (splashPhase !== "done") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+        {mounted && (
+          <img
+            src={isDark ? "/LOGOUTNW.png" : "/LOGOUTNB.png"}
+            alt="UTN"
+            className={`w-20 h-20 object-contain ${
+              splashPhase === "exit" ? "splash-logo-exit" : "splash-logo-enter"
+            }`}
+          />
+        )}
+      </div>
+    );
   }
 
   return (

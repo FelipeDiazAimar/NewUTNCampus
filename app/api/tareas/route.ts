@@ -202,11 +202,68 @@ function getUserId(req: NextRequest): number {
   }
 }
 
+/** Junta las URLs de tareas de un curso (página + secciones resumen). */
+async function collectCourseAssigns(cookie: string, course: MoodleCourse): Promise<[string, string][]> {
+  const assigns = new Map<string, string>(); // url → nombre
+  const collect = (html: string) => {
+    for (const a of parseAssignModules(html)) {
+      if (a.name && a.name !== "Tarea") assigns.set(a.url, a.name);
+      else if (!assigns.has(a.url)) assigns.set(a.url, "");
+    }
+    for (const m of html.matchAll(/href="([^"]*\/mod\/assign\/view\.php\?id=\d+)"/g)) {
+      const u = m[1].replace(/&amp;/g, "&");
+      if (!assigns.has(u)) assigns.set(u, "");
+    }
+  };
+
+  try {
+    const res = await fetch(`${MOODLE_BASE}/course/view.php?id=${course.id}`, { headers: { Cookie: cookie } });
+    const html = await res.text();
+    collect(html);
+
+    // Secciones colapsadas/resumen → su contenido vive en section.php.
+    const summaries = summarySectionIds(html).slice(0, 30);
+    const sectionHtmls = await Promise.all(
+      summaries.map((dbId) =>
+        fetch(`${MOODLE_BASE}/course/section.php?id=${dbId}`, { headers: { Cookie: cookie } })
+          .then((r) => r.text())
+          .catch(() => "")
+      )
+    );
+    for (const sHtml of sectionHtmls) collect(sHtml);
+  } catch { /* ignore */ }
+
+  return [...assigns.entries()];
+}
+
+const MAX_JOBS = 180;
+const encoder = new TextEncoder();
+
+/** Serializa el mock de invitado como stream NDJSON, igual protocolo que el real. */
+function guestStream(): Response {
+  const currentYear = new Date().getFullYear();
+  const years = [2026, 2025];
+  const year = currentYear >= 2026 ? 2026 : currentYear;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(JSON.stringify({ type: "meta", years, year }) + "\n"));
+      for (const item of MOCK_TAREAS) {
+        controller.enqueue(encoder.encode(JSON.stringify({ type: "tarea", item }) + "\n"));
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
 export async function GET(req: NextRequest) {
-  if (isGuestRequest(req)) {
-    const currentYear = new Date().getFullYear();
-    return NextResponse.json({ tareas: MOCK_TAREAS, years: [2026, 2025], year: currentYear >= 2026 ? 2026 : currentYear });
-  }
+  if (isGuestRequest(req)) return guestStream();
 
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const sesskey = req.cookies.get("moodle_sesskey")?.value ?? "";
@@ -219,85 +276,84 @@ export async function GET(req: NextRequest) {
   const currentYear = new Date().getFullYear();
   const reqYear = Number(req.nextUrl.searchParams.get("year")) || currentYear;
 
+  // Resuelve años/cursos disponibles antes de abrir el stream, para poder
+  // devolver un 401/500 normal si algo falla temprano.
+  let years: number[];
+  let year: number;
+  let courses: MoodleCourse[];
   try {
     const allCourses = await listCourses(cookie, sesskey, userid);
-
-    // Años disponibles = años en los que el alumno cursó algo (desc). Esto evita
-    // escanear todos los años: solo se scrapean los cursos del año pedido.
-    const years = [...new Set(allCourses.map(courseYear))].sort((a, b) => b - a);
+    years = [...new Set(allCourses.map(courseYear))].sort((a, b) => b - a);
     if (years.length === 0) years.push(currentYear);
-    // Si el año pedido no existe (no hubo cursos), caemos al más reciente.
-    const year = years.includes(reqYear) ? reqYear : years[0];
-    const courses = allCourses.filter((c) => courseYear(c) === year);
-
-    // Por curso: junta las URLs de tareas (página + secciones resumen).
-    const perCourse = await Promise.all(
-      courses.map(async (course) => {
-        const assigns = new Map<string, string>(); // url → nombre
-        const collect = (html: string) => {
-          for (const a of parseAssignModules(html)) {
-            if (a.name && a.name !== "Tarea") assigns.set(a.url, a.name);
-            else if (!assigns.has(a.url)) assigns.set(a.url, "");
-          }
-          for (const m of html.matchAll(/href="([^"]*\/mod\/assign\/view\.php\?id=\d+)"/g)) {
-            const u = m[1].replace(/&amp;/g, "&");
-            if (!assigns.has(u)) assigns.set(u, "");
-          }
-        };
-
-        try {
-          const res = await fetch(`${MOODLE_BASE}/course/view.php?id=${course.id}`, { headers: { Cookie: cookie } });
-          const html = await res.text();
-          collect(html);
-
-          // Secciones colapsadas/resumen → su contenido vive en section.php.
-          const summaries = summarySectionIds(html).slice(0, 30);
-          const sectionHtmls = await Promise.all(
-            summaries.map((dbId) =>
-              fetch(`${MOODLE_BASE}/course/section.php?id=${dbId}`, { headers: { Cookie: cookie } })
-                .then((r) => r.text())
-                .catch(() => "")
-            )
-          );
-          for (const sHtml of sectionHtmls) collect(sHtml);
-        } catch { /* ignore */ }
-
-        return { course: course.fullname, courseId: course.id, assigns: [...assigns.entries()] };
-      })
-    );
-
-    const jobs = perCourse
-      .flatMap((c) =>
-        c.assigns.map(([url, name]) => ({ url, name, course: c.course, courseId: c.courseId }))
-      )
-      .slice(0, 180);
-
-    const results = await Promise.all(
-      jobs.map(async (j) => {
-        const detail = await fetchAssignDetail(cookie, j.url, j.name);
-        if (!detail) return null;
-        const id = j.url.match(/[?&]id=(\d+)/)?.[1] ?? "";
-        return {
-          id,
-          url: encodeUrlRef(j.url),
-          title: detail.title,
-          course: j.course,
-          courseId: j.courseId,
-          open: detail.open,
-          due: detail.due,
-          dueLabel: detail.dueLabel,
-          submitted: detail.submitted,
-          graded: detail.graded,
-          grade: detail.grade,
-          status: detail.status,
-        } satisfies TareaItem;
-      })
-    );
-
-    const tareas = results.filter((t): t is TareaItem => t !== null);
-    return NextResponse.json({ tareas, years, year });
+    year = years.includes(reqYear) ? reqYear : years[0];
+    courses = allCourses.filter((c) => courseYear(c) === year);
   } catch (err) {
     console.error("[tareas]", (err as Error).message);
     return NextResponse.json({ tareas: [], years: [currentYear], year: reqYear, error: (err as Error).message }, { status: 500 });
   }
+
+  // A partir de acá streameamos NDJSON: una línea de meta y luego cada tarea
+  // apenas su fetch a Moodle resuelve, en vez de esperar a que terminen todas.
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(JSON.stringify({ type: "meta", years, year }) + "\n"));
+
+      let jobCount = 0;
+      let pending = courses.length; // un token por curso mientras junta sus tareas
+
+      const checkDone = () => {
+        if (pending <= 0) controller.close();
+      };
+      if (courses.length === 0) { checkDone(); return; }
+
+      for (const course of courses) {
+        (async () => {
+          try {
+            const assigns = await collectCourseAssigns(cookie, course);
+            for (const [url, name] of assigns) {
+              if (jobCount >= MAX_JOBS) break;
+              jobCount++;
+              pending++;
+              fetchAssignDetail(cookie, url, name)
+                .then((detail) => {
+                  if (!detail) return;
+                  const id = url.match(/[?&]id=(\d+)/)?.[1] ?? "";
+                  const item: TareaItem = {
+                    id,
+                    url: encodeUrlRef(url),
+                    title: detail.title,
+                    course: course.fullname,
+                    courseId: course.id,
+                    open: detail.open,
+                    due: detail.due,
+                    dueLabel: detail.dueLabel,
+                    submitted: detail.submitted,
+                    graded: detail.graded,
+                    grade: detail.grade,
+                    status: detail.status,
+                  };
+                  controller.enqueue(encoder.encode(JSON.stringify({ type: "tarea", item }) + "\n"));
+                })
+                .catch(() => { /* ignore */ })
+                .finally(() => {
+                  pending--;
+                  checkDone();
+                });
+            }
+          } catch { /* ignore */ } finally {
+            pending--; // token de "juntar tareas" de este curso, consumido
+            checkDone();
+          }
+        })();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
