@@ -43,3 +43,6 @@ next-env.d.ts
 # HAR files (may contain sensitive tokens/keys from captured traffic)
 *.har
 harfiles/
+
+# Tesseract.js language data (downloaded on demand, not a build artifact)
+*.traineddata
