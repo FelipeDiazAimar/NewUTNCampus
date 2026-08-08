@@ -7,6 +7,7 @@ import {
   GUEST_SYSACAD_USER,
   GUEST_SYSACAD_AUTH,
 } from "@/lib/guest";
+import { logLoginEvent } from "@/lib/loginEvents";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,8 @@ export async function GET(req: Request) {
   res.cookies.set("moodle_session_token", GUEST_TOKEN,        sessionCookieOptions(keep, true));
   res.cookies.set("moodle_sesskey",       GUEST_SESSKEY,      sessionCookieOptions(keep, true));
   res.cookies.set("sysacadws_auth",       GUEST_SYSACAD_AUTH, sessionCookieOptions(keep, true));
+
+  await logLoginEvent({ userKey: "invitado", fullname: "Invitado", source: "guest" });
 
   return res;
 }

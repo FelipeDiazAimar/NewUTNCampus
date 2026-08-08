@@ -10,6 +10,7 @@ import {
   isDeviceSessionRevoked,
   deleteDeviceSession,
 } from "@/lib/deviceSessions";
+import { logLoginEvent } from "@/lib/loginEvents";
 
 const DEVICE_COOKIE = "campus_device_id";
 
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       fullname: session.fullname,
       userAgent: req.headers.get("user-agent"),
     });
+    await logLoginEvent({ userKey: session.username, fullname: session.fullname, source: "moodle" });
     // "Mantener sesión": guardamos credenciales cifradas para re-loguear solo al vencer.
     if (keep) {
       response.cookies.set("moodle_cred", encryptCred(JSON.stringify({ u: username, p: password })), sessionCookieOptions(true, true));
