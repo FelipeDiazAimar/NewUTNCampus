@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import PageTextOverlay from "./PageTextOverlay";
+import { hashString } from "@/lib/ocrCache";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -65,28 +67,71 @@ function TBtn({ onClick, disabled, title, children, minW, light }: {
   );
 }
 
+// ─── PageWithOverlay ──────────────────────────────────────────────────────────
+// Canvas-only render for the <Page> itself. The text/struct-tree layer built
+// into react-pdf throws a synchronous "Cannot read properties of null (reading
+// 'childNodes')" on some PDFs, which crashes the whole viewer (blank panel).
+// Rendering canvas only is the one path that never throws, so the PDF is always
+// visible. Text selection instead comes from PageTextOverlay, which reads
+// pdfjs-dist directly (bypassing react-pdf's crashing TextLayer) and never lets
+// a failure affect the canvas rendering above.
+function PageWithOverlay({
+  pageNumber, pageWidth, scale, onPageRendered, getPage, cacheKeyPrefix,
+}: {
+  pageNumber: number;
+  pageWidth: number | undefined;
+  scale: number;
+  onPageRendered: () => void;
+  getPage: (pageNumber: number) => PDFPageProxy | null;
+  cacheKeyPrefix: string;
+}) {
+  const [rendered, setRendered] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasEl = rendered ? (containerRef.current?.querySelector("canvas") ?? null) : null;
+  return (
+    <div ref={containerRef} className="relative" style={{ lineHeight: 0 }}>
+      <Page pageNumber={pageNumber} width={pageWidth} scale={scale}
+        loading={<PageSkeleton />}
+        renderTextLayer={false} renderAnnotationLayer={false}
+        onRenderSuccess={() => { setRendered(true); onPageRendered(); }}
+        className="shadow-2xl" />
+      {rendered && (
+        <PageTextOverlay
+          page={getPage(pageNumber)}
+          scale={scale}
+          pageHeightPx={containerRef.current?.clientHeight ?? 0}
+          cacheKey={`${cacheKeyPrefix}:${pageNumber}`}
+          canvasEl={canvasEl}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── PagesList (memoized) ─────────────────────────────────────────────────────
-// Canvas-only render. The text/struct-tree layer in react-pdf throws a synchronous
-// "Cannot read properties of null (reading 'childNodes')" on some PDFs, which crashes
-// the whole viewer (blank panel). Rendering canvas only is the one path that never
-// throws, so the PDF is always visible. Trade-off: text isn't selectable.
 // Memoizing keeps the page canvases stable while the parent's page counter updates.
 const PagesList = memo(function PagesList({
-  numPages, pageWidth, scale, onPageRendered,
+  numPages, pageWidth, scale, onPageRendered, getPage, cacheKeyPrefix,
 }: {
   numPages: number;
   pageWidth: number | undefined;
   scale: number;
   onPageRendered: () => void;
+  getPage: (pageNumber: number) => PDFPageProxy | null;
+  cacheKeyPrefix: string;
 }) {
   return (
     <div className="flex flex-col gap-4 items-center">
       {Array.from({ length: numPages }, (_, i) => (
-        <Page key={`page_${i + 1}`} pageNumber={i + 1} width={pageWidth} scale={scale}
-          loading={<PageSkeleton />}
-          renderTextLayer={false} renderAnnotationLayer={false}
-          onRenderSuccess={onPageRendered}
-          className="shadow-2xl" />
+        <PageWithOverlay
+          key={`page_${i + 1}`}
+          pageNumber={i + 1}
+          pageWidth={pageWidth}
+          scale={scale}
+          onPageRendered={onPageRendered}
+          getPage={getPage}
+          cacheKeyPrefix={cacheKeyPrefix}
+        />
       ))}
     </div>
   );
@@ -104,6 +149,15 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   const [containerWidth, setContainerWidth] = useState(0);
   const aspectReportedRef = useRef(false);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+
+  // PDFPageProxy per page number, resolved asynchronously as the document loads.
+  // PageTextOverlay needs a synchronous page prop, so pages are pre-resolved here
+  // rather than fetched on demand inside the overlay.
+  const [resolvedPages, setResolvedPages] = useState<Map<number, PDFPageProxy>>(new Map());
+  const getPage = useCallback(
+    (pageNumber: number) => resolvedPages.get(pageNumber) ?? null,
+    [resolvedPages],
+  );
 
   // Resolve src → react-pdf file prop, clean up objectURLs
   const [file, setFile] = useState<string | { data: ArrayBuffer } | null>(null);
@@ -128,6 +182,11 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   // <Document> when the source changes, preventing PDF.js from rendering into
   // stale/removed canvases (the "Cannot read properties of null (childNodes)" error).
   const fileKey = typeof file === "string" ? file : file ? "buffer" : "none";
+
+  // Stable per-document prefix for OCR cache keys — combined with the page
+  // number in PageWithOverlay so each page's cached OCR result is looked up
+  // independently.
+  const cacheKeyPrefix = useMemo(() => hashString(fileKey), [fileKey]);
 
   // Responsive page width.
   // The ResizeObserver fires repeatedly while the workspace panel animates open,
@@ -164,6 +223,16 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     pdfDocRef.current = pdf;
     setRenderedPages(0);
     setNumPages(pdf.numPages);
+    setResolvedPages(new Map());
+    for (let n = 1; n <= pdf.numPages; n++) {
+      pdf.getPage(n).then((page) => {
+        setResolvedPages((prev) => {
+          const next = new Map(prev);
+          next.set(n, page);
+          return next;
+        });
+      }).catch(() => { /* page fetch failed — overlay just won't render for it */ });
+    }
     if (onAspectRatio && !aspectReportedRef.current) {
       try {
         const pg = await pdf.getPage(1);
@@ -232,7 +301,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
             onLoadError={(e) => setDocError(e.message)}
             loading={<PageSkeleton />} error={<span />}>
             <PagesList numPages={numPages} pageWidth={pageWidth} scale={scale}
-              onPageRendered={handlePageRendered} />
+              onPageRendered={handlePageRendered} getPage={getPage} cacheKeyPrefix={cacheKeyPrefix} />
           </Document>
         )}
       </div>
