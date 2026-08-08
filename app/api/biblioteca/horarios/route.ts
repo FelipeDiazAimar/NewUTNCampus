@@ -21,10 +21,9 @@ function httpsPost(url: string, body: string): Promise<string> {
         rejectUnauthorized: false,
       },
       (res) => {
-        let data = "";
-        res.setEncoding("latin1");
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => resolve(data));
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
       }
     );
     req.on("error", reject);

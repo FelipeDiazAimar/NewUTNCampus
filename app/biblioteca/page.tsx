@@ -30,17 +30,7 @@ type TurnoData = {
 
 type SubmitStatus = "idle" | "loading" | "success" | "error";
 
-const AREAS_BIBLIOTECA = [
-  { id: "32", label: "BIBLIOTECA - Uso Notebooks", responsable: "32/BIBLIOTECA - Uso Notebooks " },
-  { id: "23", label: "BIBLIOTECA - Uso Salas", responsable: "23/BIBLIOTECA - Uso Salas " },
-  { id: "31", label: "Espacio Progresar - Lun/Mié/Vie", responsable: "31/Espacio Progresar - Lunes-Miércoles-Viernes " },
-  { id: "34", label: "Espacio Progresar - Mar/Jue", responsable: "34/Espacio Progresar - Martes-Jueves " },
-];
-
-const AREA_OPTIONS: DropdownOption[] = AREAS_BIBLIOTECA.map((a) => ({
-  value: a.id,
-  label: a.label,
-}));
+type AreaBiblioteca = { id: string; label: string; responsable: string };
 
 function getUserInfo() {
   if (typeof document === "undefined") return null;
@@ -90,11 +80,15 @@ export default function BibliotecaPage() {
   });
 
   const [turno, setTurno] = useState<TurnoData>({
-    area: AREAS_BIBLIOTECA[0].id,
+    area: "",
     tematica: "",
     fecha: getTodayDate(),
     horario: "",
   });
+
+  const [areas, setAreas] = useState<AreaBiblioteca[]>([]);
+  const [areasLoading, setAreasLoading] = useState(true);
+  const areaOptions: DropdownOption[] = areas.map((a) => ({ value: a.id, label: a.label }));
 
   const [tematicaOpts, setTematicaOpts] = useState<DropdownOption[]>([]);
   const [tematicasLoading, setTematicasLoading] = useState(false);
@@ -102,8 +96,8 @@ export default function BibliotecaPage() {
   const [horariosLoading, setHorariosLoading] = useState(false);
 
   // ── Load tematicas ─────────────────────────────────────────────────────────
-  const loadTematicas = useCallback(async (areaId: string, preferredTematica?: string) => {
-    const area = AREAS_BIBLIOTECA.find((a) => a.id === areaId);
+  const loadTematicas = useCallback(async (areaId: string, areaList: AreaBiblioteca[], preferredTematica?: string) => {
+    const area = areaList.find((a) => a.id === areaId);
     if (!area) return;
     setTematicasLoading(true);
     setTematicaOpts([]);
@@ -156,7 +150,7 @@ export default function BibliotecaPage() {
     }).catch(() => {});
   }, []);
 
-  // ── Mount: load profile + prefs from Supabase ─────────────────────────────
+  // ── Mount: load areas, then profile + prefs from Supabase ─────────────────
   useEffect(() => {
     if (typeof document === "undefined") return;
     const moodleUser = getUserInfo();
@@ -164,49 +158,69 @@ export default function BibliotecaPage() {
     setMounted(true);
     setUserInfo(moodleUser);
 
-    fetch("/api/biblioteca/preferencias")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data) {
-          // No Supabase record — try to seed from cookies / sysacad
-          const sysUser = getSysacadUser();
-          if (sysUser) {
-            const [apellido, nombre] = (sysUser.nombre || "").split(",").map((s: string) => s.trim());
-            setProfile((prev) => ({ ...prev, nombre: nombre || "", apellido: apellido || "" }));
-          }
-          if (moodleUser.fullname) {
-            const parts = moodleUser.fullname.split(" ");
-            setProfile((prev) => ({
-              ...prev,
-              nombre: prev.nombre || parts[0] || "",
-              apellido: prev.apellido || parts.slice(1).join(" ") || "",
-            }));
-          }
-          loadTematicas(AREAS_BIBLIOTECA[0].id);
-          return;
-        }
+    (async () => {
+      setAreasLoading(true);
+      let areaList: AreaBiblioteca[] = [];
+      try {
+        const res = await fetch("/api/biblioteca/areas");
+        areaList = await res.json();
+      } catch {
+        // silence
+      } finally {
+        setAreas(areaList);
+        setAreasLoading(false);
+      }
+      if (areaList.length === 0) return;
+      const defaultAreaId = areaList[0].id;
 
-        // Hydrate profile from Supabase (only non-empty fields)
-        setProfile((prev) => ({
-          nombre: data.nombre || prev.nombre,
-          apellido: data.apellido || prev.apellido,
-          dni: data.dni || prev.dni,
-          tipoDocumento: (data.tipo_documento as UserProfile["tipoDocumento"]) || prev.tipoDocumento,
-          email: data.email || prev.email,
-          telefono: data.telefono || prev.telefono,
-          localidad: data.localidad || prev.localidad,
-          provincia: data.provincia || prev.provincia,
-          carrera: prev.carrera,
-        }));
+      fetch("/api/biblioteca/preferencias")
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data) {
+            // No Supabase record — try to seed from cookies / sysacad
+            const sysUser = getSysacadUser();
+            if (sysUser) {
+              const [apellido, nombre] = (sysUser.nombre || "").split(",").map((s: string) => s.trim());
+              setProfile((prev) => ({ ...prev, nombre: nombre || "", apellido: apellido || "" }));
+            }
+            if (moodleUser.fullname) {
+              const parts = moodleUser.fullname.split(" ");
+              setProfile((prev) => ({
+                ...prev,
+                nombre: prev.nombre || parts[0] || "",
+                apellido: prev.apellido || parts.slice(1).join(" ") || "",
+              }));
+            }
+            setTurno((prev) => ({ ...prev, area: defaultAreaId }));
+            loadTematicas(defaultAreaId, areaList);
+            return;
+          }
 
-        // Hydrate turno preferences
-        const areaId = data.area_id && AREAS_BIBLIOTECA.some((a) => a.id === data.area_id)
-          ? data.area_id
-          : AREAS_BIBLIOTECA[0].id;
-        setTurno((prev) => ({ ...prev, area: areaId }));
-        loadTematicas(areaId, data.tematica_id ?? undefined);
-      })
-      .catch(() => loadTematicas(AREAS_BIBLIOTECA[0].id));
+          // Hydrate profile from Supabase (only non-empty fields)
+          setProfile((prev) => ({
+            nombre: data.nombre || prev.nombre,
+            apellido: data.apellido || prev.apellido,
+            dni: data.dni || prev.dni,
+            tipoDocumento: (data.tipo_documento as UserProfile["tipoDocumento"]) || prev.tipoDocumento,
+            email: data.email || prev.email,
+            telefono: data.telefono || prev.telefono,
+            localidad: data.localidad || prev.localidad,
+            provincia: data.provincia || prev.provincia,
+            carrera: prev.carrera,
+          }));
+
+          // Hydrate turno preferences
+          const areaId = data.area_id && areaList.some((a) => a.id === data.area_id)
+            ? data.area_id
+            : defaultAreaId;
+          setTurno((prev) => ({ ...prev, area: areaId }));
+          loadTematicas(areaId, areaList, data.tematica_id ?? undefined);
+        })
+        .catch(() => {
+          setTurno((prev) => ({ ...prev, area: defaultAreaId }));
+          loadTematicas(defaultAreaId, areaList);
+        });
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -222,7 +236,7 @@ export default function BibliotecaPage() {
   const handleAreaChange = (areaId: string) => {
     setTurno((prev) => ({ ...prev, area: areaId, tematica: "", horario: "" }));
     setHorarioOpts([]);
-    loadTematicas(areaId);
+    loadTematicas(areaId, areas);
     prefSaved.current = false;
   };
 
@@ -324,7 +338,7 @@ export default function BibliotecaPage() {
           </div>
           <div>
             <h1 className="text-[28px] font-bold text-[var(--fg)]">Biblioteca</h1>
-            <p className="text-[14px] text-[var(--secondary)]">Reserva tu turno de acceso presencial</p>
+            <p className="text-[14px] text-[var(--secondary)]">Reserva tu turno presencial</p>
           </div>
         </div>
 
@@ -362,8 +376,11 @@ export default function BibliotecaPage() {
               </label>
               <DropdownSelect
                 value={turno.area}
-                options={AREA_OPTIONS}
+                options={areaOptions}
                 onChange={handleAreaChange}
+                placeholder={areasLoading ? "Cargando áreas..." : "Seleccionar área"}
+                loading={areasLoading}
+                disabled={!areasLoading && areaOptions.length === 0}
               />
             </div>
 
