@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { MoodleCourse } from "@/lib/moodle";
 
 import { MOODLE_BASE, toProxyPath } from "@/lib/moodle";
+import { getCachedCourses, setCachedCourses } from "@/lib/contentCache";
 
 function decodeEntities(value: string) {
   return value
@@ -204,16 +205,33 @@ function parseCourses(html: string): MoodleCourse[] {
   return uniqueById(fallbackResults);
 }
 
+function getUserId(req: NextRequest): number | undefined {
+  const raw = req.cookies.get("moodle_user")?.value;
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { userid?: number };
+    return parsed.userid;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   if (!sessionToken) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
+  const userId = getUserId(req);
 
   try {
     const res = await fetch(`${MOODLE_BASE}/my/courses.php`, {
       headers: { Cookie: `MoodleSession=${sessionToken}` },
     });
+    if (res.status >= 500) {
+      // Moodle caído a nivel servidor: tratarlo igual que un error de red,
+      // para que el catch de abajo intente el respaldo en cache.
+      throw new Error(`Moodle respondió ${res.status}`);
+    }
     const html = await res.text();
     if (res.url.includes("/login/") || html.includes("logintoken")) {
       return NextResponse.json({ error: "Sesion expirada" }, { status: 401 });
@@ -225,8 +243,15 @@ export async function GET(req: NextRequest) {
         courses = await fetchAjaxCourses(sessionToken, sesskey);
       }
     }
+    if (courses.length > 0 && userId) {
+      setCachedCourses(userId, courses);
+    }
     return NextResponse.json({ data: courses });
   } catch (err) {
+    if (userId) {
+      const cached = await getCachedCourses(userId);
+      if (cached) return NextResponse.json({ data: cached });
+    }
     return NextResponse.json(
       { error: (err as Error).message || "Error al obtener cursos" },
       { status: 500 }
