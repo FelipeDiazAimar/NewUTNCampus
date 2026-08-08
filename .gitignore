@@ -46,3 +46,6 @@ harfiles/
 
 # Tesseract.js language data (downloaded on demand, not a build artifact)
 *.traineddata
+
+# Claude Code conversation history (may contain secrets pasted in chat)
+.waylog/
