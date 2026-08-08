@@ -1,5 +1,33 @@
 export const MOODLE_BASE = "https://frsfco.cvg.utn.edu.ar";
 
+/** Node/undici expone los headers HTTP como si fueran Latin-1 (así lo pide el
+ *  RFC), pero Moodle manda el `filename=` de Content-Disposition en UTF-8 crudo
+ *  sin percent-encoding. El resultado son mojibake como "PresentaciÃ³n". Si
+ *  reinterpretar los bytes como UTF-8 da un texto válido (sin U+FFFD) que
+ *  vuelve a producir exactamente los mismos bytes, era mojibake y lo arreglamos;
+ *  si no, dejamos el string como vino (nombre legítimamente en Latin-1/ASCII). */
+function fixLatin1Mojibake(s: string): string {
+  try {
+    const bytes = Buffer.from(s, "latin1");
+    const utf8 = bytes.toString("utf8");
+    if (!utf8.includes("�") && Buffer.from(utf8, "utf8").equals(bytes)) return utf8;
+  } catch { /* keep original */ }
+  return s;
+}
+
+/** Extrae el filename de un header Content-Disposition, soportando tanto la
+ *  forma extendida (filename*=UTF-8''%XX...) como la plana (filename="..."),
+ *  normalizando el mojibake de esta última (ver fixLatin1Mojibake). */
+export function decodeContentDispositionFilename(disp: string): string | null {
+  const star = disp.match(/filename\*=UTF-8''([^;\r\n]+)/i)?.[1];
+  if (star) {
+    try { return decodeURIComponent(star); } catch { return star; }
+  }
+  const plain = disp.match(/filename="?([^";\r\n]+)"?/i)?.[1];
+  if (!plain) return null;
+  return fixLatin1Mojibake(plain);
+}
+
 /** Resuelve un href de Moodle (relativo o absoluto) a una URL absoluta. */
 export function absMoodleUrl(url: string): string {
   if (url.startsWith("http")) return url;

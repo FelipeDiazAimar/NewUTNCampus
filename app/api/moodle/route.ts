@@ -3,6 +3,23 @@ import { sessionCookieOptions } from "@/lib/cookies";
 import { isGuestRequest } from "@/lib/guest";
 import { MOCK_COURSES, MOCK_CONVERSATIONS, MOCK_SEARCH_USERS } from "@/lib/guestMockData";
 import { MOODLE_BASE, rewriteMoodleUrlsDeep } from "@/lib/moodle";
+import { getCachedCourses, setCachedCourses } from "@/lib/contentCache";
+
+const COURSE_LIST_METHODS = new Set([
+  "core_course_get_enrolled_courses_by_timeline_classification",
+  "core_enrol_get_users_courses",
+]);
+
+function getUserId(req: NextRequest): number | undefined {
+  const raw = req.cookies.get("moodle_user")?.value;
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { userid?: number };
+    return parsed.userid;
+  } catch {
+    return undefined;
+  }
+}
 
 export async function POST(req: NextRequest) {
   // ── Guest mode: return mock data without hitting Moodle ─────────────────────
@@ -48,6 +65,8 @@ export async function POST(req: NextRequest) {
   const moodleCookie = `MoodleSession=${sessionToken}`;
 
   const { methodname, args } = await req.json();
+  const userId = getUserId(req);
+  const isCourseList = COURSE_LIST_METHODS.has(methodname);
 
   try {
     const raw = await fetch(
@@ -62,6 +81,12 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify([{ index: 0, methodname, args }]),
       }
     );
+    if (raw.status >= 500) {
+      // Moodle caído a nivel servidor: tratarlo igual que un error de red,
+      // para que el catch de abajo intente el respaldo en cache (solo aplica
+      // a isCourseList — el resto de los métodos simplemente fallan).
+      throw new Error(`Moodle respondió ${raw.status}`);
+    }
     // Moodle puede regenerar la sesión en cualquier request: capturamos el token
     // rotado para que las llamadas siguientes no fallen por sesión vencida.
     const rotated = raw.headers.get("set-cookie")?.match(/MoodleSession=([^;]+)/)?.[1];
@@ -80,7 +105,14 @@ export async function POST(req: NextRequest) {
       console.error("[moodle proxy] Moodle error:", msg, arr[0].exception);
       return NextResponse.json({ error: msg }, { status: 500 });
     }
-    const response = NextResponse.json({ data: rewriteMoodleUrlsDeep(arr[0]?.data ?? arr[0] ?? {}) });
+    const data = rewriteMoodleUrlsDeep(arr[0]?.data ?? arr[0] ?? {});
+    if (isCourseList && userId) {
+      const courses = (data as { courses?: unknown }).courses ?? data;
+      if (Array.isArray(courses) && courses.length > 0) {
+        setCachedCourses(userId, courses as Parameters<typeof setCachedCourses>[1]);
+      }
+    }
+    const response = NextResponse.json({ data });
     // Persistir el token rotado + deslizar la expiración de la sesión con la actividad.
     if (rotated && rotated !== sessionToken) {
       response.cookies.set("moodle_session_token", rotated, sessionCookieOptions(keep, true));
@@ -88,6 +120,17 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (err) {
     console.error("[moodle proxy] fetch error:", (err as Error).message);
+    if (isCourseList && userId) {
+      const cached = await getCachedCourses(userId);
+      if (cached) {
+        return NextResponse.json({
+          data:
+            methodname === "core_course_get_enrolled_courses_by_timeline_classification"
+              ? { courses: cached }
+              : cached,
+        });
+      }
+    }
     return NextResponse.json(
       { error: (err as Error).message },
       { status: 500 }

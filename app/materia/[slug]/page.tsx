@@ -13,6 +13,8 @@ import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import FolderViewer from "@/components/FolderViewer";
 import H5pViewer from "@/components/H5pViewer";
 import { FileViewer } from "@/components/CourseFileViewer";
+import ContactProfessorModal from "@/components/ContactProfessorModal";
+import { MessageCircle } from "lucide-react";
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -228,8 +230,6 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
 // ─── ModuleRow ────────────────────────────────────────────────────────────────
 
 function ModuleRow({ mod }: { mod: MoodleModule }) {
-  const [open, setOpen] = useState(false);
-
   if (mod.modname === "label") {
     if (mod.description) {
       // Skip labels that only contain links and no real body text.
@@ -274,46 +274,44 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
     return <UrlModuleRow mod={mod} />;
   }
 
-  const [color, bg] = MOD_COLORS[mod.modname] ?? ["#8e8e93", "#f2f2f7"];
   const hasFiles = (mod.contents?.length ?? 0) > 0;
-  const isPreviewable = hasFiles && mod.modname === "resource";
+  // Los "resource" con archivo (apuntes) ya no van dentro de un acordeón: los
+  // botones de previsualizar/descargar se muestran directo, sin expandir nada.
+  if (hasFiles && mod.modname === "resource") {
+    return (
+      <div className="divide-y divide-[rgba(60,60,67,0.06)]">
+        {mod.contents!.map((c, i) => <FileViewer key={i} content={c} />)}
+      </div>
+    );
+  }
+
+  const [color, bg] = MOD_COLORS[mod.modname] ?? ["#8e8e93", "#f2f2f7"];
   const badge = getModBadge(mod);
   const badgeFontSize = badge.length >= 5 ? "7px" : badge.length === 4 ? "9px" : "11px";
 
   return (
-    <div>
-      <button
-        onClick={() => {
-          if (isPreviewable) setOpen((o) => !o);
-          else if (mod.url) window.open(mod.url, "_blank", "noopener,noreferrer");
-        }}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
+    <button
+      onClick={() => mod.url && window.open(mod.url, "_blank", "noopener,noreferrer")}
+      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
+    >
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
+        style={{ background: bg, color, fontSize: badgeFontSize }}
       >
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
-          style={{ background: bg, color, fontSize: badgeFontSize }}
+        {badge}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
+      </div>
+      {mod.url && (
+        <svg
+          className="w-4 h-4 text-[var(--secondary)] shrink-0"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
         >
-          {badge}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
-        </div>
-        {(isPreviewable || mod.url) && (
-          <svg
-            className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${isPreviewable && open ? "rotate-90" : ""}`}
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-          >
-            <polyline points="9,18 15,12 9,6" />
-          </svg>
-        )}
-      </button>
-
-      {isPreviewable && open && (
-        <div className="border-t border-[rgba(60,60,67,0.08)] bg-[var(--surface2)] divide-y divide-[rgba(60,60,67,0.06)]">
-          {mod.contents!.map((c, i) => <FileViewer key={i} content={c} />)}
-        </div>
+          <polyline points="9,18 15,12 9,6" />
+        </svg>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -445,6 +443,7 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
   const { sections, courseName, loading, error } = useCourseContents(parseInt(id));
   const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
   const [search, setSearch] = useState("");
+  const [contactOpen, setContactOpen] = useState(false);
 
   useEffect(() => {
     setUserInfo(getUserInfo());
@@ -477,7 +476,7 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
 
           {/* Course header — iOS Large Title style */}
           {(courseName || loading) && (
-            <div style={{ marginBottom: "24px" }}>
+            <div style={{ marginBottom: "24px" }} className="flex items-end justify-between gap-3">
               {loading && !courseName ? (
                 <div className="space-y-2">
                   <div className="h-3 w-16 bg-[#e5e5ea] rounded animate-pulse" />
@@ -485,17 +484,27 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: "11px", fontWeight: "700", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
-                    Materia
-                  </p>
-                  <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "var(--fg)", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
-                    {courseName}
-                  </h1>
-                  {!loading && (
-                    <p style={{ fontSize: "13px", color: "var(--secondary)", marginTop: "6px" }}>
-                      {filtered.length} sección{filtered.length !== 1 ? "es" : ""}
+                  <div className="min-w-0">
+                    <p style={{ fontSize: "11px", fontWeight: "700", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
+                      Materia
                     </p>
-                  )}
+                    <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "var(--fg)", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
+                      {courseName}
+                    </h1>
+                    {!loading && (
+                      <p style={{ fontSize: "13px", color: "var(--secondary)", marginTop: "6px" }}>
+                        {filtered.length} sección{filtered.length !== 1 ? "es" : ""}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContactOpen(true)}
+                    className="shrink-0 flex items-center gap-1.5 rounded-full bg-[var(--surface2)] px-4 py-2.5 text-[13px] font-semibold text-[#007aff] active:opacity-70 transition-opacity"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Ver Profesores
+                  </button>
                 </>
               )}
             </div>
@@ -542,6 +551,11 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
           )}
         </div>
       </WorkspaceLayout>
+      <ContactProfessorModal
+        courseId={parseInt(id)}
+        open={contactOpen}
+        onClose={() => setContactOpen(false)}
+      />
     </div>
   );
 }

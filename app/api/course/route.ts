@@ -3,9 +3,10 @@ import type { MoodleCourseSection, MoodleModule, MoodleContent } from "@/lib/moo
 import { isGuestRequest } from "@/lib/guest";
 import { MOCK_COURSE_SECTIONS } from "@/lib/guestMockData";
 
-import { MOODLE_BASE, absMoodleUrl, toProxyPath, rewriteMoodleHtml } from "@/lib/moodle";
+import { MOODLE_BASE, absMoodleUrl, toProxyPath, rewriteMoodleHtml, decodeContentDispositionFilename } from "@/lib/moodle";
 import { encodeUrlRef } from "@/lib/urlToken";
 import { parseFolderTree } from "@/lib/folderTree";
+import { getCachedCourse, setCachedCourse } from "@/lib/contentCache";
 
 function decodeEntities(s: string) {
   return s
@@ -278,8 +279,8 @@ async function resolveFilename(viewUrl: string, cookie: string): Promise<string 
         continue;
       }
       const disp = res.headers.get("content-disposition") ?? "";
-      const fromDisp = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1];
-      if (fromDisp) return decodeURIComponent(fromDisp);
+      const fromDisp = decodeContentDispositionFilename(disp);
+      if (fromDisp) return fromDisp;
       const last = decodeURIComponent(current.split("/").pop()?.split("?")[0] ?? "");
       if (last && last.includes(".") && !last.endsWith(".php")) return last;
       break;
@@ -312,6 +313,11 @@ export async function GET(req: NextRequest) {
     const mainRes = await fetch(`${MOODLE_BASE}/course/view.php?id=${courseId}`, {
       headers: { Cookie: cookie },
     });
+    if (mainRes.status >= 500) {
+      // Moodle caído a nivel servidor: tratarlo igual que un error de red,
+      // para que el catch de abajo intente el respaldo en cache.
+      throw new Error(`Moodle respondió ${mainRes.status}`);
+    }
     if (mainRes.url.includes("/login/")) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
@@ -388,9 +394,14 @@ export async function GET(req: NextRequest) {
       section.modules = section.modules.map(finalizeModule);
     }
 
+    setCachedCourse(Number(courseId), { sections, courseName });
     return NextResponse.json({ data: sections, courseName });
   } catch (err) {
     console.error("[course] error:", (err as Error).message);
+    const cached = await getCachedCourse(Number(courseId));
+    if (cached) {
+      return NextResponse.json({ data: cached.sections, courseName: cached.courseName });
+    }
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR, { mutate as globalMutate } from "swr";
 import { ArrowLeft, ArrowUp, Mail, MessageCircle, Search, X } from "lucide-react";
 import Navbar from "@/components/Navbar";
@@ -155,7 +155,7 @@ function MessageBubble({ msg, mine }: { msg: Message; mine: boolean }) {
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 
-export default function ChatPage() {
+function ChatPageInner() {
   const router = useRouter();
   const [authed, setAuthed] = useState(false);
   const [search, setSearch] = useState("");
@@ -225,6 +225,31 @@ export default function ChatPage() {
 
   const meId = convMeId || msgData?.meId || 0;
   const messages = useMemo(() => msgData?.messages ?? [], [msgData]);
+
+  const searchParams = useSearchParams();
+
+  // Abre (o crea) la conversación con el userid pasado por query string —
+  // usado por el botón "Contactar Profesor" de /materia/[slug].
+  useEffect(() => {
+    const raw = searchParams.get("userid");
+    if (!authed || !raw || convLoading) return;
+    const uid = Number(raw);
+    if (!uid) { router.replace("/chat"); return; }
+
+    const existing = conversations.find((c) => c.contact.id === uid);
+    if (existing) {
+      setSelectedId(existing.id);
+      router.replace("/chat");
+      return;
+    }
+
+    fetch(`/api/userprofile?userid=${uid}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p: { name?: string } | null) => {
+        if (p?.name) setPendingContact({ id: uid, name: p.name, avatarUrl: null });
+      })
+      .finally(() => router.replace("/chat"));
+  }, [authed, convLoading, conversations, searchParams, router]);
 
   // Conversaciones filtradas por texto de búsqueda
   const filtered = useMemo(() => {
@@ -573,5 +598,13 @@ export default function ChatPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="h-[100dvh] bg-[var(--bg)]"><Navbar /></div>}>
+      <ChatPageInner />
+    </Suspense>
   );
 }

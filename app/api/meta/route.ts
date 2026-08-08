@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { MOODLE_BASE } from "@/lib/moodle";
+import { MOODLE_BASE, decodeContentDispositionFilename } from "@/lib/moodle";
 import { decodeUrlRef } from "@/lib/urlToken";
 
 export async function GET(req: NextRequest) {
@@ -32,11 +32,10 @@ export async function GET(req: NextRequest) {
 
     const contentType = res.headers.get("content-type") ?? "application/octet-stream";
     const disp = res.headers.get("content-disposition") ?? "";
-    const fromDisp = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i)?.[1];
+    const fromDisp = decodeContentDispositionFilename(disp);
     const fromUrl  = current.split("/").pop()?.split("?")[0];
     // Never return a PHP script as the filename — it means we stopped at a redirect page.
-    const raw = fromDisp ?? (fromUrl && !fromUrl.endsWith(".php") ? fromUrl : undefined) ?? "archivo";
-    const filename = decodeURIComponent(raw);
+    const filename = fromDisp ?? decodeURIComponent((fromUrl && !fromUrl.endsWith(".php") ? fromUrl : undefined) ?? "archivo");
 
     return NextResponse.json({ contentType, filename });
   }
