@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, type MouseEvent } from "react";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import Spinner from "@/components/Spinner";
 import type { MoodleContent } from "@/lib/moodle";
@@ -170,6 +170,28 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     if (!isActive && state.phase === "panel") setState({ phase: "idle" });
   }, [isActive, state.phase]);
 
+  // "Guardar como…" — deja elegir carpeta de destino (igual que el botón del visor).
+  // Cae a la descarga normal si el navegador no soporta la File System Access API.
+  const handleSaveAs = useCallback(async (e: MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const picker = (window as Window & { showSaveFilePicker?: (o: object) => Promise<{ createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
+      if (!picker) throw new Error("not supported");
+      const handle = await picker({ suggestedName: fileName, types: [{ description: "Archivo" }] });
+      const res = await fetch(downloadUrl);
+      const blob = await res.blob();
+      const wr = await handle.createWritable();
+      await wr.write(blob);
+      await wr.close();
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = fileName;
+      a.click();
+    }
+  }, [downloadUrl, fileName]);
+
   const isOpen = state.phase !== "idle" || isActive;
 
   return (
@@ -205,6 +227,13 @@ export function FileViewer({ content }: { content: MoodleContent }) {
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
           </a>
+          <button onClick={handleSaveAs} title="Guardar como…" className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <polyline points="12,11 12,17"/>
+              <polyline points="9,14 12,17 15,14"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -218,18 +247,9 @@ export function FileViewer({ content }: { content: MoodleContent }) {
             </div>
           )}
           {(state.phase === "panel" || isActive) && (
-            <div className="flex items-center justify-between gap-2 px-4 py-3 bg-[var(--accent-light)]">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
-                <span className="text-[13px] text-[var(--accent)] font-medium">Abierto en el visor →</span>
-              </div>
-              <a href={downloadUrl} download={fileName} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--accent)] hover:opacity-70 transition-opacity">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7,10 12,15 17,10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-              </a>
+            <div className="flex items-center gap-2 px-4 py-3 bg-[var(--accent-light)]">
+              <div className="w-2 h-2 rounded-full bg-[#007aff] shrink-0" />
+              <span className="text-[13px] text-[var(--accent)] font-medium">Abierto en el visor →</span>
             </div>
           )}
           {state.phase === "none" && (
