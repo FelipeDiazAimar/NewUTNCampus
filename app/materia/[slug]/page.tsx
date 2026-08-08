@@ -230,8 +230,6 @@ function AssignModuleRow({ mod }: { mod: MoodleModule }) {
 // ─── ModuleRow ────────────────────────────────────────────────────────────────
 
 function ModuleRow({ mod }: { mod: MoodleModule }) {
-  const [open, setOpen] = useState(false);
-
   if (mod.modname === "label") {
     if (mod.description) {
       // Skip labels that only contain links and no real body text.
@@ -276,46 +274,44 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
     return <UrlModuleRow mod={mod} />;
   }
 
-  const [color, bg] = MOD_COLORS[mod.modname] ?? ["#8e8e93", "#f2f2f7"];
   const hasFiles = (mod.contents?.length ?? 0) > 0;
-  const isPreviewable = hasFiles && mod.modname === "resource";
+  // Los "resource" con archivo (apuntes) ya no van dentro de un acordeón: los
+  // botones de previsualizar/descargar se muestran directo, sin expandir nada.
+  if (hasFiles && mod.modname === "resource") {
+    return (
+      <div className="divide-y divide-[rgba(60,60,67,0.06)]">
+        {mod.contents!.map((c, i) => <FileViewer key={i} content={c} />)}
+      </div>
+    );
+  }
+
+  const [color, bg] = MOD_COLORS[mod.modname] ?? ["#8e8e93", "#f2f2f7"];
   const badge = getModBadge(mod);
   const badgeFontSize = badge.length >= 5 ? "7px" : badge.length === 4 ? "9px" : "11px";
 
   return (
-    <div>
-      <button
-        onClick={() => {
-          if (isPreviewable) setOpen((o) => !o);
-          else if (mod.url) window.open(mod.url, "_blank", "noopener,noreferrer");
-        }}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
+    <button
+      onClick={() => mod.url && window.open(mod.url, "_blank", "noopener,noreferrer")}
+      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface2)] active:bg-[var(--surface2)] transition-colors text-left"
+    >
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
+        style={{ background: bg, color, fontSize: badgeFontSize }}
       >
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold"
-          style={{ background: bg, color, fontSize: badgeFontSize }}
+        {badge}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
+      </div>
+      {mod.url && (
+        <svg
+          className="w-4 h-4 text-[var(--secondary)] shrink-0"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
         >
-          {badge}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
-        </div>
-        {(isPreviewable || mod.url) && (
-          <svg
-            className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${isPreviewable && open ? "rotate-90" : ""}`}
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-          >
-            <polyline points="9,18 15,12 9,6" />
-          </svg>
-        )}
-      </button>
-
-      {isPreviewable && open && (
-        <div className="border-t border-[rgba(60,60,67,0.08)] bg-[var(--surface2)] divide-y divide-[rgba(60,60,67,0.06)]">
-          {mod.contents!.map((c, i) => <FileViewer key={i} content={c} />)}
-        </div>
+          <polyline points="9,18 15,12 9,6" />
+        </svg>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -507,7 +503,7 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
                     className="shrink-0 flex items-center gap-1.5 rounded-full bg-[var(--surface2)] px-4 py-2.5 text-[13px] font-semibold text-[#007aff] active:opacity-70 transition-opacity"
                   >
                     <MessageCircle className="w-4 h-4" />
-                    Contactar Profesor
+                    Ver Profesores
                   </button>
                 </>
               )}

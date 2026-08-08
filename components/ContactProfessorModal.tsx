@@ -14,15 +14,35 @@ interface Props {
 }
 
 function ProfessorAvatar({ name, url }: { name: string; url: string | null }) {
-  return url ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={name} className="h-12 w-12 rounded-full object-cover shrink-0" />
-  ) : (
-    <div
-      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-semibold text-white"
-      style={{ backgroundColor: avatarColor(name), fontSize: 16 }}
-    >
-      {getInitials(name)}
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  if (!url || errored) {
+    return (
+      <div
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-semibold text-white"
+        style={{ backgroundColor: avatarColor(name), fontSize: 16 }}
+      >
+        {getInitials(name)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative h-12 w-12 shrink-0">
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-full bg-[var(--surface2)]">
+          <Spinner size={18} />
+        </div>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={name}
+        onLoad={() => setLoaded(true)}
+        onError={() => setErrored(true)}
+        className={`h-12 w-12 rounded-full object-cover transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
+      />
     </div>
   );
 }
@@ -76,7 +96,7 @@ export default function ContactProfessorModal({ courseId, open, onClose }: Props
         </button>
 
         <h2 className="text-[18px] font-bold text-[var(--fg)] tracking-tight mb-4">
-          Contactar Profesor
+          Ver Profesores
         </h2>
 
         {professors === null && !error && (
@@ -100,13 +120,15 @@ export default function ContactProfessorModal({ courseId, open, onClose }: Props
         {professors !== null && professors.length > 0 && (
           <div className="flex flex-col gap-2">
             {professors.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-[var(--surface2)] p-3">
-                <ProfessorAvatar name={p.name} url={p.avatarUrl} />
-                <p className="flex-1 min-w-0 truncate text-[15px] font-semibold text-[var(--fg)]">{p.name}</p>
+              <div key={p.id} className="flex flex-col gap-3 rounded-2xl bg-[var(--surface2)] p-3">
+                <div className="flex items-center gap-3">
+                  <ProfessorAvatar name={p.name} url={p.avatarUrl} />
+                  <p className="flex-1 min-w-0 break-words text-[15px] font-semibold text-[var(--fg)]">{p.name}</p>
+                </div>
                 <button
                   type="button"
                   onClick={() => goToChat(p.id)}
-                  className="flex shrink-0 items-center gap-1.5 rounded-full bg-[#007aff] px-3.5 py-2 text-[13px] font-semibold text-white active:opacity-80"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-full bg-[#007aff] px-3.5 py-2 text-[13px] font-semibold text-white active:opacity-80"
                 >
                   <MessageCircle className="w-4 h-4" />
                   Comunicarte
