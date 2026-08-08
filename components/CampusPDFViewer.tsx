@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import PageTextOverlay from "./PageTextOverlay";
+import { hashString } from "@/lib/ocrCache";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -75,16 +76,18 @@ function TBtn({ onClick, disabled, title, children, minW, light }: {
 // pdfjs-dist directly (bypassing react-pdf's crashing TextLayer) and never lets
 // a failure affect the canvas rendering above.
 function PageWithOverlay({
-  pageNumber, pageWidth, scale, onPageRendered, getPage,
+  pageNumber, pageWidth, scale, onPageRendered, getPage, cacheKeyPrefix,
 }: {
   pageNumber: number;
   pageWidth: number | undefined;
   scale: number;
   onPageRendered: () => void;
   getPage: (pageNumber: number) => PDFPageProxy | null;
+  cacheKeyPrefix: string;
 }) {
   const [rendered, setRendered] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasEl = rendered ? (containerRef.current?.querySelector("canvas") ?? null) : null;
   return (
     <div ref={containerRef} className="relative" style={{ lineHeight: 0 }}>
       <Page pageNumber={pageNumber} width={pageWidth} scale={scale}
@@ -97,6 +100,8 @@ function PageWithOverlay({
           page={getPage(pageNumber)}
           scale={scale}
           pageHeightPx={containerRef.current?.clientHeight ?? 0}
+          cacheKey={`${cacheKeyPrefix}:${pageNumber}`}
+          canvasEl={canvasEl}
         />
       )}
     </div>
@@ -106,13 +111,14 @@ function PageWithOverlay({
 // ─── PagesList (memoized) ─────────────────────────────────────────────────────
 // Memoizing keeps the page canvases stable while the parent's page counter updates.
 const PagesList = memo(function PagesList({
-  numPages, pageWidth, scale, onPageRendered, getPage,
+  numPages, pageWidth, scale, onPageRendered, getPage, cacheKeyPrefix,
 }: {
   numPages: number;
   pageWidth: number | undefined;
   scale: number;
   onPageRendered: () => void;
   getPage: (pageNumber: number) => PDFPageProxy | null;
+  cacheKeyPrefix: string;
 }) {
   return (
     <div className="flex flex-col gap-4 items-center">
@@ -124,6 +130,7 @@ const PagesList = memo(function PagesList({
           scale={scale}
           onPageRendered={onPageRendered}
           getPage={getPage}
+          cacheKeyPrefix={cacheKeyPrefix}
         />
       ))}
     </div>
@@ -175,6 +182,11 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   // <Document> when the source changes, preventing PDF.js from rendering into
   // stale/removed canvases (the "Cannot read properties of null (childNodes)" error).
   const fileKey = typeof file === "string" ? file : file ? "buffer" : "none";
+
+  // Stable per-document prefix for OCR cache keys — combined with the page
+  // number in PageWithOverlay so each page's cached OCR result is looked up
+  // independently.
+  const cacheKeyPrefix = useMemo(() => hashString(fileKey), [fileKey]);
 
   // Responsive page width.
   // The ResizeObserver fires repeatedly while the workspace panel animates open,
@@ -289,7 +301,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
             onLoadError={(e) => setDocError(e.message)}
             loading={<PageSkeleton />} error={<span />}>
             <PagesList numPages={numPages} pageWidth={pageWidth} scale={scale}
-              onPageRendered={handlePageRendered} getPage={getPage} />
+              onPageRendered={handlePageRendered} getPage={getPage} cacheKeyPrefix={cacheKeyPrefix} />
           </Document>
         )}
       </div>

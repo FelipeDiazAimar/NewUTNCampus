@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { PDFPageProxy } from "pdfjs-dist";
+import { recognizePage } from "@/lib/ocrWorker";
+import { getCachedPage, setCachedPage } from "@/lib/ocrCache";
 
 interface Span {
   text: string;
@@ -14,14 +16,18 @@ interface Props {
   page: PDFPageProxy | null;
   scale: number;
   pageHeightPx: number;
+  cacheKey: string;
+  canvasEl: HTMLCanvasElement | null;
 }
 
-export default function PageTextOverlay({ page, scale, pageHeightPx }: Props) {
+export default function PageTextOverlay({ page, scale, pageHeightPx, cacheKey, canvasEl }: Props) {
   const [spans, setSpans] = useState<Span[] | null>(null);
+  const [ocrPending, setOcrPending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setSpans(null);
+    setOcrPending(false);
     if (!page) return;
 
     (async () => {
@@ -33,7 +39,31 @@ export default function PageTextOverlay({ page, scale, pageHeightPx }: Props) {
           0,
         );
         if (totalChars < 3) {
-          if (!cancelled) setSpans([]);
+          if (!canvasEl) { if (!cancelled) setSpans([]); return; }
+          try {
+            const cached = await getCachedPage(cacheKey);
+            let words = cached;
+            if (!words) {
+              setOcrPending(true);
+              try {
+                words = await recognizePage(canvasEl);
+              } finally {
+                if (!cancelled) setOcrPending(false);
+              }
+              await setCachedPage(cacheKey, words);
+            }
+            const built: Span[] = words
+              .filter((w) => w.text.trim())
+              .map((w) => ({
+                text: w.text,
+                left: w.x * 100,
+                top: w.y * 100,
+                fontSize: w.height,
+              }));
+            if (!cancelled) setSpans(built);
+          } catch {
+            if (!cancelled) setSpans([]);
+          }
           return;
         }
         const built: Span[] = [];
@@ -57,7 +87,15 @@ export default function PageTextOverlay({ page, scale, pageHeightPx }: Props) {
     })();
 
     return () => { cancelled = true; };
-  }, [page, scale]);
+  }, [page, scale, cacheKey, canvasEl]);
+
+  if (ocrPending) {
+    return (
+      <div className="absolute top-2 right-2" style={{ pointerEvents: "none" }} title="Reconociendo texto…">
+        <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!spans || spans.length === 0) return null;
 
