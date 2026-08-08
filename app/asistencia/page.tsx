@@ -261,6 +261,7 @@ function MarcarAsistenciaCard() {
   const [status, setStatus] = useState<LegacyStatus | null>(null);
   const [loading, setLoading] = useState(() => !guest);
   const [error, setError] = useState<string | null>(null);
+  const [needsAuth, setNeedsAuth] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
@@ -269,11 +270,16 @@ function MarcarAsistenciaCard() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setNeedsAuth(false);
     try {
       const res = await fetch("/api/asistencia-legacy/status", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "No se pudo conectar con el sistema de asistencias.");
+        if (res.status === 401) {
+          setNeedsAuth(true);
+        } else {
+          setError(data.error ?? "No se pudo conectar con el sistema de asistencias.");
+        }
         setStatus(null);
         return;
       }
@@ -406,6 +412,17 @@ function MarcarAsistenciaCard() {
           </button>
         ) : loading ? (
           <p className="text-[13px] text-[var(--secondary)]">Consultando materias habilitadas…</p>
+        ) : needsAuth ? (
+          <Link
+            href="/sysacad?next=/asistencia"
+            className="flex items-center justify-between gap-2 rounded-[16px] bg-[rgba(0,122,255,0.08)] px-4 py-3 text-[13px] font-semibold text-[#007aff] active:opacity-80"
+          >
+            <span className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 shrink-0" />
+              Iniciá sesión en Sysacad para marcar asistencia
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0" />
+          </Link>
         ) : error ? (
           <div className="flex items-center gap-2 text-[13px] text-[#ff3b30]">
             <WifiOff className="h-4 w-4 shrink-0" />
