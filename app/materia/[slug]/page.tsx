@@ -13,6 +13,8 @@ import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import FolderViewer from "@/components/FolderViewer";
 import H5pViewer from "@/components/H5pViewer";
 import { FileViewer } from "@/components/CourseFileViewer";
+import ContactProfessorModal from "@/components/ContactProfessorModal";
+import { MessageCircle } from "lucide-react";
 
 function getUserInfo() {
   if (typeof document === "undefined") return {};
@@ -445,6 +447,7 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
   const { sections, courseName, loading, error } = useCourseContents(parseInt(id));
   const [userInfo, setUserInfo] = useState<{ fullname?: string }>({});
   const [search, setSearch] = useState("");
+  const [contactOpen, setContactOpen] = useState(false);
 
   useEffect(() => {
     setUserInfo(getUserInfo());
@@ -477,7 +480,7 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
 
           {/* Course header — iOS Large Title style */}
           {(courseName || loading) && (
-            <div style={{ marginBottom: "24px" }}>
+            <div style={{ marginBottom: "24px" }} className="flex items-end justify-between gap-3">
               {loading && !courseName ? (
                 <div className="space-y-2">
                   <div className="h-3 w-16 bg-[#e5e5ea] rounded animate-pulse" />
@@ -485,17 +488,27 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: "11px", fontWeight: "700", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
-                    Materia
-                  </p>
-                  <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "var(--fg)", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
-                    {courseName}
-                  </h1>
-                  {!loading && (
-                    <p style={{ fontSize: "13px", color: "var(--secondary)", marginTop: "6px" }}>
-                      {filtered.length} sección{filtered.length !== 1 ? "es" : ""}
+                  <div className="min-w-0">
+                    <p style={{ fontSize: "11px", fontWeight: "700", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "4px" }}>
+                      Materia
                     </p>
-                  )}
+                    <h1 style={{ fontSize: "clamp(22px, 5vw, 30px)", fontWeight: "800", color: "var(--fg)", lineHeight: "1.1", letterSpacing: "-0.5px", margin: 0 }}>
+                      {courseName}
+                    </h1>
+                    {!loading && (
+                      <p style={{ fontSize: "13px", color: "var(--secondary)", marginTop: "6px" }}>
+                        {filtered.length} sección{filtered.length !== 1 ? "es" : ""}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContactOpen(true)}
+                    className="shrink-0 flex items-center gap-1.5 rounded-full bg-[var(--surface2)] px-4 py-2.5 text-[13px] font-semibold text-[#007aff] active:opacity-70 transition-opacity"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Contactar Profesor
+                  </button>
                 </>
               )}
             </div>
@@ -542,6 +555,11 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
           )}
         </div>
       </WorkspaceLayout>
+      <ContactProfessorModal
+        courseId={parseInt(id)}
+        open={contactOpen}
+        onClose={() => setContactOpen(false)}
+      />
     </div>
   );
 }
