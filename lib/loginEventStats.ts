@@ -88,7 +88,7 @@ export function argentinaTodayRangeISO(): { fromISO: string; toISO: string } {
 
 // ─── Agregación ─────────────────────────────────────────────────────────────
 
-function enumeratePeriods(fromISO: string, toISO: string, granularity: Granularity): string[] {
+export function enumeratePeriods(fromISO: string, toISO: string, granularity: Granularity): string[] {
   const from = toArgentinaYMD(fromISO);
   const to = toArgentinaYMD(toISO);
   const periods: string[] = [];
