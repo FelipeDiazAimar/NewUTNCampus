@@ -131,6 +131,10 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     // Toggle: close if already open in panel
     if (isActive) { closePanel(); setState({ phase: "idle" }); return; }
 
+    // TEMP PERF LOGGING — remove once the slow-wifi bottleneck is found.
+    console.log(`[pdf-perf] t=0ms click "${fileName}"`);
+    const clickT0 = performance.now();
+
     // Detect kind — fileType from icon scrape is most reliable
     let kind: ViewerKind = kindFromFileType(content.fileType);
     if (kind === "none") kind = kindFromExt(content.filename);
@@ -148,6 +152,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
 
     // Document kinds → open in right panel
     if (PANEL_KINDS.includes(kind)) {
+      console.log(`[pdf-perf] t=${Math.round(performance.now() - clickT0)}ms kind detected (${kind}), opening panel`);
       openPanel({
         kind: kind as PanelKind,
         proxyUrl,

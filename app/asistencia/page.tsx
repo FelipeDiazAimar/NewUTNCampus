@@ -14,6 +14,7 @@ import {
   Clock,
   KeyRound,
   Loader2,
+  RefreshCw,
   Send,
   ShieldCheck,
   WifiOff,
@@ -96,6 +97,8 @@ export default function AsistenciaPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [open, setOpen] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const legajo = ready ? getLegajo() : null;
 
   const { data: history, isLoading, error: historyError } = useSWR(
@@ -138,12 +141,24 @@ export default function AsistenciaPage() {
             <p className="text-[13px] font-semibold text-[var(--secondary)]">Modulo remoto</p>
             <h1 className="text-[30px] font-bold tracking-tight text-[var(--fg)]">Asistencias</h1>
           </div>
-          <span className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[rgba(255,255,255,0.68)] text-[#007aff] shadow-sm ring-1 ring-[var(--separator)] backdrop-blur-xl dark:bg-[rgba(44,44,46,0.7)] dark:text-[#0a84ff]">
-            <ShieldCheck className="h-5 w-5" />
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRefreshTick((t) => t + 1)}
+              disabled={refreshing}
+              aria-label="Refrescar materias disponibles"
+              className="flex h-11 items-center justify-center gap-1.5 rounded-[14px] bg-[rgba(255,255,255,0.68)] px-3 text-[#007aff] shadow-sm ring-1 ring-[var(--separator)] backdrop-blur-xl transition-opacity active:opacity-70 disabled:opacity-60 dark:bg-[rgba(44,44,46,0.7)] dark:text-[#0a84ff]"
+            >
+              <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
+              <span className="hidden text-[14px] font-semibold sm:inline">Refrescar</span>
+            </button>
+            <span className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[rgba(255,255,255,0.68)] text-[#007aff] shadow-sm ring-1 ring-[var(--separator)] backdrop-blur-xl dark:bg-[rgba(44,44,46,0.7)] dark:text-[#0a84ff]">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+          </div>
         </div>
 
-        <MarcarAsistenciaCard />
+        <MarcarAsistenciaCard refreshTick={refreshTick} onLoadingChange={setRefreshing} />
 
         <section className="mb-4 rounded-[24px] border border-[var(--separator)] bg-[rgba(255,255,255,0.68)] p-2 shadow-sm backdrop-blur-xl dark:bg-[rgba(30,31,32,0.72)]">
           <div className="flex gap-1 overflow-x-auto">
@@ -255,7 +270,13 @@ type LegacyStatus = { materias: LegacyMateria[]; registradasHoy: LegacyRegistrad
 
 type ToastState = { ok: boolean; msg: string; materia: string } | null;
 
-function MarcarAsistenciaCard() {
+function MarcarAsistenciaCard({
+  refreshTick,
+  onLoadingChange,
+}: {
+  refreshTick: number;
+  onLoadingChange?: (loading: boolean) => void;
+}) {
   const guest = isGuestMode();
   const legajo = guest ? null : getLegajo();
   const [status, setStatus] = useState<LegacyStatus | null>(null);
@@ -297,7 +318,12 @@ function MarcarAsistenciaCard() {
   useEffect(() => {
     if (guest) return;
     load();
-  }, [guest, load]);
+  }, [guest, load, refreshTick]);
+
+  useEffect(() => {
+    onLoadingChange?.(loading);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   // Tira del countdown de la materia seleccionada — se necesita el reloj vivo.
   useEffect(() => {

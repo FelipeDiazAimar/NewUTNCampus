@@ -7,6 +7,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import PageTextOverlay from "./PageTextOverlay";
 import { hashString } from "@/lib/ocrCache";
+import { getCachedPdfBytes, fetchPdfBytes } from "@/lib/pdfByteCache";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -137,6 +138,65 @@ const PagesList = memo(function PagesList({
   );
 });
 
+// ─── Loading overlay (mirrors the progress-bar style used for docx/xlsx) ──────
+// Sits over the document area while pages are still rendering, so there's
+// always a visible loader instead of blank white space peeking through the
+// per-page skeletons.
+// Byte download (pdf.js range/streaming progress) accounts for most of the
+// wait, so it gets the bulk of the bar; per-page canvas rendering is fast
+// once bytes are local and just tops off the remaining sliver. Weighting it
+// this way keeps the bar moving continuously instead of sitting at 0% during
+// the download and then jumping straight to 100% once rendering starts.
+const FETCH_WEIGHT = 85;
+const RENDER_WEIGHT = 100 - FETCH_WEIGHT;
+
+function LoadingOverlay({ numPages, renderedPages, docLoaded, docTotal, lightPanel }: {
+  numPages: number; renderedPages: number; docLoaded: number; docTotal: number; lightPanel: boolean;
+}) {
+  const bg       = lightPanel ? "rgba(224,224,229,0.92)" : "rgba(82,86,89,0.92)";
+  const trackBg  = lightPanel ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.15)";
+  const labelClr = lightPanel ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.55)";
+  const pctClr   = lightPanel ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.70)";
+
+  const knownTotal = docTotal > 0;
+  const fetchPct = knownTotal ? Math.min(FETCH_WEIGHT, Math.round((docLoaded / docTotal) * FETCH_WEIGHT)) : 0;
+  const label = numPages > 0 ? "Renderizando páginas…" : "Cargando documento…";
+
+  // Total byte size unknown (server didn't send content-length) and the
+  // document hasn't parsed yet — nothing measurable to show a bar for, so
+  // fall back to an indeterminate spinner rather than a bar frozen at 0%.
+  if (!knownTotal && numPages === 0) {
+    const spinClr = lightPanel ? "border-[#1c1c1e]/30" : "border-white/40";
+    const spinTxt = lightPanel ? "text-[#1c1c1e]/50" : "text-white/60";
+    return (
+      <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ background: bg }}>
+        <div className="flex items-center gap-2.5">
+          <div className={`w-4 h-4 border-2 border-t-transparent rounded-full animate-spin ${spinClr}`} />
+          <span className={`text-[13px] ${spinTxt}`}>{label}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const pct = numPages > 0
+    ? FETCH_WEIGHT + Math.round((renderedPages / numPages) * RENDER_WEIGHT)
+    : fetchPct;
+
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ background: bg }}>
+      <div className="w-56 flex flex-col gap-2">
+        <span className="text-[12px] truncate" style={{ color: labelClr }}>{label}</span>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: trackBg }}>
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: "#007aff" }} />
+          </div>
+          <span className="text-[12px] tabular-nums font-medium shrink-0" style={{ color: pctClr }}>{pct}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── CampusPDFViewer ──────────────────────────────────────────────────────────
 
 export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio, initialScale = 1.0, lightPanel = false }: Props) {
@@ -144,6 +204,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   const [renderedPages, setRenderedPages] = useState(0);
   const [scale, setScale]               = useState(initialScale);
   const [docError, setDocError]         = useState<string | null>(null);
+  const [docProgress, setDocProgress]   = useState({ loaded: 0, total: 0 });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -159,7 +220,15 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     [resolvedPages],
   );
 
-  // Resolve src → react-pdf file prop, clean up objectURLs
+  // TEMP PERF LOGGING — remove once the slow-wifi bottleneck is found.
+  const perfT0Ref = useRef(0);
+  const perfLastPctRef = useRef(-1);
+
+  // Resolve src → react-pdf file prop, clean up objectURLs.
+  // Plain http(s)/relative URLs (our /api/files proxy) are routed through a
+  // session-scoped byte cache (lib/pdfByteCache.ts) so a file the user already
+  // opened this session — even after closing the preview and coming back —
+  // loads instantly from memory instead of re-downloading it.
   const [file, setFile] = useState<string | { data: ArrayBuffer } | null>(null);
   useEffect(() => {
     aspectReportedRef.current = false;
@@ -168,20 +237,63 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     setNumPages(0);
     setRenderedPages(0);
     setDocError(null);
+    setDocProgress({ loaded: 0, total: 0 });
+    perfT0Ref.current = performance.now();
+    perfLastPctRef.current = -1;
+
     if (src instanceof Blob) {
+      console.log(`[pdf-perf] t=0ms src set (blob)`);
       const url = URL.createObjectURL(src);
       setFile(url);
       return () => URL.revokeObjectURL(url);
     }
-    if (src instanceof ArrayBuffer) { setFile({ data: src }); return undefined; }
-    setFile(src);
-    return undefined;
+    if (src instanceof ArrayBuffer) {
+      console.log(`[pdf-perf] t=0ms src set (buffer)`);
+      setFile({ data: src });
+      return undefined;
+    }
+
+    // blob:/data: URLs are already local (e.g. a Drive-converted PDF) — no
+    // network fetch involved, so there's nothing to cache.
+    if (src.startsWith("blob:") || src.startsWith("data:")) {
+      console.log(`[pdf-perf] t=0ms src set (local url)`);
+      setFile(src);
+      return undefined;
+    }
+
+    const cached = getCachedPdfBytes(src);
+    if (cached) {
+      console.log(`[pdf-perf] t=0ms served from cache (${cached.byteLength} bytes)`, src);
+      // pdf.js transfers this buffer to its worker, which detaches (empties) it —
+      // hand it a copy so the cached original stays intact for the next open.
+      setFile({ data: cached.slice(0) });
+      return undefined;
+    }
+
+    console.log(`[pdf-perf] t=0ms src set (fetching)`, src);
+    let cancelled = false;
+    fetchPdfBytes(src, (loaded, total) => {
+      if (cancelled) return;
+      setDocProgress({ loaded, total });
+      const pct = total > 0 ? Math.round((loaded / total) * 100) : -1;
+      // Only log every ~10% so bad-wifi runs (hundreds of progress events) don't flood the console.
+      if (pct !== perfLastPctRef.current && (pct === -1 || pct % 10 === 0 || pct === 100)) {
+        perfLastPctRef.current = pct;
+        console.log(`[pdf-perf] t=${Math.round(performance.now() - perfT0Ref.current)}ms download ${loaded}/${total} bytes (${pct}%)`);
+      }
+    })
+      // Same reasoning: fetchPdfBytes also stashes this exact buffer in the
+      // cache, so pass pdf.js a copy rather than the cached original.
+      .then((buf) => { if (!cancelled) setFile({ data: buf.slice(0) }); })
+      .catch((e) => { if (!cancelled) setDocError((e as Error).message); });
+    return () => { cancelled = true; };
   }, [src]);
 
-  // Stable identity for the current file — used to force a full remount of
-  // <Document> when the source changes, preventing PDF.js from rendering into
-  // stale/removed canvases (the "Cannot read properties of null (childNodes)" error).
-  const fileKey = typeof file === "string" ? file : file ? "buffer" : "none";
+  // Stable identity for the current document — derived from `src` (not the
+  // resolved `file`, which collapses to a generic buffer object for every
+  // cached/fetched URL) so <Document> and the OCR cache key remount/change
+  // per-file instead of colliding once caching is in play.
+  const fileKey = typeof src === "string" ? src : src instanceof Blob || src instanceof ArrayBuffer ? "buffer" : "none";
 
   // Stable per-document prefix for OCR cache keys — combined with the page
   // number in PageWithOverlay so each page's cached OCR result is looked up
@@ -212,7 +324,13 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   const pageWidth = containerWidth > 0 ? Math.floor(containerWidth - 32) : undefined;
 
   // Stable so PagesList stays memoized across the parent's counter re-renders.
-  const handlePageRendered = useCallback(() => setRenderedPages((n) => n + 1), []);
+  const handlePageRendered = useCallback(() => {
+    setRenderedPages((n) => {
+      const next = n + 1;
+      console.log(`[pdf-perf] t=${Math.round(performance.now() - perfT0Ref.current)}ms page ${next} rendered`);
+      return next;
+    });
+  }, []);
 
   // Destroy previous document when src changes or component unmounts
   useEffect(() => {
@@ -220,6 +338,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   }, [src]);
 
   async function handleDocLoad(pdf: PDFDocumentProxy) {
+    console.log(`[pdf-perf] t=${Math.round(performance.now() - perfT0Ref.current)}ms document parsed, ${pdf.numPages} pages`);
     pdfDocRef.current = pdf;
     setRenderedPages(0);
     setNumPages(pdf.numPages);
@@ -246,8 +365,6 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   function zoom(delta: number) {
     setScale((s) => parseFloat(Math.max(0.25, Math.min(4, s + delta)).toFixed(2)));
   }
-
-  if (!file) return null;
 
   // Fill parent (workspace mode) vs self-contained (standalone mode)
   const containerStyle: React.CSSProperties = {
@@ -290,19 +407,31 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
       </div>
 
       {/* ── Document area ──────────────────────────────── */}
-      <div ref={scrollRef} className="overflow-y-auto flex-1 min-h-0 p-4" style={{ background: lightPanel ? "#e0e0e5" : "#525659" }}>
+      <div ref={scrollRef} className="relative overflow-y-auto flex-1 min-h-0 p-4" style={{ background: lightPanel ? "#e0e0e5" : "#525659" }}>
         {docError ? (
           <div className="text-center py-16 px-6">
             <p className="text-[#ff6b6b] text-[14px] mb-2">No se pudo cargar el documento</p>
             <p className="text-[rgba(255,107,107,0.6)] text-[12px]">{docError}</p>
           </div>
+        ) : !file ? (
+          // Still fetching bytes (see the src-resolution effect above) — nothing
+          // for <Document> to mount yet, but the overlay must still show so the
+          // download isn't silently blank the whole time.
+          <LoadingOverlay numPages={0} renderedPages={0}
+            docLoaded={docProgress.loaded} docTotal={docProgress.total} lightPanel={lightPanel} />
         ) : (
-          <Document key={fileKey} file={file} onLoadSuccess={handleDocLoad}
-            onLoadError={(e) => setDocError(e.message)}
-            loading={<PageSkeleton />} error={<span />}>
-            <PagesList numPages={numPages} pageWidth={pageWidth} scale={scale}
-              onPageRendered={handlePageRendered} getPage={getPage} cacheKeyPrefix={cacheKeyPrefix} />
-          </Document>
+          <>
+            {renderedPages < numPages || numPages === 0 ? (
+              <LoadingOverlay numPages={numPages} renderedPages={renderedPages}
+                docLoaded={docProgress.loaded} docTotal={docProgress.total} lightPanel={lightPanel} />
+            ) : null}
+            <Document key={fileKey} file={file} onLoadSuccess={handleDocLoad}
+              onLoadError={(e) => setDocError(e.message)}
+              loading={<PageSkeleton />} error={<span />}>
+              <PagesList numPages={numPages} pageWidth={pageWidth} scale={scale}
+                onPageRendered={handlePageRendered} getPage={getPage} cacheKeyPrefix={cacheKeyPrefix} />
+            </Document>
+          </>
         )}
       </div>
     </div>

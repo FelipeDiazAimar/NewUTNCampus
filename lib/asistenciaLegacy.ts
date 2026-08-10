@@ -17,12 +17,10 @@
  *
  * El login y el submit de asistencia NO se llegaron a capturar en HAR (solo
  * sesiones ya autenticadas), así que esta implementación asume el shape del
- * <form> tal como está en el HTML servido. Por eso deja logs temporales en
- * puntos clave — sacarlos una vez confirmado en producción real.
+ * <form> tal como está en el HTML servido.
  */
 
 const BASE = "https://asistencia.frsfco.utn.edu.ar:4443";
-const DEBUG = process.env.NODE_ENV !== "production";
 
 export interface AsistenciaMateria {
   id: string;
@@ -129,7 +127,6 @@ async function fetchApplyLeave(cookie: string): Promise<{ html: string; page: Ap
   });
   const html = await res.text();
   const page = parseApplyLeaveHtml(html);
-  if (DEBUG) console.log("[asistencia-legacy] apply-leave.php →", res.status, "autenticado:", page.autenticado, "materias:", page.materias.length, "registradasHoy:", page.registradasHoy.length);
   return { html, page };
 }
 
@@ -149,11 +146,9 @@ async function login(legajo: string, dni: string): Promise<string | null> {
     body: `legajo=${encodeURIComponent(legajo)}&password=${encodeURIComponent(dni)}&ingreso=Ingresar`,
   });
   jar = mergeSetCookies(jar, getSetCookies(r2));
-  if (DEBUG) console.log("[asistencia-legacy] login POST →", r2.status, "location:", r2.headers.get("location"));
 
   const { page } = await fetchApplyLeave(cookieHeader(jar));
   if (!page.autenticado) {
-    if (DEBUG) console.log("[asistencia-legacy] login: credenciales rechazadas o flujo distinto al esperado");
     return null;
   }
   return cookieHeader(jar);
@@ -189,7 +184,6 @@ export async function verificarIp(cookie: string, ip: string): Promise<boolean> 
     body: `ip=${encodeURIComponent(ip)}`,
   });
   const text = await res.text();
-  if (DEBUG) console.log("[asistencia-legacy] verificar_ip.php → ip:", ip, "respuesta:", text);
   try {
     return (JSON.parse(text) as { acceso?: string }).acceso === "permitido";
   } catch {
@@ -213,7 +207,7 @@ export async function marcar(cookie: string, materia: AsistenciaMateria): Promis
     signin: "",
   }).toString();
 
-  const res = await fetch(`${BASE}/apply-leave.php`, {
+  await fetch(`${BASE}/apply-leave.php`, {
     method: "POST",
     redirect: "manual",
     headers: {
@@ -223,7 +217,6 @@ export async function marcar(cookie: string, materia: AsistenciaMateria): Promis
     },
     body,
   });
-  if (DEBUG) console.log("[asistencia-legacy] marcar POST →", res.status, "location:", res.headers.get("location"));
 
   const { page } = await fetchApplyLeave(cookie);
   return page;

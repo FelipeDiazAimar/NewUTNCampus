@@ -3,6 +3,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { MOODLE_BASE } from "@/lib/moodle";
 import { decodeUrlRef } from "@/lib/urlToken";
 
+// TEMP PERF LOGGING — remove once the slow-wifi bottleneck is found.
+// Wraps the upstream body so we can log when the full transfer to the client finishes.
+function logStreamCompletion(body: ReadableStream<Uint8Array> | null, t0: number): ReadableStream<Uint8Array> | null {
+  if (!body) return body;
+  let bytes = 0;
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      bytes += chunk.byteLength;
+      controller.enqueue(chunk);
+    },
+    flush() {
+      console.log(`[files-perf] t=${Date.now() - t0}ms stream fully flushed to client, ${bytes} bytes`);
+    },
+  });
+  return body.pipeThrough(transform);
+}
+
 async function fetchWithCookie(
   url: string,
   cookie: string,
@@ -27,6 +44,9 @@ async function fetchWithCookie(
 }
 
 export async function GET(req: NextRequest) {
+  // TEMP PERF LOGGING — remove once the slow-wifi bottleneck is found.
+  const t0 = Date.now();
+
   const sessionToken = req.cookies.get("moodle_session_token")?.value;
   const ref = req.nextUrl.searchParams.get("ref");
   const fileurl = ref ? decodeUrlRef(ref) : null;
@@ -43,7 +63,11 @@ export async function GET(req: NextRequest) {
   const range = req.headers.get("range");
   if (range) extraHeaders["Range"] = range;
 
+  console.log(`[files-perf] GET start range=${range ?? "(none)"} url=${fileurl}`);
   const res = await fetchWithCookie(fileurl, cookie, extraHeaders);
+  console.log(`[files-perf] t=${Date.now() - t0}ms upstream headers received, status=${res.status}, ` +
+    `content-length=${res.headers.get("content-length")}, content-range=${res.headers.get("content-range")}, ` +
+    `accept-ranges=${res.headers.get("accept-ranges")}, content-type=${res.headers.get("content-type")}`);
 
   const contentType = res.headers.get("content-type") ?? "application/octet-stream";
 
@@ -96,7 +120,7 @@ export async function GET(req: NextRequest) {
           const v = fileRes.headers.get(h);
           if (v) h2[h === "content-length" ? "Content-Length" : "Content-Range"] = v;
         }
-        return new NextResponse(fileRes.body, { status: fileRes.status, headers: h2 });
+        return new NextResponse(logStreamCompletion(fileRes.body, t0), { status: fileRes.status, headers: h2 });
       }
     }
 
@@ -123,7 +147,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Stream the body directly — no full buffering
-  return new NextResponse(res.body, {
+  return new NextResponse(logStreamCompletion(res.body, t0), {
     status: res.status,
     headers: responseHeaders,
   });
