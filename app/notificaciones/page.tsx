@@ -18,6 +18,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import InstallAppCard from "@/components/InstallAppCard";
 import { useCourses } from "@/lib/hooks";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -122,8 +123,11 @@ function usePushSubscription() {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         if (!cancelled) setSubscription(sub);
-      } catch {
+      } catch (e) {
         if (!cancelled) setMessage("No se pudo inicializar el servicio de notificaciones.");
+        reportClientError("warning", "Push: fallo al inicializar el service worker", {
+          stack: e instanceof Error ? (e.stack ?? null) : null,
+        });
       } finally {
         if (!cancelled) setPhase("ready");
       }
@@ -166,8 +170,11 @@ function usePushSubscription() {
       if (!res.ok) throw new Error("save");
 
       setSubscription(sub);
-    } catch {
+    } catch (e) {
       setMessage("No se pudo activar las notificaciones. Intentá de nuevo.");
+      reportClientError("warning", "Push: fallo al activar la suscripción", {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setBusy(false);
     }
@@ -185,8 +192,11 @@ function usePushSubscription() {
       });
       await subscription.unsubscribe();
       setSubscription(null);
-    } catch {
+    } catch (e) {
       setMessage("No se pudo desactivar las notificaciones.");
+      reportClientError("warning", "Push: fallo al desactivar la suscripción", {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setBusy(false);
     }

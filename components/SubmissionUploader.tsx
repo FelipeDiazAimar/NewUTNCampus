@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
 import { File as FileIcon, UploadCloud, X } from "lucide-react";
 import Spinner from "@/components/Spinner";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 const MB = 1024 * 1024;
 export const MAX_BYTES = 20 * MB;
@@ -128,6 +129,9 @@ export default function SubmissionUploader({
       onClose();
     } catch (e) {
       setError((e as Error).message || "No se pudo subir la entrega.");
+      reportClientError("error", `Entrega de tarea: ${(e as Error).message || "fallo desconocido"}`, {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setUploading(false);
     }

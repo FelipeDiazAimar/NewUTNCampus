@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, type MouseEvent } from "react";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import Spinner from "@/components/Spinner";
 import type { MoodleContent } from "@/lib/moodle";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 export function formatBytes(b: number) {
   if (!b) return "";
@@ -147,7 +148,9 @@ export function FileViewer({ content }: { content: MoodleContent }) {
         kind = kindFromCT(j.contentType) !== "none"
           ? kindFromCT(j.contentType)
           : kindFromExt(j.filename ?? "");
-      } catch { /* remain none */ }
+      } catch (e) {
+        reportClientError("warning", `Detección de tipo de archivo (${fileName}): ${(e as Error).message}`);
+      }
     }
 
     // Document kinds → open in right panel
@@ -168,7 +171,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     if (kind === "video") { setState({ phase: "video" }); return; }
     if (kind === "audio") { setState({ phase: "audio" }); return; }
     setState({ phase: "none" });
-  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel]);
+  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel, fileName]);
 
   // Cuando otro archivo toma el panel, limpiar el indicador local.
   useEffect(() => {
@@ -190,6 +193,11 @@ export function FileViewer({ content }: { content: MoodleContent }) {
       await wr.close();
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
+      // "not supported" es esperado (Firefox/Safari no tienen showSaveFilePicker) —
+      // solo lo real vale la pena reportar.
+      if ((err as Error).message !== "not supported") {
+        reportClientError("warning", `Guardar archivo como (${fileName}): ${(err as Error).message}`);
+      }
       const a = document.createElement("a");
       a.href = downloadUrl;
       a.download = fileName;

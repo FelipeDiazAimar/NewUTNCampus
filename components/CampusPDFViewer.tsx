@@ -8,6 +8,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import PageTextOverlay from "./PageTextOverlay";
 import { hashString } from "@/lib/ocrCache";
 import { getCachedPdfBytes, fetchPdfBytes } from "@/lib/pdfByteCache";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -285,7 +286,12 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
       // Same reasoning: fetchPdfBytes also stashes this exact buffer in the
       // cache, so pass pdf.js a copy rather than the cached original.
       .then((buf) => { if (!cancelled) setFile({ data: buf.slice(0) }); })
-      .catch((e) => { if (!cancelled) setDocError((e as Error).message); });
+      .catch((e) => {
+        if (!cancelled) setDocError((e as Error).message);
+        reportClientError("warning", `Carga de PDF: ${(e as Error).message}`, {
+          stack: e instanceof Error ? (e.stack ?? null) : null,
+        });
+      });
     return () => { cancelled = true; };
   }, [src]);
 

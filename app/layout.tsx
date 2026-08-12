@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import GuestBlockModal from "@/components/GuestBlockModal";
+import GlobalSwrProvider from "@/components/GlobalSwrProvider";
 
 export const metadata: Metadata = {
   title: "Campus UTN FRSF",
@@ -38,8 +39,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
-          {children}
-          <GuestBlockModal />
+          <GlobalSwrProvider>
+            {children}
+            <GuestBlockModal />
+          </GlobalSwrProvider>
         </ThemeProvider>
       </body>
     </html>

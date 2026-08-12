@@ -6,6 +6,7 @@ import { MessageCircle, X } from "lucide-react";
 import Spinner from "@/components/Spinner";
 import { avatarColor, getInitials } from "@/lib/chat";
 import type { Professor } from "@/lib/participants";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 interface Props {
   courseId: number;
@@ -59,7 +60,10 @@ export default function ContactProfessorModal({ courseId, open, onClose }: Props
     fetch(`/api/participants?id=${courseId}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
       .then((data: { professors: Professor[] }) => setProfessors(data.professors))
-      .catch(() => setError(true));
+      .catch((e) => {
+        setError(true);
+        reportClientError("warning", `Carga de profesores (curso ${courseId}): ${(e as Error).message}`);
+      });
   }, [open, courseId]);
 
   useEffect(() => {

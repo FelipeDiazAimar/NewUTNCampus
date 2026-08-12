@@ -27,6 +27,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import DropdownSelect from "@/components/DropdownSelect";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { reportClientError } from "@/lib/clientErrorReporter";
 import { buildSchedule, fmtRemaining } from "@/lib/horarios";
 import { normalizeMateriaName } from "@/lib/officialSchedule";
 import { mapCursadoToMaterias } from "@/lib/sysacadMappers";
@@ -300,6 +301,7 @@ function MarcarAsistenciaCard({
           setNeedsAuth(true);
         } else {
           setError(data.error ?? "No se pudo conectar con el sistema de asistencias.");
+          reportClientError("warning", `asistencia-legacy/status ${res.status}: ${data.error ?? "sin mensaje"}`);
         }
         setStatus(null);
         return;
@@ -308,8 +310,11 @@ function MarcarAsistenciaCard({
       const marcadas = new Set(data.registradasHoy.map((r: LegacyRegistrada) => normalizeMateriaName(r.materia)));
       const pend = data.materias.filter((m: LegacyMateria) => !marcadas.has(normalizeMateriaName(m.nombre)));
       setSelectedId((prev) => (prev && pend.some((m: LegacyMateria) => m.id === prev) ? prev : (pend[0]?.id ?? "")));
-    } catch {
+    } catch (e) {
       setError("Error de conexión con el sistema de asistencias.");
+      reportClientError("error", "asistencia-legacy/status: fallo de red", {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setLoading(false);
     }
@@ -372,6 +377,7 @@ function MarcarAsistenciaCard({
       const data = await res.json();
       if (!res.ok) {
         setToast({ ok: false, msg: data.error ?? "No se pudo marcar la asistencia.", materia: "" });
+        reportClientError("warning", `asistencia-legacy/marcar ${res.status}: ${data.error ?? "sin mensaje"}`);
         return;
       }
       setStatus({ materias: data.materias, registradasHoy: data.registradasHoy });
@@ -384,8 +390,14 @@ function MarcarAsistenciaCard({
             : "¡Asistencia marcada!"
           : "No se pudo confirmar el registro — revisá el historial en un momento.",
       });
-    } catch {
+      if (!data.ok) {
+        reportClientError("warning", "asistencia-legacy/marcar: respondió 200 pero no quedó registrada");
+      }
+    } catch (e) {
       setToast({ ok: false, msg: "No se pudo obtener tu IP pública — revisá tu conexión.", materia: "" });
+      reportClientError("error", "Marcar asistencia: fallo obteniendo IP pública o de red", {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setSubmitting(false);
     }

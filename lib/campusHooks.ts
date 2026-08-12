@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import type { CampusCatalogo, MatricularResult } from "@/lib/campus";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 const SWR_CFG = {
   revalidateOnFocus: false,
@@ -39,9 +40,15 @@ export async function postMatricular(courseId: string, clave: string): Promise<M
       body: JSON.stringify({ courseId, clave }),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) return { ok: false, motivo: j.error ?? "No se pudo matricular en el campus." };
+    if (!r.ok) {
+      reportClientError("warning", `Matricular en campus: ${j.error ?? `status ${r.status}`}`);
+      return { ok: false, motivo: j.error ?? "No se pudo matricular en el campus." };
+    }
     return j as MatricularResult;
-  } catch {
+  } catch (e) {
+    reportClientError("error", "Matricular en campus: fallo de red", {
+      stack: e instanceof Error ? (e.stack ?? null) : null,
+    });
     return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
   }
 }

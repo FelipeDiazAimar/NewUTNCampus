@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Conversation } from "@/lib/chat";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 export type ConvState = { conversations: Conversation[]; meId: number };
 
@@ -79,7 +80,11 @@ export function useConversations(authed: boolean) {
       // Ya hay datos en pantalla: solo revalidar en segundo plano.
       fetchOnce()
         .then((s) => { if (cancelled) return; cache = s; setConversations(s.conversations); setMeId(s.meId); })
-        .catch((e) => { if (!cancelled && (e as { status?: number })?.status === 401) setUnauthorized(true); });
+        .catch((e) => {
+          if (cancelled) return;
+          if ((e as { status?: number })?.status === 401) { setUnauthorized(true); return; }
+          reportClientError("warning", `Revalidar chats: ${(e as Error).message}`);
+        });
       return () => { cancelled = true; ctrl.abort(); };
     }
 
@@ -93,11 +98,21 @@ export function useConversations(authed: boolean) {
           if (cancelled) return;
           setLoading(false);
           if (status === 401) setUnauthorized(true);
-          else setError(msg);
+          else {
+            setError(msg);
+            reportClientError("warning", `Stream de chats: ${msg}`);
+          }
         },
       },
       ctrl.signal
-    ).catch(() => { /* abortos: ignorar */ });
+    ).catch((e) => {
+      if (cancelled || (e as Error).name === "AbortError") return;
+      setLoading(false);
+      setError((e as Error).message || "No se pudieron cargar los chats.");
+      reportClientError("error", `Stream de chats: fallo de red — ${(e as Error).message}`, {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
+    });
 
     return () => { cancelled = true; ctrl.abort(); };
   }, [authed]);
@@ -108,7 +123,10 @@ export function useConversations(authed: boolean) {
     const id = setInterval(() => {
       fetchOnce()
         .then((s) => { cache = s; setConversations(s.conversations); setMeId(s.meId); })
-        .catch((e) => { if ((e as { status?: number })?.status === 401) setUnauthorized(true); });
+        .catch((e) => {
+          if ((e as { status?: number })?.status === 401) { setUnauthorized(true); return; }
+          reportClientError("warning", `Refresco periódico de chats: ${(e as Error).message}`);
+        });
     }, 30_000);
     return () => clearInterval(id);
   }, [authed]);

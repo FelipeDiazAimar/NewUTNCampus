@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Spinner from "@/components/Spinner";
 import type { MoodleModule } from "@/lib/moodle";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 function idFromUrl(url?: string): string | null {
   if (!url) return null;
@@ -32,6 +33,7 @@ export default function H5pViewer({ mod }: { mod: MoodleModule }) {
         setEmbedUrl(j.data.embedUrl as string);
       } catch (e) {
         setError((e as Error).message);
+        reportClientError("warning", `Carga de actividad H5P (${id}): ${(e as Error).message}`);
       } finally {
         setLoading(false);
       }

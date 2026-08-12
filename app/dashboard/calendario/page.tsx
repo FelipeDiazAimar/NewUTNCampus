@@ -53,8 +53,11 @@ const DAY_STYLE: Record<DayType, DayStyle> = {
 type Layer = { type: DayType; runLeft: boolean; runRight: boolean };
 
 type CalResp = { events?: TareaEvent[] };
-const calFetcher = (url: string): Promise<CalResp> =>
-  fetch(url, { cache: "no-store" }).then((r) => r.json());
+const calFetcher = async (url: string): Promise<CalResp> => {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`No se pudo cargar el calendario (status ${r.status}).`);
+  return r.json();
+};
 
 /** Fusiona Fase 1 (quick) + Fase 2 (deep) por taskId, sin duplicar y sin que el
  *  deep pise con `undefined` un dato bueno del quick (url/taskId/detalle). */

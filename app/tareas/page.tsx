@@ -20,6 +20,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import WorkspaceLayout, { usePdfPreview } from "@/components/CourseWorkspaceLayout";
 import type { TareaItem } from "@/app/api/tareas/route";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 type Tab = "pendientes" | "completadas";
 
@@ -174,6 +175,12 @@ function useTareasStream(year: number | null) {
         if (cancelled || (err as Error).name === "AbortError") return;
         setError(err as TareasError);
         setLoading(false);
+        const status = (err as TareasError).status;
+        if (status !== 401) {
+          reportClientError("warning", `Carga de tareas (año ${year}): ${(err as Error).message}`, {
+            stack: (err as Error).stack ?? null,
+          });
+        }
       }
     })();
 

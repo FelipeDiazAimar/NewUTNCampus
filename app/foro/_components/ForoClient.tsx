@@ -21,6 +21,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 // ─── Tipos (snake_case = columnas de Supabase) ────────────────────────────────
 
@@ -628,12 +629,13 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(`status ${res.status}`);
       // El post nuevo es 'pending' — aparece en la bandeja del admin.
       await mutatePending();
       setShowThanks(true);
-    } catch {
-      // Podría mostrarse un toast; por ahora silencioso.
+    } catch (e) {
+      // Podría mostrarse un toast; por ahora silencioso, pero queda registrado.
+      reportClientError("warning", `Publicar en el foro: ${(e as Error).message}`);
     } finally {
       setPublishing(false);
     }

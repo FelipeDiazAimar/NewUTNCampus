@@ -16,6 +16,7 @@ import type {
 } from "@/lib/sysacadws";
 import type { MateriaEstado, MateriaCorrelativa } from "@/lib/sysacadTypes";
 import { mapCorrelatividades, mapEstadoAcademico } from "@/lib/sysacadMappers";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 /**
  * Hooks de datos de Sysacad con SWR. La caché en memoria de SWR es global y
@@ -154,10 +155,16 @@ export async function fetchComisiones(
       const motivo = String(j.Message ?? "").replace(/^\d+\s*-\s*/, "").trim();
       return { ok: false, motivo: motivo || "No cumplís las correlatividades para esta materia." };
     }
-    if (!r.ok) return { ok: false, motivo: "No se pudo consultar las comisiones disponibles." };
+    if (!r.ok) {
+      reportClientError("warning", `Consultar comisiones (${idMateria}): status ${r.status}`);
+      return { ok: false, motivo: "No se pudo consultar las comisiones disponibles." };
+    }
     const j = (await r.json()) as SysacadComisionesDisponibles;
     return { ok: true, comisiones: j.Comisiones ?? [] };
-  } catch {
+  } catch (e) {
+    reportClientError("error", `Consultar comisiones (${idMateria}): fallo de red`, {
+      stack: e instanceof Error ? (e.stack ?? null) : null,
+    });
     return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
   }
 }
@@ -187,15 +194,22 @@ export async function postInscribir(
   try {
     const r = await fetch(inscripcionUrl("inscribir", legajo, materia, comision), { method: "POST" });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la inscripción." };
+    if (!r.ok) {
+      reportClientError("warning", `Inscripción a cursado (${materia.IdMateria}): status ${r.status}`);
+      return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la inscripción." };
+    }
     // Sysacad real responde "Estado": "2 - " en éxito (no "OK" — eso es solo
     // la convención del mock de invitado). "2" es el único código de éxito
     // observado en la captura real; cualquier otro prefijo se trata como falla.
     if (typeof j.Estado === "string" && j.Estado.trim() !== "" && !j.Estado.trim().startsWith("2")) {
+      reportClientError("warning", `Inscripción a cursado (${materia.IdMateria}): Estado=${j.Estado}`);
       return { ok: false, motivo: j.Message ?? j.error ?? "No se pudo completar la inscripción." };
     }
     return { ok: true, data: j as SysacadInscripcionResult };
-  } catch {
+  } catch (e) {
+    reportClientError("error", `Inscripción a cursado (${materia.IdMateria}): fallo de red`, {
+      stack: e instanceof Error ? (e.stack ?? null) : null,
+    });
     return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
   }
 }
@@ -208,10 +222,14 @@ export async function postDesinscribir(
     const r = await fetch(inscripcionUrl("desinscribir", legajo, materia, materia.Comision), { method: "POST" });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
+      reportClientError("warning", `Baja de cursado (${materia.IdMateria}): status ${r.status}`);
       return { ok: false, motivo: j.error ?? j.Message ?? "No se pudo completar la baja." };
     }
     return { ok: true };
-  } catch {
+  } catch (e) {
+    reportClientError("error", `Baja de cursado (${materia.IdMateria}): fallo de red`, {
+      stack: e instanceof Error ? (e.stack ?? null) : null,
+    });
     return { ok: false, motivo: "No se pudo conectar. Revisá tu conexión." };
   }
 }

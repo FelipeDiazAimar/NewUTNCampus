@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import Spinner from "@/components/Spinner";
 import { FileViewer } from "@/components/CourseFileViewer";
 import type { MoodleContent, MoodleModule } from "@/lib/moodle";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 // Mirrors the shape returned by GET /api/folder (see app/api/folder/route.ts).
 export type FolderNode =
@@ -123,6 +124,7 @@ export default function FolderViewer({ mod }: { mod: MoodleModule }) {
         setData(j.data as FolderData);
       } catch (e) {
         setError((e as Error).message);
+        reportClientError("warning", `Carga de carpeta (${id}): ${(e as Error).message}`);
       } finally {
         setLoading(false);
       }

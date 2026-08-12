@@ -9,6 +9,7 @@ import { SpinnerBlock } from "@/components/Spinner";
 import AssignmentStatusList from "@/components/AssignmentStatusList";
 import SubmissionUploader from "@/components/SubmissionUploader";
 import type { AssignInfo } from "@/app/api/assign/route";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 export default function TareaPage({
   params,
@@ -36,6 +37,7 @@ export default function TareaPage({
         setInfo(json as AssignInfo);
       } catch (e) {
         setError((e as Error).message);
+        reportClientError("warning", `Carga de tarea (${tareaId}): ${(e as Error).message}`);
       } finally {
         setLoading(false);
       }

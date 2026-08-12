@@ -18,6 +18,7 @@ import SubmissionUploader from "@/components/SubmissionUploader";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import type { AssignInfo, SubmittedFile } from "@/app/api/assign/route";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { reportClientError } from "@/lib/clientErrorReporter";
 
 interface AssignmentViewerProps {
   /** URL del módulo assign en Moodle (mod/assign/view.php?id=…). */
@@ -151,6 +152,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
         setInfo(json as AssignInfo);
       } catch (e) {
         setError((e as Error).message);
+        reportClientError("warning", `Carga de tarea (${url}): ${(e as Error).message}`);
       } finally {
         setLoading(false);
       }
@@ -173,9 +175,13 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
         body: JSON.stringify({ action: "get", meta: info.comments, page: 0 }),
       });
       const json = await res.json();
+      if (!res.ok) reportClientError("warning", `Carga de comentarios: ${json.error ?? "sin mensaje"}`);
       setComments(res.ok ? json.comments ?? [] : []);
-    } catch {
+    } catch (e) {
       setComments([]);
+      reportClientError("warning", "Carga de comentarios: fallo de red", {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setCommentsLoading(false);
     }
@@ -201,7 +207,13 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
       if (res.ok) {
         setComments(json.comments ?? comments ?? []);
         setCommentText("");
+      } else {
+        reportClientError("warning", `Enviar comentario: ${json.error ?? "sin mensaje"}`);
       }
+    } catch (e) {
+      reportClientError("error", "Enviar comentario: fallo de red", {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setSending(false);
     }
@@ -234,6 +246,9 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
       await load({ silent: true });
     } catch (e) {
       setError((e as Error).message);
+      reportClientError("error", `Borrar entrega: ${(e as Error).message}`, {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setDeleting(false);
     }

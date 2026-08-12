@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { MoodleCourse, MoodleCourseSection } from "./moodle";
+import { reportClientError } from "./clientErrorReporter";
 
 type CourseContentsCache = {
   sections: MoodleCourseSection[];
@@ -101,6 +102,9 @@ export function useCourses() {
       setCourses(nextCourses);
     } catch (e) {
       setError((e as Error).message);
+      reportClientError("warning", `Carga de cursos: ${(e as Error).message}`, {
+        stack: e instanceof Error ? (e.stack ?? null) : null,
+      });
     } finally {
       setLoading(false);
     }
@@ -140,7 +144,12 @@ export function useCourseContents(courseId: number) {
         setSections(data.sections);
         setCourseName(data.courseName);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => {
+        setError(e.message);
+        reportClientError("warning", `Carga de contenido del curso ${courseId}: ${e.message}`, {
+          stack: e instanceof Error ? (e.stack ?? null) : null,
+        });
+      })
       .finally(() => setLoading(false));
   }, [courseId]);
 

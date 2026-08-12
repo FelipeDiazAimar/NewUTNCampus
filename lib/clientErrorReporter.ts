@@ -19,6 +19,25 @@ const CONSOLE_BUFFER_SIZE = 30;
 const DEDUPE_WINDOW_MS = 30_000;
 const MAX_REPORTS_PER_SESSION = 50;
 
+// Ruido inyectado por extensiones del navegador (traductores, gestores de
+// contraseñas, adblockers, polyfills de WebExtensions) que no tiene nada que
+// ver con nuestro código pero llega a window "error" / console.error igual.
+// Sin este filtro, contamina el dashboard de errores y tapa los reales.
+const IGNORED_MESSAGE_PATTERNS = [
+  /runtime\.sendMessage/i,
+  /extension context invalidated/i,
+  /chrome-extension:\/\//i,
+  /moz-extension:\/\//i,
+  /safari-extension:\/\//i,
+  /^resizeobserver loop/i,
+  /^script error\.?$/i, // error sin detalle por CORS en script de terceros
+];
+
+function isIgnoredNoise(message: string, filename?: string | null): boolean {
+  if (filename && /^(chrome|moz|safari)-extension:\/\//i.test(filename)) return true;
+  return IGNORED_MESSAGE_PATTERNS.some((re) => re.test(message));
+}
+
 const consoleBuffer: ConsoleEntry[] = [];
 const lastSentAt = new Map<string, number>();
 let reportCount = 0;
@@ -60,6 +79,8 @@ function sendReport(payload: {
   consoleLog?: ConsoleEntry[];
 }) {
   try {
+    if (isIgnoredNoise(payload.message)) return;
+
     const section = window.location.pathname;
     const key = `${payload.severity}:${payload.message}:${section}`;
     if (!shouldSend(key)) return;
@@ -106,6 +127,7 @@ export function initClientErrorTracking(): void {
   };
 
   window.addEventListener("error", (event) => {
+    if (isIgnoredNoise(event.message || "", event.filename)) return;
     sendReport({
       severity: "error",
       message: event.message || "Error desconocido",
