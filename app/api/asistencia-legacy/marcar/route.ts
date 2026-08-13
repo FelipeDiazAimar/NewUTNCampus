@@ -3,7 +3,9 @@ import { isGuestRequest } from "@/lib/guest";
 import { sessionCookieOptions } from "@/lib/cookies";
 import { ensureSession, getStatus, marcar, packSessionForStorage, verificarIp } from "@/lib/asistenciaLegacy";
 
-export const runtime = "nodejs";
+// Configuramos el endpoint para ejecutarse en la red global de Vercel (Edge Runtime)
+// Esto distribuye geográficamente las conexiones entrantes al sistema legacy.
+export const runtime = "edge"; 
 
 const SESSION_COOKIE = "asistencia_legacy_cookie";
 
@@ -13,9 +15,16 @@ const IP_FACULTAD_VALIDA = "190.16.182.88";
 function getCredenciales(req: NextRequest): { legajo: string; dni: string } | null {
   const auth = req.cookies.get("sysacadws_auth")?.value;
   if (!auth) return null;
-  const [legajo, dni] = Buffer.from(auth, "base64").toString("utf8").split(":");
-  if (!legajo || !dni) return null;
-  return { legajo, dni };
+  
+  try {
+    // Reemplazamos Buffer por atob (Web API nativa compatible con Edge Runtime)
+    const decoded = atob(auth);
+    const [legajo, dni] = decoded.split(":");
+    if (!legajo || !dni) return null;
+    return { legajo, dni };
+  } catch (e) {
+    return null; // En caso de que el string no sea un Base64 válido
+  }
 }
 
 // Marca asistencia forzando la IP pública única de la facultad.
