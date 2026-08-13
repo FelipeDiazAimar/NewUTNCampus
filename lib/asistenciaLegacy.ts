@@ -154,13 +154,37 @@ async function login(legajo: string, dni: string): Promise<string | null> {
   return cookieHeader(jar);
 }
 
-/** Reutiliza la cookie guardada si sigue viva; si no, hace login de nuevo. */
-export async function ensureSession(existingCookie: string | undefined, legajo: string, dni: string): Promise<string | null> {
+// La cookie de sesión persiste en el navegador sin estar atada al usuario de
+// Sysacad. Si dos personas comparten dispositivo (una cierra sesión y la otra
+// entra), reusar la cookie "tal cual" marcaría asistencia con la sesión de la
+// persona anterior. Por eso se guarda con el legajo como prefijo y solo se
+// reutiliza si coincide con el legajo actualmente autenticado.
+function packSession(legajo: string, cookie: string): string {
+  return `${legajo}::${cookie}`;
+}
+
+function unpackSession(raw: string | undefined, legajo: string): string | undefined {
+  if (!raw) return undefined;
+  const sep = raw.indexOf("::");
+  if (sep === -1) return undefined; // cookie de un formato anterior sin legajo: no confiar
+  if (raw.slice(0, sep) !== legajo) return undefined;
+  return raw.slice(sep + 2);
+}
+
+/** Reutiliza la cookie guardada si sigue viva y es del mismo legajo; si no, hace login de nuevo. */
+export async function ensureSession(existingRaw: string | undefined, legajo: string, dni: string): Promise<string | null> {
+  const existingCookie = unpackSession(existingRaw, legajo);
   if (existingCookie) {
     const { page } = await fetchApplyLeave(existingCookie);
     if (page.autenticado) return existingCookie;
   }
-  return login(legajo, dni);
+  const fresh = await login(legajo, dni);
+  return fresh;
+}
+
+/** Empaqueta la cookie de sesión junto con el legajo para guardarla en la cookie del navegador. */
+export function packSessionForStorage(legajo: string, cookie: string): string {
+  return packSession(legajo, cookie);
 }
 
 export async function getStatus(cookie: string): Promise<ApplyLeavePage> {
@@ -194,10 +218,13 @@ export async function verificarIp(cookie: string, ip: string): Promise<boolean> 
 /**
  * Marca asistencia para una materia (ya validada contra el <select> fresco por
  * el caller). El POST puede no confirmar in-line, así que el resultado se
- * corrobora releyendo "Asistencias registradas hoy" — más robusto que parsear
- * una respuesta que nunca se llegó a capturar en HAR.
+ * corrobora releyendo "Asistencias registradas hoy".
+ *
+ * Si el servidor rechaza el marcado (p. ej. restricción anti-fraude de "un
+ * dispositivo, un legajo por día"), responde 200 con un <script>alert("...")
+ * en vez de registrar nada — se extrae ese texto para mostrarlo tal cual.
  */
-export async function marcar(cookie: string, materia: AsistenciaMateria): Promise<ApplyLeavePage> {
+export async function marcar(cookie: string, materia: AsistenciaMateria): Promise<{ page: ApplyLeavePage; rechazo: string | null }> {
   const body = new URLSearchParams({
     id_materia: materia.id,
     anio_academico: materia.anio,
@@ -207,7 +234,7 @@ export async function marcar(cookie: string, materia: AsistenciaMateria): Promis
     signin: "",
   }).toString();
 
-  await fetch(`${BASE}/apply-leave.php`, {
+  const postRes = await fetch(`${BASE}/apply-leave.php`, {
     method: "POST",
     redirect: "manual",
     headers: {
@@ -218,8 +245,12 @@ export async function marcar(cookie: string, materia: AsistenciaMateria): Promis
     body,
   });
 
+  const postText = await postRes.text().catch(() => "");
+  const alertMatch = postText.match(/alert\((['"])((?:\\.|(?!\1).)*)\1\)/);
+  const rechazo = alertMatch ? alertMatch[2].replace(/\\'/g, "'").replace(/\\"/g, '"') : null;
+
   const { page } = await fetchApplyLeave(cookie);
-  return page;
+  return { page, rechazo };
 }
 
 export type { ApplyLeavePage };

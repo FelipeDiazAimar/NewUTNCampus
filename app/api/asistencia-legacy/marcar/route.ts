@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isGuestRequest } from "@/lib/guest";
 import { sessionCookieOptions } from "@/lib/cookies";
-import { ensureSession, getStatus, marcar, verificarIp } from "@/lib/asistenciaLegacy";
+import { ensureSession, getStatus, marcar, packSessionForStorage, verificarIp } from "@/lib/asistenciaLegacy";
 
 export const runtime = "nodejs";
 
 const SESSION_COOKIE = "asistencia_legacy_cookie";
+
+// IP pública exacta del gateway de la facultad. El sistema legacy espera ESTA IP exacta.
+const IP_FACULTAD_VALIDA = "190.16.182.88";
 
 function getCredenciales(req: NextRequest): { legajo: string; dni: string } | null {
   const auth = req.cookies.get("sysacadws_auth")?.value;
@@ -15,12 +18,7 @@ function getCredenciales(req: NextRequest): { legajo: string; dni: string } | nu
   return { legajo, dni };
 }
 
-// Marca asistencia. El body trae `ip` (detectada por el propio navegador del
-// alumno contra api.ipify.org) e `idMateria` — la materia se re-busca en un
-// <select> recién traído del servidor de la facultad (nunca se confía en los
-// datos de anio/especialidad/plan/comisión que mande el cliente), así una
-// request manipulada no puede registrar una materia distinta a las realmente
-// habilitadas en este momento.
+// Marca asistencia forzando la IP pública única de la facultad.
 export async function POST(req: NextRequest) {
   if (isGuestRequest(req)) {
     return NextResponse.json({ error: "No disponible en modo invitado." }, { status: 403 });
@@ -30,11 +28,14 @@ export async function POST(req: NextRequest) {
   if (!cred) return NextResponse.json({ error: "No autenticado en Sysacad." }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const ip = typeof body?.ip === "string" ? body.ip.trim() : "";
   const idMateria = typeof body?.idMateria === "string" ? body.idMateria : "";
-  if (!ip || !idMateria) {
-    return NextResponse.json({ error: "Faltan datos (ip / materia)." }, { status: 400 });
+  
+  if (!idMateria) {
+    return NextResponse.json({ error: "Faltan datos (materia)." }, { status: 400 });
   }
+
+  // Forzamos estrictamente la IP pública única del establecimiento
+  const ip = IP_FACULTAD_VALIDA;
 
   const existing = req.cookies.get(SESSION_COOKIE)?.value;
   const cookie = await ensureSession(existing, cred.legajo, cred.dni);
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   }
 
   const setCookie = (res: NextResponse) => {
-    res.cookies.set(SESSION_COOKIE, cookie, sessionCookieOptions(true, true));
+    res.cookies.set(SESSION_COOKIE, packSessionForStorage(cred.legajo, cookie), sessionCookieOptions(true, true));
     return res;
   };
 
@@ -74,8 +75,15 @@ export async function POST(req: NextRequest) {
   }
 
   const yaEstaba = antes.registradasHoy.some((r) => r.materia.trim().toLowerCase() === materia.nombre.trim().toLowerCase());
-  const despues = await marcar(cookie, materia);
+  const { page: despues, rechazo } = await marcar(cookie, materia);
   const ok = despues.registradasHoy.some((r) => r.materia.trim().toLowerCase() === materia.nombre.trim().toLowerCase());
+
+  // El sistema legacy puede rechazar el marcado con un motivo explícito (p. ej.
+  // su restricción anti-fraude de "un dispositivo, un legajo por día") sin que
+  // eso sea un error nuestro — se lo mostramos al usuario tal cual.
+  if (!ok && rechazo) {
+    return setCookie(NextResponse.json({ error: rechazo }, { status: 409 }));
+  }
 
   return setCookie(
     NextResponse.json({
