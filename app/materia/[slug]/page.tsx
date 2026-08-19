@@ -450,7 +450,9 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
     if (!document.cookie.includes("moodle_user")) router.push("/");
   }, [router]);
 
-  const visible = sections.filter((s) => s.visible !== 0 && s.modules.length > 0);
+  const visible = sections.filter(
+    (s) => s.visible !== 0 && (s.modules.length > 0 || !!s.summaryHtml)
+  );
   const searchTerm = normalizeText(search);
   const filtered = searchTerm
     ? visible.filter((section) => {

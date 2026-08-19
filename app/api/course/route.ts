@@ -200,11 +200,20 @@ function extractUntilClosingDiv(html: string): string {
  *  Requires the content to be inside a known Moodle summary container so
  *  sidebar / navigation divs (which also use no-overflow) are never matched. */
 function extractSummaryHtml(sectionHtml: string): string {
+  // course/section.php returns the *whole* page (nav/header/YUI boilerplate
+  // included) — anchor to the actual content region first so the module/12000-char
+  // fallback windows below don't fall short of where the real text lives on a
+  // page with tens of KB of chrome in front of it (see the empty-modules case:
+  // a section with 0 activities has no "id=module-N" to anchor on at all, and
+  // used to fall back to a fixed 12000-char slice that never reached the body).
+  const contentIdx = sectionHtml.search(/\bclass="[^"]*\bcourse-content\b[^"]*"/);
+  const scoped = contentIdx > 0 ? sectionHtml.slice(contentIdx) : sectionHtml;
+
   // Only look before the first module to avoid false positives inside content.
-  const firstModuleIdx = sectionHtml.search(/\bid="module-\d+"/);
+  const firstModuleIdx = scoped.search(/\bid="module-\d+"/);
   const searchArea = firstModuleIdx > 0
-    ? sectionHtml.slice(0, firstModuleIdx)
-    : sectionHtml.slice(0, 12000);
+    ? scoped.slice(0, firstModuleIdx)
+    : scoped.slice(0, 20000);
 
   // Known containers for section description text across all Moodle themes.
   // Order matters — most specific first.
@@ -335,39 +344,54 @@ export async function GET(req: NextRequest) {
     //    • Section with only summary: fetch course/section.php?id=DBID in parallel
     const sections: MoodleCourseSection[] = await Promise.all(
       metas.map(async (meta) => {
-        let modules: MoodleModule[];
+        try {
+          let modules: MoodleModule[];
 
-        let sectionHtml: string;
-        if (!meta.isSummary) {
-          sectionHtml = mainHtml.slice(meta.htmlStart, meta.htmlEnd);
-          modules = parseModules(sectionHtml);
-        } else if (meta.dbId) {
-          const sRes = await fetch(`${MOODLE_BASE}/course/section.php?id=${meta.dbId}`, {
-            headers: { Cookie: cookie },
+          let sectionHtml: string;
+          if (!meta.isSummary) {
+            sectionHtml = mainHtml.slice(meta.htmlStart, meta.htmlEnd);
+            modules = parseModules(sectionHtml);
+          } else if (meta.dbId) {
+            const sRes = await fetch(`${MOODLE_BASE}/course/section.php?id=${meta.dbId}`, {
+              headers: { Cookie: cookie },
+            });
+            sectionHtml = await sRes.text();
+            modules = parseModules(sectionHtml);
+          } else {
+            sectionHtml = "";
+            modules = [];
+          }
+
+          const summaryHtml = extractSummaryHtml(sectionHtml);
+          console.log(`[course] section ${meta.sectionNum} "${meta.name}": ${modules.length} modules, summaryHtml: ${summaryHtml.length} chars`);
+          modules.forEach((m) => {
+            console.log(
+              `  [mod] id=${m.id} modname=${JSON.stringify(m.modname)} name=${JSON.stringify(m.name)} ` +
+              `visible=${m.visible} url=${JSON.stringify(m.url ?? "")} ` +
+              `descLen=${m.description?.length ?? 0}`
+            );
           });
-          sectionHtml = await sRes.text();
-          modules = parseModules(sectionHtml);
-        } else {
-          sectionHtml = "";
-          modules = [];
+          return {
+            id: meta.sectionNum,
+            name: meta.name,
+            visible: 1,
+            summaryHtml,
+            modules,
+          };
+        } catch (err) {
+          // Never let one section's fetch/parse failure (e.g. a transient error on
+          // course/section.php for a single collapsed section) sink the whole
+          // response and fall back to a possibly-stale cache — degrade just that
+          // section instead.
+          console.error(`[course] section ${meta.sectionNum} "${meta.name}" failed:`, (err as Error).message);
+          return {
+            id: meta.sectionNum,
+            name: meta.name,
+            visible: 1,
+            summaryHtml: "",
+            modules: [],
+          };
         }
-
-        const summaryHtml = extractSummaryHtml(sectionHtml);
-        console.log(`[course] section ${meta.sectionNum} "${meta.name}": ${modules.length} modules, summaryHtml: ${summaryHtml.length} chars`);
-        modules.forEach((m) => {
-          console.log(
-            `  [mod] id=${m.id} modname=${JSON.stringify(m.modname)} name=${JSON.stringify(m.name)} ` +
-            `visible=${m.visible} url=${JSON.stringify(m.url ?? "")} ` +
-            `descLen=${m.description?.length ?? 0}`
-          );
-        });
-        return {
-          id: meta.sectionNum,
-          name: meta.name,
-          visible: 1,
-          summaryHtml,
-          modules,
-        };
       })
     );
 
