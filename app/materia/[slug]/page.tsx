@@ -12,6 +12,7 @@ import type { Element } from "domhandler";
 import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import FolderViewer from "@/components/FolderViewer";
 import H5pViewer from "@/components/H5pViewer";
+import ForumViewer from "@/components/ForumViewer";
 import { FileViewer } from "@/components/CourseFileViewer";
 import ContactProfessorModal from "@/components/ContactProfessorModal";
 import { MessageCircle } from "lucide-react";
@@ -267,6 +268,12 @@ function ModuleRow({ mod }: { mod: MoodleModule }) {
   // of sending the user out to the Moodle page.
   if (mod.modname === "h5pactivity" || mod.modname === "hvp") {
     return <H5pViewer mod={mod} />;
+  }
+
+  // Foro → lista de debates + posts renderizados inline, en vez de mandar al
+  // alumno a la página legacy de Moodle.
+  if (mod.modname === "forum") {
+    return <ForumViewer mod={mod} />;
   }
 
   // URL-type content → resolve external URL and open in new tab

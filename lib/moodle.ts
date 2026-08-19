@@ -128,6 +128,25 @@ export interface MoodleContent {
   fileType?: string;    // extracted from Moodle icon URL: "pdf", "powerpoint", "document", …
 }
 
+export interface MoodleForumDiscussion {
+  id: number;           // discussion id (mod/forum/discuss.php?d=ID)
+  subject: string;
+  authorName: string;
+  authorAvatar?: string;
+  timeText: string;     // "9 ago 2026" — display text as Moodle renders it
+  replies: number;
+  locked: boolean;
+}
+
+export interface MoodleForumPost {
+  id: number;
+  subject: string;
+  authorName: string;
+  authorAvatar?: string;
+  timeText: string;     // "domingo, 9 de agosto de 2026, 13:34"
+  contentHtml: string;
+}
+
 export async function moodleLogin(
   username: string,
   password: string
