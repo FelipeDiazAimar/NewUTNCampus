@@ -305,7 +305,14 @@ export async function GET(req: NextRequest) {
     const courseId = Number(req.nextUrl.searchParams.get("id"));
     const mock = MOCK_COURSE_SECTIONS[courseId];
     if (!mock) return NextResponse.json({ data: [], courseName: "Materia" });
-    return NextResponse.json({ data: mock.data, courseName: mock.courseName });
+    // Mock modules carry the real (fake-id) frsfco URLs verbatim for readability
+    // in guestMockData.ts — proxy them the same way the real path does so the
+    // legacy domain never reaches the client, even in guest mode.
+    const data = mock.data.map((section) => ({
+      ...section,
+      modules: section.modules.map((m) => finalizeModule(m as unknown as MoodleModule)),
+    }));
+    return NextResponse.json({ data, courseName: mock.courseName });
   }
 
   const sessionToken = req.cookies.get("moodle_session_token")?.value;

@@ -221,10 +221,6 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     [resolvedPages],
   );
 
-  // TEMP PERF LOGGING — remove once the slow-wifi bottleneck is found.
-  const perfT0Ref = useRef(0);
-  const perfLastPctRef = useRef(-1);
-
   // Resolve src → react-pdf file prop, clean up objectURLs.
   // Plain http(s)/relative URLs (our /api/files proxy) are routed through a
   // session-scoped byte cache (lib/pdfByteCache.ts) so a file the user already
@@ -239,17 +235,13 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     setRenderedPages(0);
     setDocError(null);
     setDocProgress({ loaded: 0, total: 0 });
-    perfT0Ref.current = performance.now();
-    perfLastPctRef.current = -1;
 
     if (src instanceof Blob) {
-      console.log(`[pdf-perf] t=0ms src set (blob)`);
       const url = URL.createObjectURL(src);
       setFile(url);
       return () => URL.revokeObjectURL(url);
     }
     if (src instanceof ArrayBuffer) {
-      console.log(`[pdf-perf] t=0ms src set (buffer)`);
       setFile({ data: src });
       return undefined;
     }
@@ -257,31 +249,22 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
     // blob:/data: URLs are already local (e.g. a Drive-converted PDF) — no
     // network fetch involved, so there's nothing to cache.
     if (src.startsWith("blob:") || src.startsWith("data:")) {
-      console.log(`[pdf-perf] t=0ms src set (local url)`);
       setFile(src);
       return undefined;
     }
 
     const cached = getCachedPdfBytes(src);
     if (cached) {
-      console.log(`[pdf-perf] t=0ms served from cache (${cached.byteLength} bytes)`, src);
       // pdf.js transfers this buffer to its worker, which detaches (empties) it —
       // hand it a copy so the cached original stays intact for the next open.
       setFile({ data: cached.slice(0) });
       return undefined;
     }
 
-    console.log(`[pdf-perf] t=0ms src set (fetching)`, src);
     let cancelled = false;
     fetchPdfBytes(src, (loaded, total) => {
       if (cancelled) return;
       setDocProgress({ loaded, total });
-      const pct = total > 0 ? Math.round((loaded / total) * 100) : -1;
-      // Only log every ~10% so bad-wifi runs (hundreds of progress events) don't flood the console.
-      if (pct !== perfLastPctRef.current && (pct === -1 || pct % 10 === 0 || pct === 100)) {
-        perfLastPctRef.current = pct;
-        console.log(`[pdf-perf] t=${Math.round(performance.now() - perfT0Ref.current)}ms download ${loaded}/${total} bytes (${pct}%)`);
-      }
     })
       // Same reasoning: fetchPdfBytes also stashes this exact buffer in the
       // cache, so pass pdf.js a copy rather than the cached original.
@@ -331,11 +314,7 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
 
   // Stable so PagesList stays memoized across the parent's counter re-renders.
   const handlePageRendered = useCallback(() => {
-    setRenderedPages((n) => {
-      const next = n + 1;
-      console.log(`[pdf-perf] t=${Math.round(performance.now() - perfT0Ref.current)}ms page ${next} rendered`);
-      return next;
-    });
+    setRenderedPages((n) => n + 1);
   }, []);
 
   // Destroy previous document when src changes or component unmounts
@@ -344,7 +323,6 @@ export default function CampusPDFViewer({ src, maxHeight = "75vh", onAspectRatio
   }, [src]);
 
   async function handleDocLoad(pdf: PDFDocumentProxy) {
-    console.log(`[pdf-perf] t=${Math.round(performance.now() - perfT0Ref.current)}ms document parsed, ${pdf.numPages} pages`);
     pdfDocRef.current = pdf;
     setRenderedPages(0);
     setNumPages(pdf.numPages);
