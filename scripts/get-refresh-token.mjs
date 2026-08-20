@@ -1,6 +1,6 @@
 /**
  * Corre: node scripts/get-refresh-token.mjs <CLIENT_ID> <CLIENT_SECRET>
- * Abre el navegador, autorizá con felipediazaimar@gmail.com,
+ * Abre el navegador, autorizá con la cuenta de Google que va a usar la app,
  * y el refresh token aparece en la consola.
  */
 import { google } from "googleapis";
@@ -21,7 +21,7 @@ const url = oauth2.generateAuthUrl({
   prompt: "consent",
 });
 
-console.log("\n── Abrí este URL en el navegador y autorizá con felipediazaimar@gmail.com ──\n");
+console.log("\n── Abrí este URL en el navegador y autorizá con la cuenta de Google elegida ──\n");
 console.log(url);
 console.log("\n── Esperando callback en http://localhost:3001 ──\n");
 

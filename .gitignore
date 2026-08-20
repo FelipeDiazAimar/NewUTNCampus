@@ -40,9 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# HAR files (may contain sensitive tokens/keys from captured traffic)
+# Raw Moodle/legacy-campus page dumps used as scraping fixtures — contain real
+# session keys, user IDs, names and legacy-domain links (see e.g. sourcefiles/cursos.html).
 *.har
 harfiles/
+sourcefiles/
 
 # Tesseract.js language data (downloaded on demand, not a build artifact)
 *.traineddata
