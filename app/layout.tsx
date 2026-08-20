@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import GuestBlockModal from "@/components/GuestBlockModal";
 import GlobalSwrProvider from "@/components/GlobalSwrProvider";
@@ -44,6 +45,7 @@ export default function RootLayout({
             <GuestBlockModal />
           </GlobalSwrProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
