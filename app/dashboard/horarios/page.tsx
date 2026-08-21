@@ -15,6 +15,7 @@ import { getAllMateriaSettings, type MateriaSettings } from "@/lib/materiaSettin
 import { mapCursadoToMaterias } from "@/lib/sysacadMappers";
 import { useCursado } from "@/lib/sysacadHooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import type { OfficialSlot } from "@/lib/officialSchedule";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0]; // Lunes a Domingo
@@ -241,6 +242,7 @@ export default function HorariosPage() {
 
   async function deleteEvent(id: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     await fetch(`/api/schedule-events?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     mutate();
   }

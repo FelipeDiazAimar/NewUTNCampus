@@ -21,6 +21,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { reportClientError } from "@/lib/clientErrorReporter";
 
 // ─── Tipos (snake_case = columnas de Supabase) ────────────────────────────────
@@ -622,6 +623,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
 
   async function publish(content: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     setPublishing(true);
     try {
       const res = await fetch("/api/foro", {
@@ -643,6 +645,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
 
   function toggleLikePost(post: ForumPost) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     const liked = likedPosts.has(post.id);
     const delta = liked ? -1 : 1;
 
@@ -673,6 +676,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
 
   async function addReply(postId: string, content: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     const res = await fetch("/api/foro/comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -685,6 +689,7 @@ export default function ForoClient({ isAdmin }: { isAdmin: boolean }) {
 
   function toggleLikeReply(post: ForumPost, replyId: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     const liked = likedComments.has(replyId);
     const delta = liked ? -1 : 1;
 

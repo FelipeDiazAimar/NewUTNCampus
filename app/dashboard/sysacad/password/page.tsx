@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import Spinner from "@/components/Spinner";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 
 export default function CambioPasswordPage() {
   const router = useRouter();
@@ -24,6 +25,7 @@ export default function CambioPasswordPage() {
     e.preventDefault();
     setMsg(null);
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     if (nueva !== repetir) {
       setMsg({ ok: false, text: "La nueva contraseña no coincide." });
       return;

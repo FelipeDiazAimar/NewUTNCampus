@@ -22,6 +22,7 @@ import { useCampusCatalogo, postMatricular } from "@/lib/campusHooks";
 import { matchearCurso, parseCheckSum } from "@/lib/campus";
 import { useCourses } from "@/lib/hooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import type {
   SysacadWsUser,
   SysacadMateriaParaCursado,
@@ -138,6 +139,7 @@ export default function InscripcionPage() {
 
   async function handleInscribir(materia: SysacadMateriaParaCursado, comision: string) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     if (!legajo) return;
     setBanner(null);
 
@@ -189,6 +191,7 @@ export default function InscripcionPage() {
 
   async function handleDesinscribir(materia: SysacadMateriaParaCursado) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     if (!legajo) return;
     setBanner(null);
     const r = await postDesinscribir(legajo, materia);

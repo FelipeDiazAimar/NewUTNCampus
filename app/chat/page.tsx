@@ -9,6 +9,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import ContactDetailSheet from "@/components/ContactDetailSheet";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { useConversations } from "@/lib/useConversations";
 import {
   avatarColor,
@@ -328,6 +329,7 @@ function ChatPageInner() {
 
   async function send() {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     const text = draft.trim();
     if (!text) return;
     setDraft("");

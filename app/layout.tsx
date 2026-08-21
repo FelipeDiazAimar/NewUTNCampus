@@ -3,6 +3,7 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import GuestBlockModal from "@/components/GuestBlockModal";
+import OfflineBlockModal from "@/components/OfflineBlockModal";
 import GlobalSwrProvider from "@/components/GlobalSwrProvider";
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default function RootLayout({
           <GlobalSwrProvider>
             {children}
             <GuestBlockModal />
+            <OfflineBlockModal />
           </GlobalSwrProvider>
         </ThemeProvider>
         <Analytics />

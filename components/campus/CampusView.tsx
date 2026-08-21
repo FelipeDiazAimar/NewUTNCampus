@@ -8,6 +8,7 @@ import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import { matchearCurso, parseCheckSum, type CampusCatalogo, type CampusCurso } from "@/lib/campus";
 import { postMatricular } from "@/lib/campusHooks";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import type { SysacadMateriaParaCursado } from "@/lib/sysacadws";
 
 /** Botón de copiar al portapapeles con confirmación efímera. */
@@ -157,6 +158,10 @@ export default function CampusView({
   async function matricular(curso: CampusCurso, clave: string) {
     if (isGuestMode()) {
       triggerGuestBlock();
+      return;
+    }
+    if (isOffline()) {
+      triggerOfflineBlock();
       return;
     }
     setAviso(null);

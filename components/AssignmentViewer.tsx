@@ -18,6 +18,7 @@ import SubmissionUploader from "@/components/SubmissionUploader";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import type { AssignInfo, SubmittedFile } from "@/app/api/assign/route";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { reportClientError } from "@/lib/clientErrorReporter";
 
 interface AssignmentViewerProps {
@@ -221,6 +222,7 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
 
   async function handleUpload(formData: FormData) {
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     formData.append("tareaId", info?.cmid ?? "");
     const res = await fetch("/api/assign/upload", { method: "POST", body: formData });
     if (!res.ok) {

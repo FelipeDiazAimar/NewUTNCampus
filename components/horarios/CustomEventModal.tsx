@@ -6,6 +6,7 @@ import { EVENT_COLORS } from "@/lib/customEvents";
 import { DAY_LABELS } from "@/lib/horarios";
 import Spinner from "@/components/Spinner";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 
 const DAY_OPTIONS = [1, 2, 3, 4, 5, 6, 0]; // Lun..Dom
 
@@ -35,6 +36,7 @@ export default function CustomEventModal({
     e.preventDefault();
     if (saving) return;
     if (isGuestMode()) { triggerGuestBlock(); return; }
+    if (isOffline()) { triggerOfflineBlock(); return; }
     if (end <= start) {
       setError("La hora de fin debe ser posterior a la de inicio.");
       return;

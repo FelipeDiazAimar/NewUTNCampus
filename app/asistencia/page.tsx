@@ -27,6 +27,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import DropdownSelect from "@/components/DropdownSelect";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { reportClientError } from "@/lib/clientErrorReporter";
 import { buildSchedule, fmtRemaining } from "@/lib/horarios";
 import { normalizeMateriaName } from "@/lib/officialSchedule";
@@ -360,6 +361,10 @@ function MarcarAsistenciaCard({
   async function handleMarcar() {
     if (guest) {
       triggerGuestBlock();
+      return;
+    }
+    if (isOffline()) {
+      triggerOfflineBlock();
       return;
     }
     if (!effectiveSelectedId || submitting) return;
