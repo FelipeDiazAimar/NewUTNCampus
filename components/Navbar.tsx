@@ -10,6 +10,7 @@ import ThemeToggle from "./ThemeToggle";
 import SessionGuard from "./SessionGuard";
 import { clearCourseCache } from "@/lib/hooks";
 import { isGuestMode } from "@/lib/guest";
+import OfflineStatusChip from "./OfflineStatusChip";
 
 export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
@@ -90,6 +91,7 @@ export default function Navbar({ fullname }: { fullname?: string }) {
 
           {/* Right actions */}
           <div className="flex items-center gap-2 shrink-0">
+            <OfflineStatusChip />
             {fullname && !isGuest && (
               <span className="text-[13px] text-[var(--secondary)] hidden sm:block truncate max-w-[160px]">
                 {fullname}
