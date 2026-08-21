@@ -1,10 +1,31 @@
 "use client";
 
-import { useState, useCallback, useEffect, type MouseEvent } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type MouseEvent } from "react";
 import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayout";
 import Spinner from "@/components/Spinner";
 import type { MoodleContent } from "@/lib/moodle";
 import { reportClientError } from "@/lib/clientErrorReporter";
+import { getFile, saveFile } from "@/lib/offlineFileCache";
+
+// Identifica la materia actual para que FileViewer pueda agrupar los archivos
+// guardados offline por materia sin que cada nivel intermedio del árbol
+// (SectionAccordion → SectionModules → ModuleRow → FolderViewer) tenga que
+// reenviar props que no le interesan.
+export const MateriaContext = createContext<{ materiaId?: string; materiaNombre?: string }>({});
+
+let filesEnabledCache: boolean | null = null;
+async function filesEnabled(): Promise<boolean> {
+  if (filesEnabledCache !== null) return filesEnabledCache;
+  try {
+    const r = await fetch("/api/offline-preferences");
+    if (!r.ok) return false;
+    const j = await r.json();
+    filesEnabledCache = j.filesEnabled === true;
+    return filesEnabledCache;
+  } catch {
+    return false;
+  }
+}
 
 export function formatBytes(b: number) {
   if (!b) return "";
@@ -105,6 +126,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
   const [state, setState] = useState<State>({ phase: "idle" });
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const { openPanel, closePanel, activeKey } = usePdfPreview();
+  const { materiaId, materiaNombre } = useContext(MateriaContext);
 
   const proxyUrl    = `/api/files?ref=${encodeURIComponent(content.fileurl!)}&inline=1`;
   const downloadUrl = `/api/files?ref=${encodeURIComponent(content.fileurl!)}`;
@@ -149,6 +171,24 @@ export function FileViewer({ content }: { content: MoodleContent }) {
       }
     }
 
+    // Guardado offline en background — no bloquea la apertura del archivo.
+    if (materiaId && (await filesEnabled())) {
+      fetch(proxyUrl)
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((blob) => {
+          if (!blob) return;
+          saveFile(content.fileurl!, blob, {
+            materiaId,
+            materiaNombre: materiaNombre ?? "Sin materia",
+            fileName,
+            mimeType: blob.type || "application/octet-stream",
+            sizeBytes: blob.size,
+            savedAt: new Date().toISOString(),
+          });
+        })
+        .catch(() => { /* silencioso — el fetch principal del visor ya maneja errores */ });
+    }
+
     // Document kinds → open in right panel
     if (PANEL_KINDS.includes(kind)) {
       openPanel({
@@ -166,7 +206,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     if (kind === "video") { setState({ phase: "video" }); return; }
     if (kind === "audio") { setState({ phase: "audio" }); return; }
     setState({ phase: "none" });
-  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel, fileName]);
+  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel, fileName, materiaId, materiaNombre]);
 
   // Cuando otro archivo toma el panel, limpiar el indicador local.
   useEffect(() => {
@@ -181,8 +221,15 @@ export function FileViewer({ content }: { content: MoodleContent }) {
       const picker = (window as Window & { showSaveFilePicker?: (o: object) => Promise<{ createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
       if (!picker) throw new Error("not supported");
       const handle = await picker({ suggestedName: fileName, types: [{ description: "Archivo" }] });
-      const res = await fetch(downloadUrl);
-      const blob = await res.blob();
+      let blob: Blob;
+      try {
+        const res = await fetch(downloadUrl);
+        blob = await res.blob();
+      } catch (networkErr) {
+        const offline = await getFile(content.fileurl!);
+        if (!offline) throw networkErr;
+        blob = offline.blob;
+      }
       const wr = await handle.createWritable();
       await wr.write(blob);
       await wr.close();
@@ -198,7 +245,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
       a.download = fileName;
       a.click();
     }
-  }, [downloadUrl, fileName]);
+  }, [downloadUrl, fileName, content.fileurl]);
 
   const isOpen = state.phase !== "idle" || isActive;
 

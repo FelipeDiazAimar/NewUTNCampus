@@ -13,7 +13,7 @@ import Spinner, { SpinnerBlock } from "@/components/Spinner";
 import FolderViewer from "@/components/FolderViewer";
 import H5pViewer from "@/components/H5pViewer";
 import ForumViewer from "@/components/ForumViewer";
-import { FileViewer } from "@/components/CourseFileViewer";
+import { FileViewer, MateriaContext } from "@/components/CourseFileViewer";
 import ContactProfessorModal from "@/components/ContactProfessorModal";
 import { MessageCircle } from "lucide-react";
 
@@ -549,14 +549,16 @@ export default function MateriaPage({ params }: { params: Promise<{ slug: string
           )}
           {error && <div className="bg-[#fff2f2] border border-[#ffcdd2] rounded-2xl p-5 text-[#ff3b30] text-sm">{error}</div>}
           {!loading && !error && (
-            <div className="space-y-3 w-full">
-              {filtered.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
-              {filtered.length === 0 && (
-                <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
-                  {searchTerm ? "Sin resultados para esa busqueda." : "Sin contenido visible todavia."}
-                </p>
-              )}
-            </div>
+            <MateriaContext.Provider value={{ materiaId: id, materiaNombre: courseName }}>
+              <div className="space-y-3 w-full">
+                {filtered.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
+                {filtered.length === 0 && (
+                  <p className="text-center py-16 text-[var(--secondary)] text-[15px]">
+                    {searchTerm ? "Sin resultados para esa busqueda." : "Sin contenido visible todavia."}
+                  </p>
+                )}
+              </div>
+            </MateriaContext.Provider>
           )}
         </div>
       </WorkspaceLayout>
