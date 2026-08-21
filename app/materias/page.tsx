@@ -9,6 +9,7 @@ import { useCourses } from "@/lib/hooks";
 import { useCursado } from "@/lib/sysacadHooks";
 import type { MoodleCourse } from "@/lib/moodle";
 import { SpinnerBlock } from "@/components/Spinner";
+import OfflineOnboardingModal from "@/components/OfflineOnboardingModal";
 
 type MateriasView = "cursando" | "anio";
 
@@ -197,6 +198,7 @@ export default function MateriasPage() {
   return (
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar fullname={userInfo.fullname} />
+      <OfflineOnboardingModal />
 
       <main className="max-w-2xl mx-auto px-4 pt-6 pb-6">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Materias" }]} />
