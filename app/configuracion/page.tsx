@@ -22,6 +22,7 @@ import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import { clearCourseCache } from "@/lib/hooks";
+import OfflineStorageSection from "@/components/OfflineStorageSection";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +261,8 @@ export default function ConfiguracionPage() {
             Al cerrar una sesión, ese dispositivo saldrá del Campus la próxima vez que la app verifique la sesión.
           </p>
         </Section>
+
+        <OfflineStorageSection />
 
         {/* ── Próximamente ── */}
         <Section title="Más opciones">
