@@ -11,7 +11,11 @@ import { reportClientError } from "@/lib/clientErrorReporter";
 const DB_NAME = "campus-sw-diagnostics";
 const STORE_NAME = "log";
 
-type DiagEntry = { id: number; at: string; step: string; details: unknown };
+export type DiagEntry = { id: number; at: string; step: string; details: unknown };
+
+export function formatEntries(entries: DiagEntry[]): string {
+  return entries.map((e) => `[${e.at}] ${e.step}${e.details ? " " + JSON.stringify(e.details) : ""}`).join("\n");
+}
 
 function openDiagDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -55,14 +59,28 @@ export async function flushOfflineDiagnostics(): Promise<void> {
   try {
     const entries = await readAll();
     if (entries.length === 0) return;
-    const summary = entries
-      .map((e) => `[${e.at}] ${e.step}${e.details ? " " + JSON.stringify(e.details) : ""}`)
-      .join("\n");
-    reportClientError("warning", `offline-diag (${entries.length} pasos):\n${summary}`.slice(0, 3900));
+    reportClientError("warning", `offline-diag (${entries.length} pasos):\n${formatEntries(entries)}`.slice(0, 3900));
     await clearAll();
   } catch {
     /* best-effort — se reintenta en el próximo flush */
   } finally {
     flushing = false;
+  }
+}
+
+/**
+ * Lectura NO destructiva de los últimos pasos, para mostrar en pantalla
+ * (ver app/offline/page.tsx) — a diferencia de flushOfflineDiagnostics(),
+ * funciona sin conexión porque no intenta mandar nada a /api/errors, solo
+ * lee la IndexedDB local. Temporal: pensado para debuggear el guardado
+ * offline en dispositivos donde no hay forma de ver la consola en vivo.
+ */
+export async function getRecentDiagnostics(limit = 40): Promise<DiagEntry[]> {
+  if (typeof indexedDB === "undefined") return [];
+  try {
+    const entries = await readAll();
+    return entries.slice(-limit);
+  } catch {
+    return [];
   }
 }

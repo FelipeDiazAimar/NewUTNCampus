@@ -84,6 +84,9 @@ const DIAG_STORE = "log";
 // terminar de escribir — exactamente el mismo bug que ya se corrigió para
 // cache.put() en safeCachePut(), aplicado acá al propio diagnóstico.
 function diagLog(event, step, details) {
+  // Visible en vivo abriendo DevTools → Application → Service Workers →
+  // "inspect" (consola propia del SW, no la de la pestaña normal).
+  console.log("[SW diag]", step, details || "");
   const promise = new Promise((resolve) => {
     try {
       const req = indexedDB.open(DIAG_DB, 1);
