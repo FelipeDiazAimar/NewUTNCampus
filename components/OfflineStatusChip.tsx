@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { formatEntries, getRecentDiagnostics, type DiagEntry } from "@/lib/offlineDiagnostics";
 
@@ -60,50 +61,56 @@ export default function OfflineStatusChip() {
         Modo Offline
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[500] flex items-end sm:items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Diagnóstico offline"
-          onClick={() => setOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          // Portal a document.body: el <header> de Navbar tiene will-change-transform,
+          // que crea un containing block para position:fixed — sin el portal, este
+          // modal quedaba anclado al header en vez de centrado en toda la pantalla.
           <div
-            className="relative w-full max-w-sm bg-[var(--surface)] rounded-3xl shadow-2xl border border-[var(--separator)] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[500] flex items-end sm:items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Diagnóstico offline"
+            onClick={() => setOpen(false)}
           >
-            <button
-              onClick={() => setOpen(false)}
-              className="absolute top-3 right-3 p-1.5 rounded-full text-[var(--secondary)] hover:bg-[var(--surface2)] transition-colors"
-              aria-label="Cerrar"
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <div
+              className="relative w-full max-w-sm bg-[var(--surface)] rounded-3xl shadow-2xl border border-[var(--separator)] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
             >
-              <X className="w-4 h-4" />
-            </button>
+              <button
+                onClick={() => setOpen(false)}
+                className="absolute top-3 right-3 p-1.5 rounded-full text-[var(--secondary)] hover:bg-[var(--surface2)] transition-colors"
+                aria-label="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
 
-            <div className="px-5 pt-6 pb-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-                  Diagnóstico ({entries.length} pasos)
-                </p>
-                <button
-                  onClick={copy}
-                  disabled={entries.length === 0}
-                  className="text-[12px] font-semibold text-[#007aff] active:opacity-70 disabled:opacity-40"
-                >
-                  {copied ? "Copiado ✓" : "Copiar"}
-                </button>
+              <div className="px-5 pt-6 pb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+                    Diagnóstico ({entries.length} pasos)
+                  </p>
+                  <button
+                    onClick={copy}
+                    disabled={entries.length === 0}
+                    className="text-[12px] font-semibold text-[#007aff] active:opacity-70 disabled:opacity-40"
+                  >
+                    {copied ? "Copiado ✓" : "Copiar"}
+                  </button>
+                </div>
+                <textarea
+                  readOnly
+                  value={entries.length > 0 ? text : "Sin pasos registrados todavía."}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full h-64 rounded-xl border border-[var(--separator)] bg-[var(--surface2)] p-3 text-[11px] font-mono text-[var(--fg)] resize-none"
+                />
               </div>
-              <textarea
-                readOnly
-                value={entries.length > 0 ? text : "Sin pasos registrados todavía."}
-                onFocus={(e) => e.currentTarget.select()}
-                className="w-full h-64 rounded-xl border border-[var(--separator)] bg-[var(--surface2)] p-3 text-[11px] font-mono text-[var(--fg)] resize-none"
-              />
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }
