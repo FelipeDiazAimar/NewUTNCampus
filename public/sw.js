@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v5";
+const RUNTIME_CACHE = "campus-runtime-v6";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
@@ -190,6 +190,28 @@ async function precacheMainScreens(event) {
   diagLog(event, "install:precache-screens-done", { total: PRECACHE_ROUTES.length, ok, failed });
 }
 
+// Logo del header — claro y oscuro, versión ancha (desktop) y versión ícono
+// (mobile). cacheFirst() ya guarda estos archivos cuando se piden, pero solo
+// el par que corresponde al tema/tamaño actual — el otro par nunca se pide,
+// así que si el tema cambia (o el modo sistema) estando offline, ese logo
+// faltaría. Se precachean los 4 de una para cubrir cualquier combinación.
+const LOGO_FILES = ["/UTN.png", "/UTNW.png", "/LOGOUTNB.png", "/LOGOUTNW.png"];
+
+async function precacheLogos(event) {
+  const cache = await caches.open(RUNTIME_CACHE);
+  let ok = 0;
+  let failed = 0;
+  await Promise.all(
+    LOGO_FILES.map((url) =>
+      cache
+        .add(url)
+        .then(() => { ok++; })
+        .catch(() => { failed++; })
+    )
+  );
+  diagLog(event, "install:precache-logos-done", { total: LOGO_FILES.length, ok, failed });
+}
+
 self.addEventListener("install", (event) => {
   diagLog(event, "install:start");
   event.waitUntil(
@@ -200,6 +222,7 @@ self.addEventListener("install", (event) => {
       .catch((err) => diagLog(event, "install:precache-offline-failed", { message: err && err.message }))
       .then(() => precacheAllStaticAssets(event))
       .then(() => precacheMainScreens(event))
+      .then(() => precacheLogos(event))
       .then(() => self.skipWaiting())
   );
 });
