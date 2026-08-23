@@ -1,7 +1,16 @@
 import { initClientErrorTracking, reportClientError } from "@/lib/clientErrorReporter";
 import { beginOfflineActivity, endOfflineActivity } from "@/lib/offlineActivity";
+import { flushOfflineDiagnostics } from "@/lib/offlineDiagnostics";
 
 initClientErrorTracking();
+
+if (typeof window !== "undefined") {
+  // Manda a /api/errors los pasos que el SW fue guardando mientras no había
+  // conexión (ver lib/offlineDiagnostics.ts) — al cargar la app y cada vez
+  // que vuelve la red, por si el usuario no cierra/reabre.
+  flushOfflineDiagnostics();
+  window.addEventListener("online", () => { flushOfflineDiagnostics(); });
+}
 
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker

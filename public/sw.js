@@ -68,13 +68,60 @@ function shouldNeverCache(pathname) {
   return NEVER_CACHE_PATTERNS.some((re) => re.test(pathname));
 }
 
-// Precachea la página de fallback en el install — si no está garantizada acá,
-// el fallback de networkFirst() nunca la encuentra offline y termina
-// relanzando el error de red en vez de mostrar algo (rompe toda navegación
-// offline, no solo la que falta en caché).
+// ─── Diagnóstico ────────────────────────────────────────────────────────────
+// Mientras el dispositivo está offline no hay forma de mandar nada al
+// servidor de errores — se guardan los pasos acá, en la propia IndexedDB del
+// SW (el SW no tiene acceso a localStorage), y el cliente los junta y los
+// manda a /api/errors apenas vuelve a haber conexión (ver
+// lib/offlineDiagnostics.ts + instrumentation-client.ts).
+const DIAG_DB = "campus-sw-diagnostics";
+const DIAG_STORE = "log";
+
+function diagLog(step, details) {
+  try {
+    const req = indexedDB.open(DIAG_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DIAG_STORE)) {
+        db.createObjectStore(DIAG_STORE, { keyPath: "id", autoIncrement: true });
+      }
+    };
+    req.onsuccess = () => {
+      const db = req.result;
+      try {
+        const tx = db.transaction(DIAG_STORE, "readwrite");
+        tx.objectStore(DIAG_STORE).add({ at: new Date().toISOString(), step, details: details || null });
+      } catch {
+        /* el diagnóstico nunca debe romper el fetch real */
+      }
+    };
+    req.onerror = () => { /* idem */ };
+  } catch {
+    /* idem */
+  }
+}
+
+// skipWaiting + clients.claim: sin esto, un SW nuevo se queda "waiting" hasta
+// que TODAS las pestañas/instancias de la PWA controladas por el viejo se
+// cierren — un solo reload (o incluso "cerrar y reabrir" en algunos casos)
+// puede no alcanzar para que el nuevo SW tome control. Con esto, se activa
+// y controla inmediatamente.
 self.addEventListener("install", (event) => {
+  diagLog("install:start");
   event.waitUntil(
-    caches.open(RUNTIME_CACHE).then((cache) => cache.add(OFFLINE_FALLBACK_URL))
+    caches
+      .open(RUNTIME_CACHE)
+      .then((cache) => cache.add(OFFLINE_FALLBACK_URL))
+      .then(() => diagLog("install:precache-offline-ok"))
+      .catch((err) => diagLog("install:precache-offline-failed", { message: err && err.message }))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  diagLog("activate:start");
+  event.waitUntil(
+    self.clients.claim().then(() => diagLog("activate:clients-claimed"))
   );
 });
 
@@ -130,28 +177,40 @@ async function notifyActivity(type) {
 // "terminado" y el browser lo suspende, sobre todo en PWA instalada en
 // celular. Sin waitUntil, cache.put() a veces nunca llega a completarse.
 async function networkFirst(event, request, cacheKey) {
+  const label = `${request.mode === "navigate" ? "navigate" : request.method} ${new URL(request.url).pathname}`;
   const cache = await caches.open(RUNTIME_CACHE);
   notifyActivity("campus:offline-activity-start");
   try {
     const response = await fetch(request);
+    diagLog("networkFirst:fetch-ok", { label, status: response.status });
     if (response && response.ok) {
       event.waitUntil(
-        safeCachePut(cache, cacheKey ?? request, response.clone()).finally(() =>
-          notifyActivity("campus:offline-activity-end")
-        )
+        safeCachePut(cache, cacheKey ?? request, response.clone())
+          .then(() => diagLog("networkFirst:cache-put-ok", { label }))
+          .finally(() => notifyActivity("campus:offline-activity-end"))
       );
     } else {
       notifyActivity("campus:offline-activity-end");
     }
     return response;
   } catch (err) {
+    diagLog("networkFirst:fetch-failed", { label, message: err && err.message });
     notifyActivity("campus:offline-activity-end");
     const cached = await cache.match(cacheKey ?? request);
-    if (cached) return cached;
+    if (cached) {
+      diagLog("networkFirst:served-from-cache", { label });
+      return cached;
+    }
+    diagLog("networkFirst:cache-miss", { label });
     if (request.mode === "navigate") {
       const fallback = await cache.match(OFFLINE_FALLBACK_URL);
-      if (fallback) return fallback;
+      if (fallback) {
+        diagLog("networkFirst:served-offline-fallback", { label });
+        return fallback;
+      }
+      diagLog("networkFirst:offline-fallback-not-cached", { label });
     }
+    diagLog("networkFirst:rethrow", { label, message: err && err.message });
     throw err;
   }
 }
@@ -160,15 +219,21 @@ async function cacheFirst(event, request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
   if (cached) return cached;
-  const response = await fetch(request);
-  if (response && response.ok) {
-    event.waitUntil(safeCachePut(cache, request, response.clone()));
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      event.waitUntil(safeCachePut(cache, request, response.clone()));
+    }
+    return response;
+  } catch (err) {
+    diagLog("cacheFirst:fetch-failed", { url: new URL(request.url).pathname, message: err && err.message });
+    throw err;
   }
-  return response;
 }
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
+  if (request.mode === "navigate") diagLog("fetch:navigate-intercepted", { url: request.url });
   if (request.headers.has("Range")) return; // nunca — cubierto por IndexedDB en el cliente
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
