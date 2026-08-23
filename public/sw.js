@@ -77,28 +77,40 @@ function shouldNeverCache(pathname) {
 const DIAG_DB = "campus-sw-diagnostics";
 const DIAG_STORE = "log";
 
-function diagLog(step, details) {
-  try {
-    const req = indexedDB.open(DIAG_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(DIAG_STORE)) {
-        db.createObjectStore(DIAG_STORE, { keyPath: "id", autoIncrement: true });
-      }
-    };
-    req.onsuccess = () => {
-      const db = req.result;
-      try {
-        const tx = db.transaction(DIAG_STORE, "readwrite");
-        tx.objectStore(DIAG_STORE).add({ at: new Date().toISOString(), step, details: details || null });
-      } catch {
-        /* el diagnóstico nunca debe romper el fetch real */
-      }
-    };
-    req.onerror = () => { /* idem */ };
-  } catch {
-    /* idem */
-  }
+// Devuelve una promesa que resuelve recién cuando la escritura se confirmó
+// (tx.oncomplete), y la envuelve en event.waitUntil() cuando hay un event a
+// mano. Sin esto, un diagLog() aislado (sin otra actividad async alrededor
+// que mantenga vivo el SW) puede ser cortado por el navegador antes de
+// terminar de escribir — exactamente el mismo bug que ya se corrigió para
+// cache.put() en safeCachePut(), aplicado acá al propio diagnóstico.
+function diagLog(event, step, details) {
+  const promise = new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(DIAG_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(DIAG_STORE)) {
+          db.createObjectStore(DIAG_STORE, { keyPath: "id", autoIncrement: true });
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const tx = db.transaction(DIAG_STORE, "readwrite");
+          tx.objectStore(DIAG_STORE).add({ at: new Date().toISOString(), step, details: details || null });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch {
+          resolve(); // el diagnóstico nunca debe romper el fetch real
+        }
+      };
+      req.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+  if (event && typeof event.waitUntil === "function") event.waitUntil(promise);
+  return promise;
 }
 
 // skipWaiting + clients.claim: sin esto, un SW nuevo se queda "waiting" hasta
@@ -107,19 +119,19 @@ function diagLog(step, details) {
 // puede no alcanzar para que el nuevo SW tome control. Con esto, se activa
 // y controla inmediatamente.
 self.addEventListener("install", (event) => {
-  diagLog("install:start");
+  diagLog(event, "install:start");
   event.waitUntil(
     caches
       .open(RUNTIME_CACHE)
       .then((cache) => cache.add(OFFLINE_FALLBACK_URL))
-      .then(() => diagLog("install:precache-offline-ok"))
-      .catch((err) => diagLog("install:precache-offline-failed", { message: err && err.message }))
+      .then(() => diagLog(event, "install:precache-offline-ok"))
+      .catch((err) => diagLog(event, "install:precache-offline-failed", { message: err && err.message }))
       .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener("activate", (event) => {
-  diagLog("activate:start");
+  diagLog(event, "activate:start");
   event.waitUntil(
     caches
       .keys()
@@ -130,9 +142,9 @@ self.addEventListener("activate", (event) => {
             .map((name) => caches.delete(name))
         )
       )
-      .then(() => diagLog("activate:old-caches-cleared"))
+      .then(() => diagLog(event, "activate:old-caches-cleared"))
       .then(() => self.clients.claim())
-      .then(() => diagLog("activate:clients-claimed"))
+      .then(() => diagLog(event, "activate:clients-claimed"))
   );
 });
 
@@ -193,11 +205,11 @@ async function networkFirst(event, request, cacheKey) {
   notifyActivity("campus:offline-activity-start");
   try {
     const response = await fetch(request);
-    diagLog("networkFirst:fetch-ok", { label, status: response.status });
+    diagLog(event, "networkFirst:fetch-ok", { label, status: response.status });
     if (response && response.ok) {
       event.waitUntil(
         safeCachePut(cache, cacheKey ?? request, response.clone())
-          .then(() => diagLog("networkFirst:cache-put-ok", { label }))
+          .then(() => diagLog(event, "networkFirst:cache-put-ok", { label }))
           .finally(() => notifyActivity("campus:offline-activity-end"))
       );
     } else {
@@ -205,23 +217,23 @@ async function networkFirst(event, request, cacheKey) {
     }
     return response;
   } catch (err) {
-    diagLog("networkFirst:fetch-failed", { label, message: err && err.message });
+    diagLog(event, "networkFirst:fetch-failed", { label, message: err && err.message });
     notifyActivity("campus:offline-activity-end");
     const cached = await cache.match(cacheKey ?? request);
     if (cached) {
-      diagLog("networkFirst:served-from-cache", { label });
+      diagLog(event, "networkFirst:served-from-cache", { label });
       return cached;
     }
-    diagLog("networkFirst:cache-miss", { label });
+    diagLog(event, "networkFirst:cache-miss", { label });
     if (request.mode === "navigate") {
       const fallback = await cache.match(OFFLINE_FALLBACK_URL);
       if (fallback) {
-        diagLog("networkFirst:served-offline-fallback", { label });
+        diagLog(event, "networkFirst:served-offline-fallback", { label });
         return fallback;
       }
-      diagLog("networkFirst:offline-fallback-not-cached", { label });
+      diagLog(event, "networkFirst:offline-fallback-not-cached", { label });
     }
-    diagLog("networkFirst:rethrow", { label, message: err && err.message });
+    diagLog(event, "networkFirst:rethrow", { label, message: err && err.message });
     throw err;
   }
 }
@@ -237,14 +249,14 @@ async function cacheFirst(event, request) {
     }
     return response;
   } catch (err) {
-    diagLog("cacheFirst:fetch-failed", { url: new URL(request.url).pathname, message: err && err.message });
+    diagLog(event, "cacheFirst:fetch-failed", { url: new URL(request.url).pathname, message: err && err.message });
     throw err;
   }
 }
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.mode === "navigate") diagLog("fetch:navigate-intercepted", { url: request.url });
+  if (request.mode === "navigate") diagLog(event, "fetch:navigate-intercepted", { url: request.url });
   if (request.headers.has("Range")) return; // nunca — cubierto por IndexedDB en el cliente
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
@@ -287,7 +299,7 @@ self.addEventListener("fetch", (event) => {
     const strippedUrl = new URL(url.href);
     strippedUrl.searchParams.delete("_rsc");
     const rscKey = `${self.location.origin}/__sw_rsc_cache__?p=${encodeURIComponent(strippedUrl.pathname + strippedUrl.search)}`;
-    diagLog("fetch:rsc-intercepted", { url: strippedUrl.pathname });
+    diagLog(event, "fetch:rsc-intercepted", { url: strippedUrl.pathname });
     event.respondWith(networkFirst(event, request, rscKey));
     return;
   }
