@@ -36,27 +36,26 @@ export default function OfflinePage() {
           Esta página todavía no se guardó para verse sin internet. Conectate y volvé a intentar.
         </p>
 
-        {entries.length > 0 && (
-          <div className="text-left">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
-                Diagnóstico ({entries.length} pasos)
-              </p>
-              <button
-                onClick={copy}
-                className="text-[12px] font-semibold text-[#007aff] active:opacity-70"
-              >
-                {copied ? "Copiado ✓" : "Copiar"}
-              </button>
-            </div>
-            <textarea
-              readOnly
-              value={text}
-              onFocus={(e) => e.currentTarget.select()}
-              className="w-full h-64 rounded-xl border border-[var(--separator)] bg-[var(--surface)] p-3 text-[11px] font-mono text-[var(--fg)] resize-none"
-            />
+        <div className="text-left">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
+              Diagnóstico ({entries.length} pasos)
+            </p>
+            <button
+              onClick={copy}
+              disabled={entries.length === 0}
+              className="text-[12px] font-semibold text-[#007aff] active:opacity-70 disabled:opacity-40"
+            >
+              {copied ? "Copiado ✓" : "Copiar"}
+            </button>
           </div>
-        )}
+          <textarea
+            readOnly
+            value={entries.length > 0 ? text : "Sin pasos registrados todavía."}
+            onFocus={(e) => e.currentTarget.select()}
+            className="w-full h-64 rounded-xl border border-[var(--separator)] bg-[var(--surface)] p-3 text-[11px] font-mono text-[var(--fg)] resize-none"
+          />
+        </div>
       </div>
     </div>
   );

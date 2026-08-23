@@ -7,9 +7,14 @@ initClientErrorTracking();
 if (typeof window !== "undefined") {
   // Manda a /api/errors los pasos que el SW fue guardando mientras no había
   // conexión (ver lib/offlineDiagnostics.ts) — al cargar la app y cada vez
-  // que vuelve la red, por si el usuario no cierra/reabre.
-  flushOfflineDiagnostics();
-  window.addEventListener("online", () => { flushOfflineDiagnostics(); });
+  // que vuelve la red, por si el usuario no cierra/reabre. Se salta en la
+  // propia página /offline: si no, puede vaciar el diagnóstico justo antes
+  // de que esa página lo lea y muestre el botón de copiar (ver
+  // app/offline/page.tsx — TEMPORAL, debug del guardado offline).
+  if (window.location.pathname !== "/offline") {
+    flushOfflineDiagnostics();
+    window.addEventListener("online", () => { flushOfflineDiagnostics(); });
+  }
 }
 
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
