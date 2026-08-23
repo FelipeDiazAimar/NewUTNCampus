@@ -124,14 +124,28 @@ async function notifyActivity(type) {
   for (const client of clientsList) client.postMessage({ type });
 }
 
-async function networkFirst(request, cacheKey) {
+// IMPORTANTE: el escrito a cache SIEMPRE se envuelve en event.waitUntil().
+// Una promesa "fire and forget" (sin await ni waitUntil) puede ser cortada
+// por el navegador apenas se devuelve la respuesta — el SW se considera
+// "terminado" y el browser lo suspende, sobre todo en PWA instalada en
+// celular. Sin waitUntil, cache.put() a veces nunca llega a completarse.
+async function networkFirst(event, request, cacheKey) {
   const cache = await caches.open(RUNTIME_CACHE);
   notifyActivity("campus:offline-activity-start");
   try {
     const response = await fetch(request);
-    if (response && response.ok) safeCachePut(cache, cacheKey ?? request, response.clone());
+    if (response && response.ok) {
+      event.waitUntil(
+        safeCachePut(cache, cacheKey ?? request, response.clone()).finally(() =>
+          notifyActivity("campus:offline-activity-end")
+        )
+      );
+    } else {
+      notifyActivity("campus:offline-activity-end");
+    }
     return response;
   } catch (err) {
+    notifyActivity("campus:offline-activity-end");
     const cached = await cache.match(cacheKey ?? request);
     if (cached) return cached;
     if (request.mode === "navigate") {
@@ -139,17 +153,17 @@ async function networkFirst(request, cacheKey) {
       if (fallback) return fallback;
     }
     throw err;
-  } finally {
-    notifyActivity("campus:offline-activity-end");
   }
 }
 
-async function cacheFirst(request) {
+async function cacheFirst(event, request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
   if (cached) return cached;
   const response = await fetch(request);
-  if (response && response.ok) safeCachePut(cache, request, response.clone());
+  if (response && response.ok) {
+    event.waitUntil(safeCachePut(cache, request, response.clone()));
+  }
   return response;
 }
 
@@ -166,7 +180,7 @@ self.addEventListener("fetch", (event) => {
       (async () => {
         const cacheKey = await moodleCacheKey(request);
         if (!cacheKey) return fetch(request);
-        return networkFirst(request, cacheKey);
+        return networkFirst(event, request, cacheKey);
       })()
     );
     return;
@@ -175,11 +189,11 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return; // otras escrituras: siempre red, nunca cache
 
   if (url.pathname.startsWith("/_next/static/") || /\.(png|jpg|jpeg|svg|webp|ico|woff2?)$/.test(url.pathname)) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(cacheFirst(event, request));
     return;
   }
 
   if (request.mode === "navigate" || url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(networkFirst(event, request));
   }
 });
