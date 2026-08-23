@@ -258,6 +258,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Navegación "liviana" de Next.js (RSC): al clickear un link, el cliente
+  // pide el payload de la ruta destino sin recargar la página — no es
+  // mode:"navigate" ni empieza con /api/, así que sin este caso nunca se
+  // guardaba nada de lo que el usuario visita normalmente navegando adentro
+  // de la app, solo lo que carga con un reload o URL escrita a mano. Next
+  // agrega un query param "_rsc" que cambia en cada build/prefetch — se
+  // saca de la clave de cache para que no rompa el match entre visitas.
+  const isRSC = request.headers.has("RSC") || url.searchParams.has("_rsc");
+  if (isRSC) {
+    const strippedUrl = new URL(url.href);
+    strippedUrl.searchParams.delete("_rsc");
+    diagLog("fetch:rsc-intercepted", { url: strippedUrl.pathname });
+    event.respondWith(networkFirst(event, request, strippedUrl.href));
+    return;
+  }
+
   if (request.mode === "navigate" || url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(event, request));
   }
