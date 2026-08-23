@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v2";
+const RUNTIME_CACHE = "campus-runtime-v3";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
@@ -284,28 +284,15 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navegación "liviana" de Next.js (RSC): al clickear un link, el cliente
-  // pide el payload de la ruta destino sin recargar la página — no es
-  // mode:"navigate" ni empieza con /api/, así que sin este caso nunca se
-  // guardaba nada de lo que el usuario visita normalmente navegando adentro
-  // de la app, solo lo que carga con un reload o URL escrita a mano.
-  //
-  // OJO: el payload RSC de "/dashboard" y el documento HTML completo de
-  // "/dashboard" (navegación dura) son contenidos totalmente distintos para
-  // la MISMA url — si comparten clave de cache se pisan entre sí (a veces
-  // sirviendo el texto serializado de React donde debería ir la página).
-  // Por eso se namespacea la clave RSC aparte, igual que ya se hace con
-  // moodleCacheKey() para /api/moodle. También se saca el query "_rsc" que
-  // Next cambia en cada build/prefetch, para no romper el match entre visitas.
-  const isRSC = request.headers.has("RSC") || url.searchParams.has("_rsc");
-  if (isRSC) {
-    const strippedUrl = new URL(url.href);
-    strippedUrl.searchParams.delete("_rsc");
-    const rscKey = `${self.location.origin}/__sw_rsc_cache__?p=${encodeURIComponent(strippedUrl.pathname + strippedUrl.search)}`;
-    diagLog(event, "fetch:rsc-intercepted", { url: strippedUrl.pathname });
-    event.respondWith(networkFirst(event, request, rscKey));
-    return;
-  }
+  // Navegación "liviana" de Next.js (RSC, al clickear un link sin recargar):
+  // se prueba cachear, pero el payload trae embebido un buildId/estado del
+  // momento exacto en que se generó — servir uno guardado más tarde puede no
+  // coincidir con lo que el router de React espera y dejar la sesión en un
+  // estado roto (pantallas en blanco, "error inesperado" incluso en vistas
+  // no relacionadas). A propósito NO se intercepta: se deja pasar directo,
+  // así cuando falla offline Next.js cae solo a una recarga completa, que sí
+  // usa la navegación dura (más abajo) — comprobada confiable.
+  if (request.headers.has("RSC") || url.searchParams.has("_rsc")) return;
 
   if (request.mode === "navigate" || url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(event, request));
