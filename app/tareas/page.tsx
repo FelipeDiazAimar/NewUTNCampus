@@ -21,6 +21,7 @@ import { SpinnerBlock } from "@/components/Spinner";
 import WorkspaceLayout, { usePdfPreview } from "@/components/CourseWorkspaceLayout";
 import type { TareaItem } from "@/app/api/tareas/route";
 import { reportClientError } from "@/lib/clientErrorReporter";
+import { useOnlineStatus } from "@/lib/useOnlineStatus";
 
 type Tab = "pendientes" | "completadas";
 
@@ -225,6 +226,7 @@ function groupByCourseDueAsc(items: TareaItem[]): CourseGroup[] {
 
 export default function TareasPage() {
   const router = useRouter();
+  const online = useOnlineStatus();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("pendientes");
   const [year, setYear] = useState(CURRENT_YEAR);
@@ -316,7 +318,12 @@ export default function TareasPage() {
 
   const visibleGroups = isSearching ? searchGroups : groups;
 
-  const errorMsg = error && error.message !== "UNAUTHORIZED" ? error.message : "";
+  const errorMsg =
+    error && error.message !== "UNAUTHORIZED"
+      ? online
+        ? error.message
+        : "Sin conexión — estas tareas todavía no se guardaron para verlas sin internet."
+      : "";
   const showSpinner = !ready && !errorMsg && !sessionExpired;
   // Todavía no terminó de traer todas las tareas del año — evita mostrar el
   // estado vacío ("no tenés tareas...") mientras siguen llegando de a una.

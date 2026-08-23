@@ -11,6 +11,7 @@ import ContactDetailSheet from "@/components/ContactDetailSheet";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { useConversations } from "@/lib/useConversations";
+import { useOnlineStatus } from "@/lib/useOnlineStatus";
 import {
   avatarColor,
   formatChatTime,
@@ -158,6 +159,7 @@ function MessageBubble({ msg, mine }: { msg: Message; mine: boolean }) {
 
 function ChatPageInner() {
   const router = useRouter();
+  const networkOnline = useOnlineStatus();
   const [authed, setAuthed] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -427,7 +429,11 @@ function ChatPageInner() {
                 convLoading && conversations.length === 0 ? (
                   <SpinnerBlock label="Cargando chats…" />
                 ) : convError ? (
-                  <p className="px-4 py-10 text-center text-[14px] text-[#ff3b30]">No se pudieron cargar los chats.</p>
+                  <p className="px-4 py-10 text-center text-[14px] text-[#ff3b30]">
+                    {networkOnline
+                      ? "No se pudieron cargar los chats."
+                      : "Sin conexión — los chats no se guardan para verlos sin internet."}
+                  </p>
                 ) : conversations.length === 0 ? (
                   <p className="px-4 py-10 text-center text-[14px] text-[var(--secondary)]">No tenés mensajes todavía.</p>
                 ) : (
