@@ -62,7 +62,6 @@ const NEVER_CACHE_PATTERNS = [
   /^\/api\/offline-preferences/,
   /^\/api\/errors/,
   /^\/api\/admin/,
-  /^\/api\/precache-manifest/,
 ];
 
 function shouldNeverCache(pathname) {
@@ -128,14 +127,16 @@ function diagLog(event, step, details) {
 // de forma perezosa (code-splitting) y hay piezas que nunca se disparan
 // durante una sesión de navegación normal, aunque la página en sí sí se haya
 // visitado ("Failed to load chunk ... from module" offline). La lista sale
-// de /api/precache-manifest (lee el filesystem del build, no el manifest
-// interno de Turbopack). Cada archivo se cachea por separado — si alguno
-// falla no bloquea a los demás.
+// de /precache-manifest.json, generado en build time (scripts/generate-
+// precache-manifest.mjs, corre como "postbuild") — NO de una API route: en
+// Vercel .next/static/ no está disponible dentro de una función serverless
+// en producción (devolvía 0 archivos). Cada archivo se cachea por separado —
+// si alguno falla no bloquea a los demás.
 async function precacheAllStaticAssets(event) {
   const cache = await caches.open(RUNTIME_CACHE);
   let urls = [];
   try {
-    const res = await fetch("/api/precache-manifest");
+    const res = await fetch("/precache-manifest.json");
     if (res.ok) urls = (await res.json()).urls ?? [];
   } catch (err) {
     diagLog(event, "install:precache-manifest-fetch-failed", { message: err && err.message });

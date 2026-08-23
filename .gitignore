@@ -51,3 +51,6 @@ sourcefiles/
 
 # Claude Code conversation history (may contain secrets pasted in chat)
 .waylog/
+
+# generated at build time (scripts/generate-precache-manifest.mjs)
+/public/precache-manifest.json
