@@ -11,6 +11,7 @@ import SessionGuard from "./SessionGuard";
 import { clearCourseCache } from "@/lib/hooks";
 import { isGuestMode } from "@/lib/guest";
 import OfflineStatusChip from "./OfflineStatusChip";
+import OfflineActivityIndicator from "./OfflineActivityIndicator";
 
 export default function Navbar({ fullname }: { fullname?: string }) {
   const router = useRouter();
@@ -56,6 +57,7 @@ export default function Navbar({ fullname }: { fullname?: string }) {
     <header className="sticky top-4 z-50 w-full will-change-transform">
       <div className="max-w-[1600px] mx-auto px-4 mb-6">
         <div className={`relative w-full h-12 flex items-center justify-between rounded-2xl ${isAndroid ? "backdrop-blur-md" : "backdrop-blur-xl"} backdrop-saturate-150 bg-[var(--navbar-bg)] border border-[var(--navbar-border)] shadow-sm px-4`}>
+          <OfflineActivityIndicator />
 
           {/* Logo */}
           <Link

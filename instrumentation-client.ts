@@ -1,4 +1,5 @@
 import { initClientErrorTracking, reportClientError } from "@/lib/clientErrorReporter";
+import { beginOfflineActivity, endOfflineActivity } from "@/lib/offlineActivity";
 
 initClientErrorTracking();
 
@@ -12,7 +13,11 @@ if (typeof window !== "undefined" && "serviceWorker" in navigator) {
   // El SW no tiene acceso directo a reportClientError (hilo aparte) — reenvía
   // acá los fallos de cacheo que reporta vía postMessage (ver public/sw.js).
   navigator.serviceWorker.addEventListener("message", (event) => {
-    if (event.data?.type !== "campus:sw-cache-error") return;
-    reportClientError("warning", `offline-cache (SW): ${event.data.context} — ${event.data.message ?? "error desconocido"}`);
+    if (event.data?.type === "campus:sw-cache-error") {
+      reportClientError("warning", `offline-cache (SW): ${event.data.context} — ${event.data.message ?? "error desconocido"}`);
+      return;
+    }
+    if (event.data?.type === "campus:offline-activity-start") { beginOfflineActivity(); return; }
+    if (event.data?.type === "campus:offline-activity-end") { endOfflineActivity(); return; }
   });
 }

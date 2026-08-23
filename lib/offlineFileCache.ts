@@ -1,4 +1,5 @@
 import { reportClientError } from "@/lib/clientErrorReporter";
+import { beginOfflineActivity, endOfflineActivity } from "@/lib/offlineActivity";
 
 export type OfflineFileMeta = {
   materiaId: string;
@@ -44,6 +45,7 @@ function isQuotaError(err: unknown): boolean {
 
 export async function saveFile(key: string, blob: Blob, meta: OfflineFileMeta): Promise<void> {
   if (typeof indexedDB === "undefined" || storageFull) return;
+  beginOfflineActivity();
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
@@ -61,6 +63,8 @@ export async function saveFile(key: string, blob: Blob, meta: OfflineFileMeta): 
     reportClientError("warning", `offline-files: fallo al guardar ${meta.materiaNombre}/${meta.fileName}`, {
       stack: err instanceof Error ? (err.stack ?? null) : null,
     });
+  } finally {
+    endOfflineActivity();
   }
 }
 

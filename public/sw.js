@@ -114,8 +114,19 @@ async function safeCachePut(cache, key, response) {
   }
 }
 
+// Avisa al cliente (Navbar → OfflineActivityIndicator) que se está
+// guardando esta vista/dato para offline, así puede dibujar el indicador
+// del contorno azul. Solo se usa en networkFirst (páginas + /api/moodle +
+// datos), no en cacheFirst — cachear un ícono o una fuente no es "descargar
+// la vista" y generaría parpadeo constante sin aportar información útil.
+async function notifyActivity(type) {
+  const clientsList = await self.clients.matchAll({ type: "window" });
+  for (const client of clientsList) client.postMessage({ type });
+}
+
 async function networkFirst(request, cacheKey) {
   const cache = await caches.open(RUNTIME_CACHE);
+  notifyActivity("campus:offline-activity-start");
   try {
     const response = await fetch(request);
     if (response && response.ok) safeCachePut(cache, cacheKey ?? request, response.clone());
@@ -128,6 +139,8 @@ async function networkFirst(request, cacheKey) {
       if (fallback) return fallback;
     }
     throw err;
+  } finally {
+    notifyActivity("campus:offline-activity-end");
   }
 }
 
