@@ -68,6 +68,16 @@ function shouldNeverCache(pathname) {
   return NEVER_CACHE_PATTERNS.some((re) => re.test(pathname));
 }
 
+// Precachea la página de fallback en el install — si no está garantizada acá,
+// el fallback de networkFirst() nunca la encuentra offline y termina
+// relanzando el error de red en vez de mostrar algo (rompe toda navegación
+// offline, no solo la que falta en caché).
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(RUNTIME_CACHE).then((cache) => cache.add(OFFLINE_FALLBACK_URL))
+  );
+});
+
 function stableStringify(obj) {
   if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
   if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(",")}]`;
