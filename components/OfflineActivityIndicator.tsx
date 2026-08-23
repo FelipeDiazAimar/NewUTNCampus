@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isPwaStandalone } from "@/lib/pwa";
 
 type Phase = "idle" | "drawing" | "fading";
 
@@ -9,13 +10,20 @@ type Phase = "idle" | "drawing" | "fading";
  * offline (archivo o datos de la vista actual), y lo desvanece al terminar.
  * Escucha "campus:offline-activity" (ver lib/offlineActivity.ts). Debe
  * montarse dentro de un contenedor con position: relative del tamaño del
- * header (el pill de Navbar ya lo tiene).
+ * header (el pill de Navbar ya lo tiene). Solo se muestra en PWA instalada
+ * (standalone) — en el navegador normal no tiene sentido, es ruido visual.
  */
 export default function OfflineActivityIndicator() {
+  const [isPwa, setIsPwa] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const fadeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    setIsPwa(isPwaStandalone());
+  }, []);
+
+  useEffect(() => {
+    if (!isPwa) return;
     function handler(e: Event) {
       const active = (e as CustomEvent<{ active: boolean }>).detail?.active;
       if (fadeTimeout.current) {
@@ -34,7 +42,9 @@ export default function OfflineActivityIndicator() {
       window.removeEventListener("campus:offline-activity", handler);
       if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
     };
-  }, []);
+  }, [isPwa]);
+
+  if (!isPwa) return null;
 
   const drawn = phase === "drawing" || phase === "fading";
 

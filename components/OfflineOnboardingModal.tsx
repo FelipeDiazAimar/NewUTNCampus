@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
-
-function isPwaStandalone(): boolean {
-  if (typeof window === "undefined") return false;
-  const nav = navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia?.("(display-mode: standalone)").matches === true || nav.standalone === true;
-}
+import { isPwaStandalone } from "@/lib/pwa";
 
 /**
  * Aparece una sola vez, solo en PWA instalada, la primera vez que el usuario

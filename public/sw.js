@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v1";
+const RUNTIME_CACHE = "campus-runtime-v2";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
@@ -121,7 +121,18 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   diagLog("activate:start");
   event.waitUntil(
-    self.clients.claim().then(() => diagLog("activate:clients-claimed"))
+    caches
+      .keys()
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => name.startsWith("campus-runtime-") && name !== RUNTIME_CACHE)
+            .map((name) => caches.delete(name))
+        )
+      )
+      .then(() => diagLog("activate:old-caches-cleared"))
+      .then(() => self.clients.claim())
+      .then(() => diagLog("activate:clients-claimed"))
   );
 });
 
@@ -262,15 +273,22 @@ self.addEventListener("fetch", (event) => {
   // pide el payload de la ruta destino sin recargar la página — no es
   // mode:"navigate" ni empieza con /api/, así que sin este caso nunca se
   // guardaba nada de lo que el usuario visita normalmente navegando adentro
-  // de la app, solo lo que carga con un reload o URL escrita a mano. Next
-  // agrega un query param "_rsc" que cambia en cada build/prefetch — se
-  // saca de la clave de cache para que no rompa el match entre visitas.
+  // de la app, solo lo que carga con un reload o URL escrita a mano.
+  //
+  // OJO: el payload RSC de "/dashboard" y el documento HTML completo de
+  // "/dashboard" (navegación dura) son contenidos totalmente distintos para
+  // la MISMA url — si comparten clave de cache se pisan entre sí (a veces
+  // sirviendo el texto serializado de React donde debería ir la página).
+  // Por eso se namespacea la clave RSC aparte, igual que ya se hace con
+  // moodleCacheKey() para /api/moodle. También se saca el query "_rsc" que
+  // Next cambia en cada build/prefetch, para no romper el match entre visitas.
   const isRSC = request.headers.has("RSC") || url.searchParams.has("_rsc");
   if (isRSC) {
     const strippedUrl = new URL(url.href);
     strippedUrl.searchParams.delete("_rsc");
+    const rscKey = `${self.location.origin}/__sw_rsc_cache__?p=${encodeURIComponent(strippedUrl.pathname + strippedUrl.search)}`;
     diagLog("fetch:rsc-intercepted", { url: strippedUrl.pathname });
-    event.respondWith(networkFirst(event, request, strippedUrl.href));
+    event.respondWith(networkFirst(event, request, rscKey));
     return;
   }
 
