@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v3";
+const RUNTIME_CACHE = "campus-runtime-v4";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
@@ -62,6 +62,7 @@ const NEVER_CACHE_PATTERNS = [
   /^\/api\/offline-preferences/,
   /^\/api\/errors/,
   /^\/api\/admin/,
+  /^\/api\/precache-manifest/,
 ];
 
 function shouldNeverCache(pathname) {
@@ -121,6 +122,38 @@ function diagLog(event, step, details) {
 // cierren — un solo reload (o incluso "cerrar y reabrir" en algunos casos)
 // puede no alcanzar para que el nuevo SW tome control. Con esto, se activa
 // y controla inmediatamente.
+// Precachea TODOS los archivos de .next/static/ (chunks JS, CSS, etc.) de una
+// sola vez al instalarse — no alcanza con guardar lo que se pide de a uno
+// mientras el usuario navega, porque Next.js/Turbopack carga muchos chunks
+// de forma perezosa (code-splitting) y hay piezas que nunca se disparan
+// durante una sesión de navegación normal, aunque la página en sí sí se haya
+// visitado ("Failed to load chunk ... from module" offline). La lista sale
+// de /api/precache-manifest (lee el filesystem del build, no el manifest
+// interno de Turbopack). Cada archivo se cachea por separado — si alguno
+// falla no bloquea a los demás.
+async function precacheAllStaticAssets(event) {
+  const cache = await caches.open(RUNTIME_CACHE);
+  let urls = [];
+  try {
+    const res = await fetch("/api/precache-manifest");
+    if (res.ok) urls = (await res.json()).urls ?? [];
+  } catch (err) {
+    diagLog(event, "install:precache-manifest-fetch-failed", { message: err && err.message });
+    return;
+  }
+  let ok = 0;
+  let failed = 0;
+  await Promise.all(
+    urls.map((url) =>
+      cache
+        .add(url)
+        .then(() => { ok++; })
+        .catch(() => { failed++; })
+    )
+  );
+  diagLog(event, "install:precache-static-done", { total: urls.length, ok, failed });
+}
+
 self.addEventListener("install", (event) => {
   diagLog(event, "install:start");
   event.waitUntil(
@@ -129,6 +162,7 @@ self.addEventListener("install", (event) => {
       .then((cache) => cache.add(OFFLINE_FALLBACK_URL))
       .then(() => diagLog(event, "install:precache-offline-ok"))
       .catch((err) => diagLog(event, "install:precache-offline-failed", { message: err && err.message }))
+      .then(() => precacheAllStaticAssets(event))
       .then(() => self.skipWaiting())
   );
 });
