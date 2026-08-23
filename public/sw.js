@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v4";
+const RUNTIME_CACHE = "campus-runtime-v5";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
@@ -155,6 +155,41 @@ async function precacheAllStaticAssets(event) {
   diagLog(event, "install:precache-static-done", { total: urls.length, ok, failed });
 }
 
+// Pantallas principales del menú — se precachean enteras (documento HTML) al
+// instalarse, sin importar cómo entre el usuario después, para no depender
+// de que cada una se haya recargado fuerte alguna vez. Las páginas de una
+// materia puntual no entran acá (son dinámicas, no hay lista fija) — esas se
+// cubren con el "calentado" en segundo plano (ver PageCacheWarmer más abajo
+// en el fetch handler + components/PageCacheWarmer.tsx).
+const PRECACHE_ROUTES = [
+  "/dashboard",
+  "/materias",
+  "/asistencia",
+  "/sysacad",
+  "/biblioteca",
+  "/foro",
+  "/chat",
+  "/tareas",
+  "/configuracion",
+  "/notificaciones",
+  "/dashboard/horarios",
+];
+
+async function precacheMainScreens(event) {
+  const cache = await caches.open(RUNTIME_CACHE);
+  let ok = 0;
+  let failed = 0;
+  await Promise.all(
+    PRECACHE_ROUTES.map((url) =>
+      cache
+        .add(url)
+        .then(() => { ok++; })
+        .catch(() => { failed++; })
+    )
+  );
+  diagLog(event, "install:precache-screens-done", { total: PRECACHE_ROUTES.length, ok, failed });
+}
+
 self.addEventListener("install", (event) => {
   diagLog(event, "install:start");
   event.waitUntil(
@@ -164,6 +199,7 @@ self.addEventListener("install", (event) => {
       .then(() => diagLog(event, "install:precache-offline-ok"))
       .catch((err) => diagLog(event, "install:precache-offline-failed", { message: err && err.message }))
       .then(() => precacheAllStaticAssets(event))
+      .then(() => precacheMainScreens(event))
       .then(() => self.skipWaiting())
   );
 });
@@ -329,7 +365,12 @@ self.addEventListener("fetch", (event) => {
   // usa la navegación dura (más abajo) — comprobada confiable.
   if (request.headers.has("RSC") || url.searchParams.has("_rsc")) return;
 
-  if (request.mode === "navigate" || url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirst(event, request));
-  }
+  // Todo lo que llega hasta acá es un GET del mismo origen, sin RSC, que no
+  // es un asset estático ni /api/ — o bien una navegación dura real
+  // (mode:"navigate"), o bien el pedido de "calentado" en segundo plano que
+  // dispara PageCacheWarmer.tsx en cada cambio de ruta (mismo pathname que
+  // usaría una navegación dura, así que cae en la misma entrada de cache) —
+  // así una materia puntual visitada por navegación normal también queda
+  // disponible offline, sin depender de haberla recargado fuerte alguna vez.
+  event.respondWith(networkFirst(event, request));
 });

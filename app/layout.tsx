@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import GuestBlockModal from "@/components/GuestBlockModal";
 import OfflineBlockModal from "@/components/OfflineBlockModal";
 import GlobalSwrProvider from "@/components/GlobalSwrProvider";
+import PageCacheWarmer from "@/components/PageCacheWarmer";
 
 export const metadata: Metadata = {
   title: "Campus UTN FRSF",
@@ -45,6 +46,7 @@ export default function RootLayout({
             {children}
             <GuestBlockModal />
             <OfflineBlockModal />
+            <PageCacheWarmer />
           </GlobalSwrProvider>
         </ThemeProvider>
         <Analytics />
