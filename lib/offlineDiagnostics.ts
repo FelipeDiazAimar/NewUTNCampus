@@ -67,20 +67,3 @@ export async function flushOfflineDiagnostics(): Promise<void> {
     flushing = false;
   }
 }
-
-/**
- * Lectura NO destructiva de los últimos pasos, para mostrar en pantalla
- * (ver app/offline/page.tsx) — a diferencia de flushOfflineDiagnostics(),
- * funciona sin conexión porque no intenta mandar nada a /api/errors, solo
- * lee la IndexedDB local. Temporal: pensado para debuggear el guardado
- * offline en dispositivos donde no hay forma de ver la consola en vivo.
- */
-export async function getRecentDiagnostics(limit = 40): Promise<DiagEntry[]> {
-  if (typeof indexedDB === "undefined") return [];
-  try {
-    const entries = await readAll();
-    return entries.slice(-limit);
-  } catch {
-    return [];
-  }
-}

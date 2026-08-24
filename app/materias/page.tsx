@@ -10,6 +10,7 @@ import { useCursado } from "@/lib/sysacadHooks";
 import type { MoodleCourse } from "@/lib/moodle";
 import { SpinnerBlock } from "@/components/Spinner";
 import OfflineOnboardingModal from "@/components/OfflineOnboardingModal";
+import { useOnlineStatus } from "@/lib/useOnlineStatus";
 
 type MateriasView = "cursando" | "anio";
 
@@ -144,6 +145,7 @@ function CourseRow({ course, index }: { course: MoodleCourse; index: number }) {
 
 export default function MateriasPage() {
   const router = useRouter();
+  const online = useOnlineStatus();
   const { courses, loading, error } = useCourses();
   const [userInfo, setUserInfo] = useState<{ fullname?: string; username?: string }>({});
   const [search, setSearch] = useState("");
@@ -286,7 +288,9 @@ export default function MateriasPage() {
 
         {error && (
           <div className="bg-[#fff2f2] dark:bg-[rgba(255,59,48,0.08)] border border-[#ffcdd2] dark:border-[rgba(255,59,48,0.25)] rounded-2xl p-5 text-[#ff3b30] text-sm">
-            Error al cargar materias: {error}
+            {online
+              ? `Error al cargar materias: ${error}`
+              : "Sin conexión — tus materias todavía no se guardaron para verlas sin internet."}
           </div>
         )}
 
