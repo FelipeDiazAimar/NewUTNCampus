@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -46,7 +47,9 @@ export default function RootLayout({
             {children}
             <GuestBlockModal />
             <OfflineBlockModal />
-            <PageCacheWarmer />
+            <Suspense fallback={null}>
+              <PageCacheWarmer />
+            </Suspense>
           </GlobalSwrProvider>
         </ThemeProvider>
         <Analytics />

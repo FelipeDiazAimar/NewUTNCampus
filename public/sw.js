@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v6";
+const RUNTIME_CACHE = "campus-runtime-v7";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
@@ -335,6 +335,82 @@ async function networkFirst(event, request, cacheKey) {
   }
 }
 
+// ─── Archivos guardados offline (IndexedDB) ────────────────────────────────
+// /api/files nunca se cachea en Cache API (streaming con Range, y el manejo
+// de respuestas parciales ahí es demasiado complejo) — en cambio, cuando la
+// red falla, se busca en la MISMA IndexedDB que llena lib/offlineFileCache.ts
+// del lado del cliente (mismo nombre de base/store/clave: "campus-offline-
+// files" / "files" / el valor del query "ref", que es exactamente el string
+// que usa saveFile() como key). Soporta pedidos con Range recortando el blob
+// ya completo — no hace falta reconstruir nada byte a byte desde la red.
+const OFFLINE_FILES_DB = "campus-offline-files";
+const OFFLINE_FILES_STORE = "files";
+
+function openOfflineFilesDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(OFFLINE_FILES_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(OFFLINE_FILES_STORE)) {
+        db.createObjectStore(OFFLINE_FILES_STORE, { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function serveFromOfflineFileCache(request, url) {
+  const ref = url.searchParams.get("ref");
+  if (!ref) return null;
+  let key;
+  try {
+    key = decodeURIComponent(ref);
+  } catch {
+    return null;
+  }
+  try {
+    const db = await openOfflineFilesDb();
+    if (!db.objectStoreNames.contains(OFFLINE_FILES_STORE)) return null;
+    const record = await new Promise((resolve, reject) => {
+      const tx = db.transaction(OFFLINE_FILES_STORE, "readonly");
+      const req = tx.objectStore(OFFLINE_FILES_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (!record || !record.blob) return null;
+
+    const blob = record.blob;
+    const mimeType = record.mimeType || "application/octet-stream";
+    const total = blob.size;
+    const rangeHeader = request.headers.get("Range");
+    const match = rangeHeader && /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+    if (match) {
+      const start = match[1] ? parseInt(match[1], 10) : 0;
+      const end = match[2] ? parseInt(match[2], 10) : total - 1;
+      return new Response(blob.slice(start, end + 1, mimeType), {
+        status: 206,
+        headers: {
+          "Content-Type": mimeType,
+          "Content-Range": `bytes ${start}-${end}/${total}`,
+          "Content-Length": String(end - start + 1),
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+    return new Response(blob, {
+      status: 200,
+      headers: {
+        "Content-Type": mimeType,
+        "Content-Length": String(total),
+        "Accept-Ranges": "bytes",
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function cacheFirst(event, request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
@@ -354,9 +430,34 @@ async function cacheFirst(event, request) {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.mode === "navigate") diagLog(event, "fetch:navigate-intercepted", { url: request.url });
-  if (request.headers.has("Range")) return; // nunca — cubierto por IndexedDB en el cliente
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // /api/files: intenta red primero (nunca se cachea en Cache API), y si
+  // falla busca en la copia guardada en IndexedDB — antes del corte general
+  // de Range de acá abajo, porque el visor de PDF pide justamente con Range.
+  if (url.pathname === "/api/files" && request.method === "GET") {
+    event.respondWith(
+      (async () => {
+        try {
+          const response = await fetch(request);
+          if (response.ok) return response;
+          throw new Error(`status ${response.status}`);
+        } catch (err) {
+          const fallback = await serveFromOfflineFileCache(request, url);
+          if (fallback) {
+            diagLog(event, "files:served-from-indexeddb", {});
+            return fallback;
+          }
+          diagLog(event, "files:not-in-indexeddb", { message: err && err.message });
+          throw err;
+        }
+      })()
+    );
+    return;
+  }
+
+  if (request.headers.has("Range")) return; // otros Range (no /api/files) — pasar directo
   if (shouldNeverCache(url.pathname)) return;
 
   // Caso especial: POST /api/moodle — la vía principal de datos de materias.
