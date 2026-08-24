@@ -5,11 +5,26 @@
 // directo desde el CDN) — por eso la lista se genera una sola vez acá y se
 // escribe como un archivo estático en public/, en vez de calcularla en cada
 // request desde una API route (lo que devolvía 0 archivos en producción).
-import { readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+// Copia el worker de PDF.js a public/ para servirlo desde el propio origen
+// (ver components/CampusPDFViewer.tsx) — así el Service Worker lo puede
+// cachear, cosa que nunca pudo hacer con la versión de unpkg.com (CDN
+// cross-origin). Copiar en vez de commitear el archivo mantiene la versión
+// siempre sincronizada con la que trae react-pdf/pdfjs-dist instalada.
+try {
+  copyFileSync(
+    path.join(process.cwd(), "node_modules", "pdfjs-dist", "build", "pdf.worker.min.mjs"),
+    path.join(process.cwd(), "public", "pdf.worker.min.mjs")
+  );
+  console.log("[precache-manifest] copied pdf.worker.min.mjs to public/");
+} catch (err) {
+  console.warn("[precache-manifest] could not copy pdf.worker.min.mjs:", err.message);
+}
+
 const staticDir = path.join(process.cwd(), ".next", "static");
-const urls = [];
+const urls = ["/pdf.worker.min.mjs"];
 
 function walk(dir, prefix) {
   let entries;

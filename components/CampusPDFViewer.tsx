@@ -10,7 +10,12 @@ import { hashString } from "@/lib/ocrCache";
 import { getCachedPdfBytes, fetchPdfBytes } from "@/lib/pdfByteCache";
 import { reportClientError } from "@/lib/clientErrorReporter";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Servido desde el propio origen (copiado a public/ en el postbuild — ver
+// scripts/generate-precache-manifest.mjs) en vez de un CDN externo: un CDN
+// cross-origin nunca lo puede cachear el Service Worker (solo intercepta
+// same-origin), así que offline el visor de PDF fallaba siempre con "setting
+// up fake worker failed" sin importar si el PDF en sí estaba guardado.
+pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

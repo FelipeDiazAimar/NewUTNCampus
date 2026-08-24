@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
 // con Range, cubierto aparte por IndexedDB en el cliente), /api/auth,
 // /api/offline-preferences, /api/errors ni /api/admin/*.
 
-const RUNTIME_CACHE = "campus-runtime-v7";
+const RUNTIME_CACHE = "campus-runtime-v8";
 const OFFLINE_FALLBACK_URL = "/offline";
 
 const NEVER_CACHE_PATTERNS = [
