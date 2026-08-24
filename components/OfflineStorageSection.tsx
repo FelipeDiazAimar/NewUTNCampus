@@ -172,7 +172,7 @@ export default function OfflineStorageSection() {
                               <Icon className="w-4 h-4" />
                             </span>
                             <span className="flex-1 min-w-0">
-                              <span className="block text-[13px] text-[var(--fg)] truncate">{f.fileName}</span>
+                              <span className="block text-[13px] text-[var(--fg)] break-words">{f.fileName}</span>
                               <span className="block text-[11px] text-[var(--secondary)]">{formatBytes(f.sizeBytes)}</span>
                             </span>
                             <button

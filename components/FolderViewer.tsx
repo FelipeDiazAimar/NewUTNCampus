@@ -66,7 +66,7 @@ function SubfolderRow({ node, depth }: { node: Extract<FolderNode, { type: "fold
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
           </svg>
         </div>
-        <p className="flex-1 min-w-0 text-[14px] font-medium text-[var(--fg)] truncate">{node.name}</p>
+        <p className="flex-1 min-w-0 text-[14px] font-medium text-[var(--fg)] break-words">{node.name}</p>
         <svg
           className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
           viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
@@ -143,7 +143,7 @@ export default function FolderViewer({ mod }: { mod: MoodleModule }) {
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[15px] text-[var(--fg)] truncate">{mod.name}</p>
+          <p className="text-[15px] text-[var(--fg)] break-words">{mod.name}</p>
         </div>
         <svg
           className={`w-4 h-4 text-[var(--secondary)] shrink-0 transition-transform ${open ? "rotate-90" : ""}`}

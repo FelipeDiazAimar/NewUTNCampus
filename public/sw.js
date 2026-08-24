@@ -339,10 +339,13 @@ async function networkFirst(event, request, cacheKey) {
 // /api/files nunca se cachea en Cache API (streaming con Range, y el manejo
 // de respuestas parciales ahí es demasiado complejo) — en cambio, cuando la
 // red falla, se busca en la MISMA IndexedDB que llena lib/offlineFileCache.ts
-// del lado del cliente (mismo nombre de base/store/clave: "campus-offline-
-// files" / "files" / el valor del query "ref", que es exactamente el string
-// que usa saveFile() como key). Soporta pedidos con Range recortando el blob
-// ya completo — no hace falta reconstruir nada byte a byte desde la red.
+// del lado del cliente (mismo nombre de base/store: "campus-offline-files" /
+// "files"). La clave viaja en el query "offlineKey" — "ref" es un token
+// cifrado (lib/urlToken.ts) que cambia en cada respuesta del servidor aunque
+// sea el mismo archivo real, así que NO sirve como clave estable; el SW
+// tampoco puede desencriptarlo (usa Node "crypto", no disponible acá).
+// Soporta pedidos con Range recortando el blob ya completo — no hace falta
+// reconstruir nada byte a byte desde la red.
 const OFFLINE_FILES_DB = "campus-offline-files";
 const OFFLINE_FILES_STORE = "files";
 
@@ -361,14 +364,8 @@ function openOfflineFilesDb() {
 }
 
 async function serveFromOfflineFileCache(request, url) {
-  const ref = url.searchParams.get("ref");
-  if (!ref) return null;
-  let key;
-  try {
-    key = decodeURIComponent(ref);
-  } catch {
-    return null;
-  }
+  const key = url.searchParams.get("offlineKey");
+  if (!key) return null;
   try {
     const db = await openOfflineFilesDb();
     if (!db.objectStoreNames.contains(OFFLINE_FILES_STORE)) return null;

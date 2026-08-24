@@ -43,6 +43,25 @@ function isQuotaError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "QuotaExceededError";
 }
 
+/**
+ * Clave estable para un archivo — NO usar content.fileurl (token cifrado que
+ * cambia en cada respuesta del servidor, aunque sea el mismo archivo real).
+ * timemodified es la fecha real de Moodle: si el profesor sube una versión
+ * nueva del mismo archivo, cambia, y saveFile() borra la versión vieja.
+ */
+export function stableFileKey(materiaId: string, fileName: string, timemodified?: number): string {
+  return `${materiaId}::${fileName}::${timemodified ?? 0}`;
+}
+
+/** Borra otras versiones guardadas del mismo archivo (misma materia+nombre, distinta timemodified). */
+async function pruneOlderVersions(currentKey: string, materiaId: string, fileName: string): Promise<void> {
+  const prefix = `${materiaId}::${fileName}::`;
+  if (!currentKey.startsWith(prefix)) return; // clave no estándar (fallback) — no podar
+  const all = await listFiles();
+  const stale = all.filter((f) => f.key !== currentKey && f.key.startsWith(prefix));
+  await Promise.all(stale.map((f) => deleteFile(f.key)));
+}
+
 export async function saveFile(key: string, blob: Blob, meta: OfflineFileMeta): Promise<void> {
   if (typeof indexedDB === "undefined" || storageFull) return;
   beginOfflineActivity();
@@ -54,6 +73,7 @@ export async function saveFile(key: string, blob: Blob, meta: OfflineFileMeta): 
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    await pruneOlderVersions(key, meta.materiaId, meta.fileName);
   } catch (err) {
     if (isQuotaError(err)) {
       storageFull = true;

@@ -5,7 +5,7 @@ import { usePdfPreview, type PanelKind } from "@/components/CourseWorkspaceLayou
 import Spinner from "@/components/Spinner";
 import type { MoodleContent } from "@/lib/moodle";
 import { reportClientError } from "@/lib/clientErrorReporter";
-import { getFile, saveFile } from "@/lib/offlineFileCache";
+import { getFile, saveFile, stableFileKey } from "@/lib/offlineFileCache";
 
 // Identifica la materia actual para que FileViewer pueda agrupar los archivos
 // guardados offline por materia sin que cada nivel intermedio del árbol
@@ -128,9 +128,17 @@ export function FileViewer({ content }: { content: MoodleContent }) {
   const { openPanel, closePanel, activeKey } = usePdfPreview();
   const { materiaId, materiaNombre } = useContext(MateriaContext);
 
-  const proxyUrl    = `/api/files?ref=${encodeURIComponent(content.fileurl!)}&inline=1`;
-  const downloadUrl = `/api/files?ref=${encodeURIComponent(content.fileurl!)}`;
   const fileName    = resolvedName ?? realFilename(content.fileurl, content.filename, content.fileType);
+  // Clave estable para IndexedDB — content.fileurl es un token cifrado que
+  // cambia en cada respuesta del servidor aunque sea el mismo archivo real,
+  // así que no sirve para identificar un archivo guardado entre visitas. Se
+  // manda también en la URL para que el Service Worker (que no puede
+  // desencriptar el ref) sepa qué buscar en IndexedDB si falla la red.
+  const offlineKey = materiaId
+    ? stableFileKey(materiaId, fileName, content.timemodified)
+    : content.fileurl!;
+  const proxyUrl    = `/api/files?ref=${encodeURIComponent(content.fileurl!)}&inline=1&offlineKey=${encodeURIComponent(offlineKey)}`;
+  const downloadUrl = `/api/files?ref=${encodeURIComponent(content.fileurl!)}&offlineKey=${encodeURIComponent(offlineKey)}`;
   const isActive    = activeKey === content.fileurl;
 
   // view.php filenames are already resolved server-side in /api/course.
@@ -177,7 +185,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
         .then((r) => (r.ok ? r.blob() : null))
         .then((blob) => {
           if (!blob) return;
-          saveFile(content.fileurl!, blob, {
+          saveFile(offlineKey, blob, {
             materiaId,
             materiaNombre: materiaNombre ?? "Sin materia",
             fileName,
@@ -206,7 +214,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     if (kind === "video") { setState({ phase: "video" }); return; }
     if (kind === "audio") { setState({ phase: "audio" }); return; }
     setState({ phase: "none" });
-  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel, fileName, materiaId, materiaNombre]);
+  }, [isActive, content.fileType, content.filename, content.fileurl, proxyUrl, openPanel, closePanel, fileName, materiaId, materiaNombre, offlineKey]);
 
   // Cuando otro archivo toma el panel, limpiar el indicador local.
   useEffect(() => {
@@ -226,7 +234,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
         const res = await fetch(downloadUrl);
         blob = await res.blob();
       } catch (networkErr) {
-        const offline = await getFile(content.fileurl!);
+        const offline = await getFile(offlineKey);
         if (!offline) throw networkErr;
         blob = offline.blob;
       }
@@ -245,7 +253,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
       a.download = fileName;
       a.click();
     }
-  }, [downloadUrl, fileName, content.fileurl]);
+  }, [downloadUrl, fileName, offlineKey]);
 
   const isOpen = state.phase !== "idle" || isActive;
 
@@ -257,7 +265,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
         </button>
 
         <button onClick={handleClick} className="flex-1 min-w-0 text-left active:opacity-70">
-          <p className="text-[14px] text-[var(--fg)] truncate">{fileName}</p>
+          <p className="text-[14px] text-[var(--fg)] break-words">{fileName}</p>
           {content.filesize > 0 && <p className="text-[12px] text-[var(--secondary)]">{formatBytes(content.filesize)}</p>}
         </button>
 
