@@ -133,6 +133,11 @@ export default function AsistenciaPage() {
 
   return (
     <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(0,122,255,0.16),transparent_32rem),var(--bg)] dark:bg-[radial-gradient(circle_at_top_left,rgba(10,132,255,0.18),transparent_30rem),var(--bg)]">
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `(function(){var id=localStorage.getItem("deviceFingerprint");if(!id){id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"d"+Date.now()+"-"+Math.random().toString(16).slice(2);localStorage.setItem("deviceFingerprint",id);}document.cookie="deviceFingerprint="+id+"; path=/";})();`,
+        }}
+      />
       <Navbar />
 
       <main className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-3xl flex-col px-4 pt-12 pb-12">

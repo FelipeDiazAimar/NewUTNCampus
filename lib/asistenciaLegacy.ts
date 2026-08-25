@@ -77,6 +77,10 @@ function cookieHeader(jar: Jar): string {
     .join("; ");
 }
 
+export function withDeviceFingerprint(cookie: string, deviceFingerprint?: string): string {
+  return deviceFingerprint ? `${cookie}; deviceFingerprint=${deviceFingerprint}` : cookie;
+}
+
 // ─── Parseo del HTML de apply-leave.php ────────────────────────────────────────
 
 function decodeHtml(s: string): string {
@@ -120,9 +124,9 @@ function parseApplyLeaveHtml(html: string): ApplyLeavePage {
   return { autenticado, materias, registradasHoy };
 }
 
-async function fetchApplyLeave(cookie: string): Promise<{ html: string; page: ApplyLeavePage }> {
+async function fetchApplyLeave(cookie: string, deviceFingerprint?: string): Promise<{ html: string; page: ApplyLeavePage }> {
   const res = await fetch(`${BASE}/apply-leave.php`, {
-    headers: { Cookie: cookie, Referer: `${BASE}/apply-leave.php` },
+    headers: { Cookie: withDeviceFingerprint(cookie, deviceFingerprint), Referer: `${BASE}/apply-leave.php` },
     cache: "no-store",
   });
   const html = await res.text();
@@ -131,7 +135,7 @@ async function fetchApplyLeave(cookie: string): Promise<{ html: string; page: Ap
 }
 
 /** Login contra el sistema viejo con legajo + DNI (mismo esquema que Sysacad). */
-async function login(legajo: string, dni: string): Promise<string | null> {
+async function login(legajo: string, dni: string, deviceFingerprint?: string): Promise<string | null> {
   const r1 = await fetch(`${BASE}/index.php`, { cache: "no-store" });
   let jar = mergeSetCookies({}, getSetCookies(r1));
 
@@ -141,13 +145,13 @@ async function login(legajo: string, dni: string): Promise<string | null> {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Referer: `${BASE}/index.php`,
-      Cookie: cookieHeader(jar),
+      Cookie: withDeviceFingerprint(cookieHeader(jar), deviceFingerprint),
     },
     body: `legajo=${encodeURIComponent(legajo)}&password=${encodeURIComponent(dni)}&ingreso=Ingresar`,
   });
   jar = mergeSetCookies(jar, getSetCookies(r2));
 
-  const { page } = await fetchApplyLeave(cookieHeader(jar));
+  const { page } = await fetchApplyLeave(cookieHeader(jar), deviceFingerprint);
   if (!page.autenticado) {
     return null;
   }
@@ -172,13 +176,13 @@ function unpackSession(raw: string | undefined, legajo: string): string | undefi
 }
 
 /** Reutiliza la cookie guardada si sigue viva y es del mismo legajo; si no, hace login de nuevo. */
-export async function ensureSession(existingRaw: string | undefined, legajo: string, dni: string): Promise<string | null> {
+export async function ensureSession(existingRaw: string | undefined, legajo: string, dni: string, deviceFingerprint?: string): Promise<string | null> {
   const existingCookie = unpackSession(existingRaw, legajo);
   if (existingCookie) {
-    const { page } = await fetchApplyLeave(existingCookie);
+    const { page } = await fetchApplyLeave(existingCookie, deviceFingerprint);
     if (page.autenticado) return existingCookie;
   }
-  const fresh = await login(legajo, dni);
+  const fresh = await login(legajo, dni, deviceFingerprint);
   return fresh;
 }
 

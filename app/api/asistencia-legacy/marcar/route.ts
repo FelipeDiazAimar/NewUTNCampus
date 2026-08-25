@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isGuestRequest } from "@/lib/guest";
 import { sessionCookieOptions } from "@/lib/cookies";
-import { ensureSession, getStatus, marcar, packSessionForStorage, verificarIp } from "@/lib/asistenciaLegacy";
+import { ensureSession, getStatus, marcar, packSessionForStorage, verificarIp, withDeviceFingerprint } from "@/lib/asistenciaLegacy";
 
 // Configuramos el endpoint para ejecutarse en la red global de Vercel (Edge Runtime)
 // Esto distribuye geográficamente las conexiones entrantes al sistema legacy.
@@ -22,7 +22,7 @@ function getCredenciales(req: NextRequest): { legajo: string; dni: string } | nu
     const [legajo, dni] = decoded.split(":");
     if (!legajo || !dni) return null;
     return { legajo, dni };
-  } catch (e) {
+  } catch {
     return null; // En caso de que el string no sea un Base64 válido
   }
 }
@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
   const ip = IP_FACULTAD_VALIDA;
 
   const existing = req.cookies.get(SESSION_COOKIE)?.value;
-  const cookie = await ensureSession(existing, cred.legajo, cred.dni);
+  const deviceFingerprint = req.cookies.get("deviceFingerprint")?.value;
+  const cookie = await ensureSession(existing, cred.legajo, cred.dni, deviceFingerprint);
   if (!cookie) {
     return NextResponse.json(
       { error: "No se pudo iniciar sesión en el sistema de asistencias." },
@@ -60,7 +61,9 @@ export async function POST(req: NextRequest) {
     return res;
   };
 
-  const permitido = await verificarIp(cookie, ip);
+  const cookieConDispositivo = withDeviceFingerprint(cookie, deviceFingerprint);
+
+  const permitido = await verificarIp(cookieConDispositivo, ip);
   if (!permitido) {
     return setCookie(
       NextResponse.json(
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const antes = await getStatus(cookie);
+  const antes = await getStatus(cookieConDispositivo);
   const materia = antes.materias.find((m) => m.id === idMateria);
   if (!materia) {
     return setCookie(
@@ -84,7 +87,7 @@ export async function POST(req: NextRequest) {
   }
 
   const yaEstaba = antes.registradasHoy.some((r) => r.materia.trim().toLowerCase() === materia.nombre.trim().toLowerCase());
-  const { page: despues, rechazo } = await marcar(cookie, materia);
+  const { page: despues, rechazo } = await marcar(cookieConDispositivo, materia);
   const ok = despues.registradasHoy.some((r) => r.materia.trim().toLowerCase() === materia.nombre.trim().toLowerCase());
 
   // El sistema legacy puede rechazar el marcado con un motivo explícito (p. ej.
