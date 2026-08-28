@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isGuestRequest } from "@/lib/guest";
 import { sessionCookieOptions } from "@/lib/cookies";
-import { ensureSession, getStatus, marcar, packSessionForStorage, verificarIp, withDeviceFingerprint } from "@/lib/asistenciaLegacy";
+import { getStatus, marcar, packSessionForStorage, verificarIp, withDeviceFingerprint } from "@/lib/asistenciaLegacy";
+import { resolverSesionLegacy } from "@/lib/asistenciaLegacySesiones";
 
 // Configuramos el endpoint para ejecutarse en la red global de Vercel (Edge Runtime)
 // Esto distribuye geográficamente las conexiones entrantes al sistema legacy.
@@ -48,7 +49,12 @@ export async function POST(req: NextRequest) {
 
   const existing = req.cookies.get(SESSION_COOKIE)?.value;
   const deviceFingerprint = req.cookies.get("deviceFingerprint")?.value;
-  const cookie = await ensureSession(existing, cred.legajo, cred.dni, deviceFingerprint);
+  const cookie = await resolverSesionLegacy({
+    existingRaw: existing,
+    legajo: cred.legajo,
+    dni: cred.dni,
+    deviceFingerprint,
+  });
   if (!cookie) {
     return NextResponse.json(
       { error: "No se pudo iniciar sesión en el sistema de asistencias." },

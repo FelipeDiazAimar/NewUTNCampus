@@ -27,6 +27,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { SpinnerBlock } from "@/components/Spinner";
 import DropdownSelect from "@/components/DropdownSelect";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
+import { ensureDeviceFingerprint } from "@/lib/deviceFingerprint";
 import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { reportClientError } from "@/lib/clientErrorReporter";
 import { buildSchedule, fmtRemaining } from "@/lib/horarios";
@@ -91,20 +92,6 @@ function formatDate(value: string): string {
   const match = value.match(/(\d{4})-(\d{2})-(\d{2})/);
   if (match) return `${match[3]}/${match[2]}/${match[1]}`;
   return value;
-}
-
-function ensureDeviceFingerprint() {
-  if (typeof window === "undefined") return;
-  let id = localStorage.getItem("deviceFingerprint");
-  if (!id) {
-    try {
-      id = crypto.randomUUID();
-    } catch {
-      id = `d${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    }
-    localStorage.setItem("deviceFingerprint", id);
-  }
-  document.cookie = `deviceFingerprint=${id}; path=/`;
 }
 
 export default function AsistenciaPage() {
@@ -389,13 +376,10 @@ function MarcarAsistenciaCard({
     setSubmitting(true);
     setToast(null);
     try {
-      const ipRes = await fetch("https://api.ipify.org?format=json");
-      const { ip } = (await ipRes.json()) as { ip: string };
-
       const res = await fetch("/api/asistencia-legacy/marcar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ip, idMateria: effectiveSelectedId }),
+        body: JSON.stringify({ idMateria: effectiveSelectedId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -417,8 +401,8 @@ function MarcarAsistenciaCard({
         reportClientError("warning", "asistencia-legacy/marcar: respondió 200 pero no quedó registrada");
       }
     } catch (e) {
-      setToast({ ok: false, msg: "No se pudo obtener tu IP pública — revisá tu conexión.", materia: "" });
-      reportClientError("error", "Marcar asistencia: fallo obteniendo IP pública o de red", {
+      setToast({ ok: false, msg: "Error de conexión — no se pudo marcar la asistencia.", materia: "" });
+      reportClientError("error", "Marcar asistencia: fallo de red", {
         stack: e instanceof Error ? (e.stack ?? null) : null,
       });
     } finally {

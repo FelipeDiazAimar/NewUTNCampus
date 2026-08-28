@@ -124,7 +124,7 @@ function parseApplyLeaveHtml(html: string): ApplyLeavePage {
   return { autenticado, materias, registradasHoy };
 }
 
-async function fetchApplyLeave(cookie: string, deviceFingerprint?: string): Promise<{ html: string; page: ApplyLeavePage }> {
+export async function fetchApplyLeave(cookie: string, deviceFingerprint?: string): Promise<{ html: string; page: ApplyLeavePage }> {
   const res = await fetch(`${BASE}/apply-leave.php`, {
     headers: { Cookie: withDeviceFingerprint(cookie, deviceFingerprint), Referer: `${BASE}/apply-leave.php` },
     cache: "no-store",
@@ -135,7 +135,7 @@ async function fetchApplyLeave(cookie: string, deviceFingerprint?: string): Prom
 }
 
 /** Login contra el sistema viejo con legajo + DNI (mismo esquema que Sysacad). */
-async function login(legajo: string, dni: string, deviceFingerprint?: string): Promise<string | null> {
+export async function login(legajo: string, dni: string, deviceFingerprint?: string): Promise<string | null> {
   const r1 = await fetch(`${BASE}/index.php`, { cache: "no-store" });
   let jar = mergeSetCookies({}, getSetCookies(r1));
 
@@ -167,23 +167,12 @@ function packSession(legajo: string, cookie: string): string {
   return `${legajo}::${cookie}`;
 }
 
-function unpackSession(raw: string | undefined, legajo: string): string | undefined {
+export function unpackSession(raw: string | undefined, legajo: string): string | undefined {
   if (!raw) return undefined;
   const sep = raw.indexOf("::");
   if (sep === -1) return undefined; // cookie de un formato anterior sin legajo: no confiar
   if (raw.slice(0, sep) !== legajo) return undefined;
   return raw.slice(sep + 2);
-}
-
-/** Reutiliza la cookie guardada si sigue viva y es del mismo legajo; si no, hace login de nuevo. */
-export async function ensureSession(existingRaw: string | undefined, legajo: string, dni: string, deviceFingerprint?: string): Promise<string | null> {
-  const existingCookie = unpackSession(existingRaw, legajo);
-  if (existingCookie) {
-    const { page } = await fetchApplyLeave(existingCookie, deviceFingerprint);
-    if (page.autenticado) return existingCookie;
-  }
-  const fresh = await login(legajo, dni, deviceFingerprint);
-  return fresh;
 }
 
 /** Empaqueta la cookie de sesión junto con el legajo para guardarla en la cookie del navegador. */

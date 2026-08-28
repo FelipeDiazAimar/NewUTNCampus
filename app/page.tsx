@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import { ChevronDown, X, Eye, EyeOff } from "lucide-react";
 import Spinner, { SpinnerOverlay } from "@/components/Spinner";
 import { getRememberedUsers, addRememberedUser, removeRememberedUser } from "@/lib/rememberedUsers";
+import { rotateDeviceFingerprint } from "@/lib/deviceFingerprint";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -101,6 +102,8 @@ export default function LoginPage() {
     }
     // Guardar la cuenta en el dispositivo solo si pidió mantener sesión.
     if (remember) addRememberedUser(username);
+    // Nueva sesión → nueva huella de dispositivo para el módulo de asistencias.
+    rotateDeviceFingerprint();
     router.push(destination());
   }
 
