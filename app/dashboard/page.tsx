@@ -158,12 +158,17 @@ export default function DashboardPage() {
         colSpanMd: 1,
       },
       {
+        // Deshabilitado: la confirmación no llega a impactar contra el
+        // campus viejo (nunca se hace la request real) y el turno nunca se
+        // registra ni dispara el mail de confirmación. Ver /api/biblioteca/turno
+        // (WIP, sin commitear) para el estado del arreglo.
         type: "app",
         title: "Biblioteca",
-        href: "/biblioteca",
+        href: "#",
         icon: BookMarked,
         tone: "#007aff",
-        popup: false,
+        muted: true,
+        popup: true,
         row: 5,
         col: 3,
         rowSpan: 1,
@@ -344,18 +349,19 @@ export default function DashboardPage() {
                   "--col-span-md": item.colSpanMd ?? item.colSpan,
                 } as CSSProperties}
                 onClick={(event) => {
-                  if (item.muted) {
-                    event.preventDefault();
-                    return;
-                  }
                   if (item.calendar) {
                     event.preventDefault();
                     setCalendarOpen(true);
                     return;
                   }
-                  if (!item.popup) return;
-                  event.preventDefault();
-                  setPopupItem(item);
+                  if (item.popup) {
+                    event.preventDefault();
+                    setPopupItem(item);
+                    return;
+                  }
+                  if (item.muted) {
+                    event.preventDefault();
+                  }
                 }}
               >
                 <div className={isWidget ? "flex flex-col h-full" : "flex flex-col items-center justify-center h-full"}>
