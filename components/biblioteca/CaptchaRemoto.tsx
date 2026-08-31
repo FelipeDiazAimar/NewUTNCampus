@@ -2,7 +2,13 @@
 
 // Espejo del captcha remoto: se conecta por WS a la sesión headless, replica el
 // checkbox y el desafío de imágenes, y devuelve el token al resolverlo.
-// Comportamiento validado en scripts/captcha-remoto (31/08/2026).
+//
+// Modo DOM (Fase 2): el server serializa la grilla real celda por celda
+// (celdas: string[] de data-URLs, '' = tile consumida) y re-emite al cambiar la
+// firma del DOM. La selección es local-optimista; si la imagen de una celda
+// cambia en el widget real, esa celda se limpia (nueva tile = deseleccionada).
+// Fallback: el server puede mandar celdas.length === 1 (screenshot completo,
+// modo Fase 1) y el cliente vuelve al clic por coordenadas normalizadas.
 
 import { useEffect, useRef, useState } from "react";
 
@@ -11,7 +17,7 @@ type Estado =
   | { fase: "iniciando" }
   | { fase: "listo" }
   | { fase: "verificando"; texto?: string }
-  | { fase: "desafio"; imagen: string; texto: string; filas: number }
+  | { fase: "desafio"; texto: string; filas: number; celdas: string[] }
   | { fase: "resuelto" }
   | { fase: "error"; mensaje: string };
 
@@ -21,6 +27,7 @@ type MensajeServidor = {
   imagen?: string;
   texto?: string;
   filas?: number;
+  celdas?: string[];
   token?: string;
   mensaje?: string;
 };
@@ -42,6 +49,7 @@ export default function CaptchaRemoto({
   const [estado, setEstado] = useState<Estado>({ fase: "conectando" });
   const [seleccionadas, setSeleccionadas] = useState<Set<number>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
+  const prevCeldas = useRef<string[]>([]);
 
   useEffect(() => {
     const ws = new WebSocket(wsUrl());
@@ -60,12 +68,30 @@ export default function CaptchaRemoto({
           setEstado({ fase: "listo" });
           break;
         case "verificando":
-          setEstado({ fase: "verificando", texto: m.mensaje });
+          setEstado((prev) =>
+            prev.fase === "desafio" ? prev : { fase: "verificando", texto: m.mensaje }
+          );
           break;
-        case "desafio":
-          setSeleccionadas(new Set());
-          setEstado({ fase: "desafio", imagen: m.imagen!, texto: m.texto!, filas: m.filas || 3 });
+        case "desafio": {
+          const celdas = m.celdas ?? [];
+          // Merge: conservar selección solo en celdas cuya imagen no cambió
+          // (imagen nueva = tile reemplazada = deseleccionada; '' = consumida).
+          setSeleccionadas((prev) => {
+            const nuevas = new Set<number>();
+            celdas.forEach((img, idx) => {
+              if (img && img === prevCeldas.current[idx] && prev.has(idx)) nuevas.add(idx);
+            });
+            return nuevas;
+          });
+          prevCeldas.current = celdas;
+          setEstado({
+            fase: "desafio",
+            texto: m.texto || "",
+            filas: m.filas || 3,
+            celdas,
+          });
           break;
+        }
         case "resuelto":
           setEstado({ fase: "resuelto" });
           if (m.token) onResuelto(m.token);
@@ -74,7 +100,7 @@ export default function CaptchaRemoto({
           setEstado({ fase: "error", mensaje: "Sesión cerrada." });
           break;
         case "error-widget":
-          setEstado({ fase: "listo" });
+          setEstado((prev) => (prev.fase === "desafio" ? prev : { fase: "listo" }));
           break;
       }
     };
@@ -105,39 +131,63 @@ export default function CaptchaRemoto({
   };
 
   const verificar = () => {
-    setSeleccionadas(new Set());
-    setEstado({ fase: "verificando", texto: "Puede venir otra ronda de imágenes" });
+    setEstado((prev) =>
+      prev.fase === "desafio"
+        ? { fase: "verificando", texto: "Puede venir otra ronda de imágenes" }
+        : prev
+    );
     send({ type: "verificar" });
   };
 
   const recargar = () => {
-    setSeleccionadas(new Set());
-    setEstado({ fase: "verificando", texto: "Buscando otro desafío..." });
+    setEstado((prev) =>
+      prev.fase === "desafio"
+        ? { fase: "verificando", texto: "Buscando otro desafío..." }
+        : { fase: "verificando", texto: "Buscando otro desafío..." }
+    );
     send({ type: "recargar" });
   };
 
-  const clicTile = (e: React.MouseEvent<HTMLImageElement>) => {
-    if (estado.fase !== "desafio") return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const col = Math.min(estado.filas - 1, Math.floor(((e.clientX - r.left) / r.width) * estado.filas));
-    const row = Math.min(estado.filas - 1, Math.floor(((e.clientY - r.top) / r.height) * estado.filas));
-    const idx = row * estado.filas + col;
+  // Clic sobre una celda de la grilla DOM: selección local optimista + clic
+  // remoto al centro exacto de esa tile.
+  const clicCelda = (idx: number, filas: number) => {
+    setSeleccionadas((prev) => {
+      const nuevas = new Set(prev);
+      if (nuevas.has(idx)) nuevas.delete(idx);
+      else nuevas.add(idx);
+      return nuevas;
+    });
+    const col = idx % filas;
+    const row = Math.floor(idx / filas);
+    send({ type: "clic-tile", nx: (col + 0.5) / filas, ny: (row + 0.5) / filas });
+  };
 
-    const nuevas = new Set(seleccionadas);
-    if (nuevas.has(idx)) {
-      nuevas.delete(idx);
-      setSeleccionadas(nuevas);
-      return;
-    }
-    nuevas.add(idx);
-    setSeleccionadas(nuevas);
-    // clic remoto al centro de la tile
-    send({ type: "clic-tile", nx: (col + 0.5) / estado.filas, ny: (row + 0.5) / estado.filas });
+  // Fallback (celdas.length === 1): clic por posición dentro de la imagen.
+  const clicImagenCompleta = (
+    e: React.MouseEvent<HTMLImageElement>,
+    filas: number
+  ) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const col = Math.min(filas - 1, Math.floor(((e.clientX - r.left) / r.width) * filas));
+    const row = Math.min(filas - 1, Math.floor(((e.clientY - r.top) / r.height) * filas));
+    const idx = row * filas + col;
+    setSeleccionadas((prev) => {
+      const nuevas = new Set(prev);
+      if (nuevas.has(idx)) nuevas.delete(idx);
+      else nuevas.add(idx);
+      return nuevas;
+    });
+    send({ type: "clic-tile", nx: (col + 0.5) / filas, ny: (row + 0.5) / filas });
   };
 
   return (
     <div className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-6 mb-6">
-      <h2 className="text-[16px] font-semibold text-[var(--fg)] mb-4">Verificación de seguridad</h2>
+      <h2 className="text-[16px] font-semibold text-[var(--fg)] mb-1">Verificación de seguridad</h2>
+      {estado.fase !== "resuelto" && (
+        <p className="text-[12px] text-[#ff9500] mb-4">
+          Al resolver el captcha se pedirá el turno automáticamente con los datos del formulario.
+        </p>
+      )}
 
       {/* checkbox clon */}
       {(estado.fase === "listo" || estado.fase === "resuelto") && (
@@ -175,7 +225,7 @@ export default function CaptchaRemoto({
               ? "Conectando con el sistema de turnos..."
               : estado.fase === "iniciando"
               ? "Abriendo navegador remoto..."
-              : "Verificando... puede venir otra ronda de imágenes"}
+              : estado.texto || "Verificando... puede venir otra ronda de imágenes"}
           </p>
         </div>
       )}
@@ -184,37 +234,81 @@ export default function CaptchaRemoto({
       {estado.fase === "desafio" && (
         <div className="max-w-[302px] border border-[var(--separator)] rounded overflow-hidden">
           <div className="bg-[#2a4470] text-white text-[13px] px-3 py-2.5">{estado.texto}</div>
-          <div className="relative">
-            {/* data URL dinámica del challenge: next/image no aporta nada acá */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`data:image/jpeg;base64,${estado.imagen}`}
-              alt="Desafío de verificación"
-              className="w-full block cursor-crosshair select-none"
-              onClick={clicTile}
-            />            {[...seleccionadas].map((idx) => {
-              const row = Math.floor(idx / estado.filas);
-              const col = idx % estado.filas;
-              return (
-                <span
-                  key={idx}
-                  className="absolute border-2 border-white outline outline-2 outline-[#1a73e8] pointer-events-none bg-[#1a73e8]/10"
-                  style={{
-                    left: `${(col * 100) / estado.filas}%`,
-                    top: `${(row * 100) / estado.filas}%`,
-                    width: `${100 / estado.filas}%`,
-                    height: `${100 / estado.filas}%`,
-                  }}
-                >
-                  <span className="absolute top-0.5 right-0.5 bg-[#1a73e8] text-white text-[10px] leading-none px-1 py-0.5 rounded-sm">
-                    ✔
+
+          {estado.celdas.length <= 1 ? (
+            // Fallback screenshot: imagen completa + clic por coordenadas
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`data:image/jpeg;base64,${estado.celdas[0] ?? ""}`}
+                alt="Desafío de verificación"
+                className="w-full block cursor-crosshair select-none"
+                onClick={(e) => clicImagenCompleta(e, estado.filas)}
+              />
+              {[...seleccionadas].map((idx) => {
+                const row = Math.floor(idx / estado.filas);
+                const col = idx % estado.filas;
+                return (
+                  <span
+                    key={idx}
+                    className="absolute border-2 border-white outline outline-2 outline-[#1a73e8] pointer-events-none bg-[#1a73e8]/10"
+                    style={{
+                      left: `${(col * 100) / estado.filas}%`,
+                      top: `${(row * 100) / estado.filas}%`,
+                      width: `${100 / estado.filas}%`,
+                      height: `${100 / estado.filas}%`,
+                    }}
+                  >
+                    <span className="absolute top-0.5 right-0.5 bg-[#1a73e8] text-white text-[10px] leading-none px-1 py-0.5 rounded-sm">
+                      ✔
+                    </span>
                   </span>
-                </span>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            // Modo DOM: grilla por celdas espejadas del widget real
+            <div
+              className="grid w-full"
+              style={{ gridTemplateColumns: `repeat(${estado.filas}, minmax(0, 1fr))` }}
+            >
+              {estado.celdas.map((img, idx) =>
+                img ? (
+                  <div
+                    key={idx}
+                    className="relative aspect-square cursor-crosshair select-none overflow-hidden"
+                    onClick={() => clicCelda(idx, estado.filas)}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img} alt="" className="w-full h-full object-cover block" />
+                    {seleccionadas.has(idx) && (
+                      <span className="absolute inset-0 border-2 border-white outline outline-2 outline-[#1a73e8] bg-[#1a73e8]/10 pointer-events-none">
+                        <span className="absolute top-0.5 right-0.5 bg-[#1a73e8] text-white text-[10px] leading-none px-1 py-0.5 rounded-sm">
+                          ✔
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  // Tile consumida (desafío dinámico): gris con check
+                  <div
+                    key={idx}
+                    className="aspect-square grid place-items-center bg-[#e8eaed] text-[#34c759] text-[16px]"
+                  >
+                    ✔
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-2 px-3 py-2">
-            <button type="button" onClick={recargar} title="Otro desafío" className="text-[16px] text-[var(--secondary)] hover:text-[var(--fg)]">
+            <button
+              type="button"
+              title="Otro desafío"
+              onClick={recargar}
+              className="text-[16px] text-[var(--secondary)] hover:text-[var(--fg)]"
+            >
               ↻
             </button>
             <button

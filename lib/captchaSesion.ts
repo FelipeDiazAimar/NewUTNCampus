@@ -49,6 +49,9 @@ export class SesionCaptcha {
   private _token: string | null = null;
   private abortado = false;
   private polling: ReturnType<typeof setInterval> | null = null;
+  private leyendo = false;
+  private domFirma: string | null = null;
+  // Fallback screenshot (si la lectura DOM falla)
   private ultimaImagenActiva = false;
   private ultimoHash: string | null = null;
   private refrescarHasta = 0;
@@ -156,93 +159,173 @@ export class SesionCaptcha {
     return null;
   }
 
+  // ── Lectura estructurada del desafío (espejo DOM) ──────────────────────────
+  // Serializa la grilla real celda por celda: imagen (data-URL del
+  // background-image computado) + texto + filas. Es la fuente de verdad: se
+  // re-emite solo cuando la firma cambia (nueva ronda, tile dinámica que se
+  // reemplaza al seleccionar, cambio de instrucciones).
+  private async leerDesafioDOM(): Promise<{
+    texto: string;
+    filas: number;
+    celdas: string[];
+  } | null> {
+    const frame = this.frameDesafio();
+    if (!frame) return null;
+    return await frame
+      .evaluate(() => {
+        const inst = document.querySelector(".rc-imageselect-instructions");
+        const target =
+          document.querySelector("#rc-imageselect-target") ||
+          document.querySelector(".rc-imageselect-target") ||
+          document.querySelector("table");
+        if (!inst || !target || (target as HTMLElement).offsetHeight === 0) return null;
+
+        const tds = target.querySelectorAll("td");
+        if (!tds.length) return null;
+
+        const celdas: string[] = [];
+        for (const td of tds) {
+          const tileEl =
+            td.querySelector<HTMLElement>(".rc-image-tile") ||
+            td.querySelector<HTMLElement>('[style*="background-image"]');
+          let img = "";
+          if (tileEl) {
+            const bg = getComputedStyle(tileEl).backgroundImage;
+            const m = bg && bg.match(/url\(["']?(.*?)["']?\)/);
+            if (m) img = m[1];
+          }
+          if (!img) {
+            const imgEl = td.querySelector("img");
+            if (imgEl && imgEl.src) img = imgEl.src;
+          }
+          celdas.push(img);
+        }
+
+        return {
+          texto: (inst as HTMLElement).innerText.trim(),
+          filas: target.querySelectorAll("tr").length || 3,
+          celdas,
+        };
+      })
+      .catch(() => null);
+  }
+
   private arrancarPolling() {
-    this.polling = setInterval(async () => {
-      if (this.abortado || !this.page) return;
-      try {
-        // ¿token?
-        const token = await this.page.evaluate(() => {
-          const g = (globalThis as { grecaptcha?: { getResponse: () => string } }).grecaptcha;
-          return g ? g.getResponse() : "";
-        });
-        if (token) {
-          this._token = token;
-          if (this.polling) clearInterval(this.polling);
-          this.polling = null;
-          this.emitir("resuelto", { token });
-          return;
-        }
-        // ¿desafío de imágenes?
-        const desafio = this.frameDesafio();
-        if (desafio) {
-          const activo = await desafio
-            .evaluate(() => {
-              const inst = document.querySelector(".rc-imageselect-instructions");
-              const target =
-                document.querySelector("#rc-imageselect-target") ||
-                document.querySelector(".rc-imageselect-target") ||
-                document.querySelector("table");
-              return inst && target && (target as HTMLElement).offsetHeight > 0
-                ? { texto: (inst as HTMLElement).innerText.trim() }
-                : null;
-            })
-            .catch(() => null);
-          if (activo) {
-            const target = await this.elementoDesafio();
-            if (target) {
-              const enVentana = Date.now() < this.refrescarHasta;
-              // Capturar solo al primer desafío o en la ventana post-VERIFICAR/
-              // recargar. Durante la selección del usuario: cero capturas.
-              if (!this.ultimaImagenActiva || enVentana) {
-                const img = await target.screenshot({ type: "jpeg", quality: 55 });
-                const hash = img.toString("base64");
-                if (hash !== this.ultimoHash) {
-                  this.ultimoHash = hash;
-                  this.hashDesde = Date.now();
-                  this.imgPendiente = img.toString("base64");
-                  this.textoPendiente = activo.texto;
-                  this.filasPendiente = await desafio
-                    .evaluate(() => document.querySelectorAll(".rc-imageselect-target tr").length || 3)
-                    .catch(() => 3);
-                } else if (this.imgPendiente && Date.now() - this.hashDesde >= 500) {
-                  // estable en dos lecturas => desafío (re)cargado de verdad
-                  this.ultimaImagenActiva = true;
-                  this.refrescarHasta = 0;
-                  this.emitir("desafio", {
-                    imagen: this.imgPendiente,
-                    texto: this.textoPendiente,
-                    filas: this.filasPendiente,
-                  });
-                  this.imgPendiente = null;
-                }
-              }
-            }
-          } else {
-            this.ultimaImagenActiva = false;
-            this.ultimoHash = null;
-            this.imgPendiente = null;
-          }
-        }
-        // ¿error visible del widget? (no colgarse en "Verificando")
-        const anchor = this.frameCheckbox();
-        if (anchor) {
-          const err = await anchor
-            .evaluate(() => {
-              const el = document.querySelector(".rc-anchor-error-message");
-              return el && getComputedStyle(el).display !== "none" ? (el as HTMLElement).innerText.trim() : null;
-            })
-            .catch(() => null);
-          if (err && err !== this.ultimoError) {
-            this.ultimoError = err;
-            this.emitir("error-widget", { mensaje: err });
-          } else if (!err) {
-            this.ultimoError = null;
-          }
-        }
-      } catch {
-        /* la página puede estar navegando; ignorar el tick */
+    this.polling = setInterval(() => this.pollTick(), 500);
+  }
+
+  // Re-lectura inmediata después de una acción: los desafíos dinámicos
+  // reemplazan la imagen de la tile al seleccionarla, sin apretar VERIFICAR.
+  private programarRelectura() {
+    setTimeout(() => this.pollTick(), 250);
+  }
+
+  private async pollTick(): Promise<void> {
+    if (this.abortado || !this.page || this.leyendo) return;
+    this.leyendo = true;
+    try {
+      // ¿token?
+      const token = await this.page.evaluate(() => {
+        const g = (globalThis as { grecaptcha?: { getResponse: () => string } }).grecaptcha;
+        return g ? g.getResponse() : "";
+      });
+      if (token) {
+        this._token = token;
+        if (this.polling) clearInterval(this.polling);
+        this.polling = null;
+        this.emitir("resuelto", { token });
+        return;
       }
-    }, 500);
+
+      // ¿desafío de imágenes? — modo DOM (espejo estructurado)
+      const dom = await this.leerDesafioDOM();
+      if (dom) {
+        const firma = JSON.stringify(dom);
+        if (firma !== this.domFirma) {
+          this.domFirma = firma;
+          this.emitir("desafio", {
+            texto: dom.texto,
+            filas: dom.filas,
+            celdas: dom.celdas,
+          });
+        }
+      } else {
+        // Fallback: lectura por screenshot (comportamiento probado de Fase 1)
+        this.domFirma = null;
+        await this.pollTickScreenshot();
+      }
+
+      // ¿error visible del widget? (no colgarse en "Verificando")
+      const anchor = this.frameCheckbox();
+      if (anchor) {
+        const err = await anchor
+          .evaluate(() => {
+            const el = document.querySelector(".rc-anchor-error-message");
+            return el && getComputedStyle(el).display !== "none" ? (el as HTMLElement).innerText.trim() : null;
+          })
+          .catch(() => null);
+        if (err && err !== this.ultimoError) {
+          this.ultimoError = err;
+          this.emitir("error-widget", { mensaje: err });
+        } else if (!err) {
+          this.ultimoError = null;
+        }
+      }
+    } catch {
+      /* la página puede estar navegando; ignorar el tick */
+    } finally {
+      this.leyendo = false;
+    }
+  }
+
+  // Modo screenshot: solo si la lectura DOM no devuelve nada pero el desafío
+  // sigue activo (markup de Google cambiado, etc).
+  private async pollTickScreenshot(): Promise<void> {
+    const desafio = this.frameDesafio();
+    if (!desafio) return;
+    const activo = await desafio
+      .evaluate(() => {
+        const inst = document.querySelector(".rc-imageselect-instructions");
+        const target =
+          document.querySelector("#rc-imageselect-target") ||
+          document.querySelector(".rc-imageselect-target") ||
+          document.querySelector("table");
+        return inst && target && (target as HTMLElement).offsetHeight > 0
+          ? { texto: (inst as HTMLElement).innerText.trim() }
+          : null;
+      })
+      .catch(() => null);
+    if (!activo) {
+      this.ultimaImagenActiva = false;
+      this.ultimoHash = null;
+      this.imgPendiente = null;
+      return;
+    }
+    const target = await this.elementoDesafio();
+    if (!target) return;
+    const enVentana = Date.now() < this.refrescarHasta;
+    if (!this.ultimaImagenActiva || enVentana) {
+      const img = await target.screenshot({ type: "jpeg", quality: 55 });
+      const hash = img.toString("base64");
+      if (hash !== this.ultimoHash) {
+        this.ultimoHash = hash;
+        this.hashDesde = Date.now();
+        this.imgPendiente = img.toString("base64");
+        this.textoPendiente = activo.texto;
+        this.filasPendiente = await desafio
+          .evaluate(() => document.querySelectorAll(".rc-imageselect-target tr").length || 3)
+          .catch(() => 3);
+      } else if (this.imgPendiente && Date.now() - this.hashDesde >= 500) {
+        this.ultimaImagenActiva = true;
+        this.refrescarHasta = 0;
+        this.emitir("desafio", {
+          texto: this.textoPendiente,
+          filas: this.filasPendiente,
+          celdas: [this.imgPendiente], // celda única = imagen completa
+        });
+        this.imgPendiente = null;
+      }
+    }
   }
 
   // Movimiento de mouse humanizado: curva con easing, jitter y delays. Google
@@ -305,6 +388,7 @@ export class SesionCaptcha {
       await border.click().catch(() => {});
     }
     this.emitir("verificando");
+    this.programarRelectura();
   }
 
   async clicEnDesafio(nx: number, ny: number): Promise<void> {
@@ -314,6 +398,7 @@ export class SesionCaptcha {
     const box = await target.boundingBox();
     if (!box) return;
     await this.clicHumano(box.x + nx * box.width, box.y + ny * box.height);
+    this.programarRelectura();
   }
 
   async verificar(): Promise<void> {
@@ -325,6 +410,7 @@ export class SesionCaptcha {
     this.ultimoHash = null;
     this.imgPendiente = null;
     this.refrescarHasta = Date.now() + 15000;
+    this.programarRelectura();
   }
 
   async recargar(): Promise<void> {
@@ -336,5 +422,6 @@ export class SesionCaptcha {
     this.ultimoHash = null;
     this.imgPendiente = null;
     this.refrescarHasta = Date.now() + 15000;
+    this.programarRelectura();
   }
 }

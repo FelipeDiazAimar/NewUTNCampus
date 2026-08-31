@@ -158,14 +158,32 @@ Variables y configuración:
 ## 6. Implementación (fases)
 
 1. **Fase 0 — Documento** (este archivo).
-2. **Fase 1 — Integración** *(esta rama)*: port del booking a route handler,
-   `SesionCaptcha` en la ruta WS (modo screenshot+hash, el probado), componente
-   cliente, submit real en `/biblioteca`.
-3. **Fase 2 — Espejo DOM** (futura): reemplazar el screenshot del desafío por
-   serialización de estructura + diffs por celda (incluye re-lectura inmediata
-   post-clic para desafíos dinámicos que reemplazan la imagen al seleccionar),
-   con fallback automático a screenshots.
-4. **Limpieza**: `scripts/captcha-remoto/` y `scripts/pedir-turno-biblioteca.mjs`
+2. **Fase 1 — Integración** ✅ **GO en producción (31/08/2026)**: WebSocket upgrade
+   funcionó en Vercel (`101` en `/api/captcha`), Chromium headless levantó con
+   `@sparticuz/chromium` + `playwright-core`, y el captcha se resolvió completo
+   (checkbox + rondas de imágenes) desde el espejo. Hicieron falta dos fixes de
+   empaquetado: `outputFileTracingIncludes` global + `includeFiles` en
+   `vercel.json` (el tracer poda `browsers.json` de playwright-core, requerido
+   dinámicamente por `coreBundle.js`). Submit real integrado en `/biblioteca`.
+3. **Fase 2 — Espejo DOM** ✅ implementada en esta rama:
+   - El server serializa la grilla real celda por celda (data-URLs del
+     `background-image` computado) + texto + filas, y re-emite solo cuando la
+     firma del DOM cambia.
+   - Re-lectura inmediata (~250 ms) tras cada clic reenviado: cubre los desafíos
+     dinámicos que reemplazan la imagen de la tile al seleccionarla, sin
+     apretar VERIFICAR.
+   - Fallback automático al modo screenshot (Fase 1) si la lectura DOM no
+     devuelve nada (celdas.length === 1 en el protocolo).
+   - Cliente: grilla por celdas con selección local optimista y merge por
+     imagen (imagen nueva = tile reemplazada = deseleccionada; `''` = tile
+     consumida, gris con ✔).
+   - Aviso visible de auto-submit: "Al resolver el captcha se pedirá el turno
+     automáticamente con los datos del formulario".
+4. **Pendiente**: fix del 500 en `POST /api/biblioteca/preferencias` (surfacing
+   del error PostgREST agregado; probablemente falten columnas de perfil en la
+   tabla — verificar schema en Supabase), "Mis turnos" + cancelación, watcher
+   de disponibilidad.
+5. **Limpieza**: `scripts/captcha-remoto/` y `scripts/pedir-turno-biblioteca.mjs`
    quedan como herramientas locales de diagnóstico.
 
 ## 7. Riesgos y plan B
