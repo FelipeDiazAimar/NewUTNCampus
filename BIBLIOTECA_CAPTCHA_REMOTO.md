@@ -179,7 +179,52 @@ Variables y configuración:
 | La UTN agrega `X-Frame-Options`, cambia el flujo o hardeniza el captcha | Plan B documentado: iframe directo u Opción "relevar token" (bookmarklet + pegar token) — ambos operativos sin infra extra |
 | Uso concurrente alto (múltiples Chromium por instancia) | Tope de 2 sesiones por instancia + cola implícita por usuario |
 
-## 8. Apéndice: contrato exacto con el legacy
+## 8. Cómo testear el deploy en Vercel
+
+### Pre-deploy
+
+- [ ] `vercel.json` commiteado (fluid + memory/maxDuration de la ruta captcha).
+- [ ] **`NEXT_PUBLIC_CAPTCHA_WS_URL` NO definida** en el environment de producción (si existe, el cliente apunta a otro lado y la ruta integrada no se usa).
+- [ ] Deploy y verificar en el dashboard que el build compila las rutas `/api/captcha` y `/api/biblioteca/pedir-turno`.
+
+### Nivel 0 — Gates sin browser (curl, 1 min)
+
+```bash
+curl -s -X POST https://<dominio>/api/biblioteca/pedir-turno -d '{}' -H "Content-Type: application/json"
+# esperado: 401 {"ok":false,"mensaje":"Iniciá sesión..."}
+curl -s https://<dominio>/api/captcha
+# esperado: 401 "No autorizado" (sin cookie de sesión ni WS)
+```
+
+### Nivel 1 — WS + Chromium (el spike GO/NO-GO)
+
+1. Logueado en el sitio, `/biblioteca`, completar área/temática/fecha/horario → "Confirmar Turno".
+2. Debe aparecer el espejo y pasar de "Conectando" a "No soy un robot" (~5-15 s: cold start + Chromium + carga de la página del legacy).
+3. Tildar el checkbox. **Éxito de esta fase = pasa a "Verificando" y aparece el desafío o se tilda solo.**
+4. Mirar Runtime Logs (dashboard → Deployments → Functions, filtrar `/api/captcha`): debe loguear `[captcha] clic humanizado en el checkbox`. Si hay excepción de `@sparticuz/chromium` (lib faltante, /tmp sin espacio) → **NO-GO**, revisar logs.
+5. Verificar consumo de memoria de la función (memoria configurada: 2048 MB).
+
+### Nivel 2 — Flujo completo end-to-end
+
+1. Resolver todas las rondas del desafío hasta el ✔.
+2. El booking sale solo (el token viaja a `/api/biblioteca/pedir-turno`).
+3. Banner de éxito con fecha/hora + **mail real de la UTN**.
+4. Cancelar el turno (sitio original o `--cancelar` con el código del mail) para no ocupar cupos de la facultad.
+
+### Nivel 3 — Caminos de error
+
+- **Token expirado**: resolver el captcha y dejar pasar 2+ minutos antes de que el front llame al booking (forzar con la pestaña en background) → banner "El sistema rechazó el captcha (posiblemente expiró)".
+- **Duplicado**: pedir exactamente el mismo slot dos veces seguidas → el legacy puede aceptar el duplicado (debilidad suya, §1) — verificar el comportamiento real y anotarlo.
+- **Sin cupos**: elegir una fecha con la grilla vacía → el botón queda deshabilitado (el select de horarios ya no ofrece opciones).
+- **Sesiones concurrentes**: abrir dos pestañas con el captcha a la vez → la segunda recibe el aviso de tope (o comparten instancia, verificando que ninguna se rompa).
+
+### Si algo falla
+
+- Logs: `vercel logs <deployment-url>` o dashboard → Functions → invocaciones de `/api/captcha`.
+- Síntoma típico de Chromium roto: error de `executablePath` o libs faltantes al iniciar → probar `@sparticuz/chromium` con `chromium.setGraphicsMode = false` y verificar la versión instalada contra la doc del paquete.
+- Síntoma de WS no habilitado: el upgrade responde 4xx/5xx sin llegar a "listo" → revisar que Fluid esté activo para el proyecto y el plan soporte la beta.
+
+## 9. Apéndice: contrato exacto con el legacy
 
 **Request de alta** (todo validado contra HAR del 30/08/2026 19:27):
 
