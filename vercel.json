@@ -5,7 +5,7 @@
     "app/api/captcha/route.ts": {
       "memory": 2048,
       "maxDuration": 300,
-      "includeFiles": ["node_modules/playwright-core/**", "node_modules/@sparticuz/**"]
+      "includeFiles": "node_modules/{playwright-core,@sparticuz}/**"
     },
     "app/api/biblioteca/pedir-turno/route.ts": {
       "maxDuration": 60
