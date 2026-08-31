@@ -12,22 +12,34 @@
 
 import { useEffect, useRef, useState } from "react";
 
+type CeldaDom = { i: number; pos: string; size: string } | null;
+
 type Estado =
   | { fase: "conectando" }
   | { fase: "iniciando" }
   | { fase: "listo" }
   | { fase: "verificando"; texto?: string }
-  | { fase: "desafio"; texto: string; filas: number; celdas: string[] }
+  | {
+      fase: "desafio";
+      modo: "dom" | "screenshot";
+      texto: string;
+      filas: number;
+      imgs: string[];
+      celdas: CeldaDom[];
+      imagen?: string; // solo modo screenshot
+    }
   | { fase: "resuelto" }
   | { fase: "error"; mensaje: string };
 
 type MensajeServidor = {
   type: string;
   fase?: string;
+  modo?: "dom" | "screenshot";
   imagen?: string;
   texto?: string;
   filas?: number;
-  celdas?: string[];
+  imgs?: string[];
+  celdas?: CeldaDom[];
   token?: string;
   mensaje?: string;
 };
@@ -49,7 +61,7 @@ export default function CaptchaRemoto({
   const [estado, setEstado] = useState<Estado>({ fase: "conectando" });
   const [seleccionadas, setSeleccionadas] = useState<Set<number>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
-  const prevCeldas = useRef<string[]>([]);
+  const prevCeldas = useRef<CeldaDom[]>([]);
 
   useEffect(() => {
     const ws = new WebSocket(wsUrl());
@@ -73,21 +85,42 @@ export default function CaptchaRemoto({
           );
           break;
         case "desafio": {
+          if (m.modo === "screenshot") {
+            // Fallback Fase 1: imagen completa, selección se resetea
+            setSeleccionadas(new Set());
+            prevCeldas.current = [];
+            setEstado({
+              fase: "desafio",
+              modo: "screenshot",
+              texto: m.texto || "",
+              filas: m.filas || 3,
+              imgs: [m.imagen || ""],
+              celdas: [{ i: 0, pos: "center", size: "contain" }],
+              imagen: m.imagen,
+            });
+            break;
+          }
+          // Modo DOM: merge — conservar selección solo en celdas cuya firma
+          // (img + pos + size) no cambió (tile reemplazada = deseleccionada;
+          // celda null = consumida).
           const celdas = m.celdas ?? [];
-          // Merge: conservar selección solo en celdas cuya imagen no cambió
-          // (imagen nueva = tile reemplazada = deseleccionada; '' = consumida).
           setSeleccionadas((prev) => {
             const nuevas = new Set<number>();
-            celdas.forEach((img, idx) => {
-              if (img && img === prevCeldas.current[idx] && prev.has(idx)) nuevas.add(idx);
+            celdas.forEach((c, idx) => {
+              const prevC = prevCeldas.current[idx];
+              if (c && prevC && c.i === prevC.i && c.pos === prevC.pos && prev.has(idx)) {
+                nuevas.add(idx);
+              }
             });
             return nuevas;
           });
           prevCeldas.current = celdas;
           setEstado({
             fase: "desafio",
+            modo: "dom",
             texto: m.texto || "",
             filas: m.filas || 3,
+            imgs: m.imgs ?? [],
             celdas,
           });
           break;
@@ -235,12 +268,12 @@ export default function CaptchaRemoto({
         <div className="max-w-[302px] border border-[var(--separator)] rounded overflow-hidden">
           <div className="bg-[#2a4470] text-white text-[13px] px-3 py-2.5">{estado.texto}</div>
 
-          {estado.celdas.length <= 1 ? (
-            // Fallback screenshot: imagen completa + clic por coordenadas
+          {estado.modo === "screenshot" ? (
+            // Fallback Fase 1: imagen completa + clic por coordenadas
             <div className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`data:image/jpeg;base64,${estado.celdas[0] ?? ""}`}
+                src={`data:image/jpeg;base64,${estado.imagen ?? ""}`}
                 alt="Desafío de verificación"
                 className="w-full block cursor-crosshair select-none"
                 onClick={(e) => clicImagenCompleta(e, estado.filas)}
@@ -267,20 +300,27 @@ export default function CaptchaRemoto({
               })}
             </div>
           ) : (
-            // Modo DOM: grilla por celdas espejadas del widget real
+            // Modo DOM: celdas espejadas del widget real (sprites cortados por
+            // background-position/size; null = tile consumida)
             <div
               className="grid w-full"
               style={{ gridTemplateColumns: `repeat(${estado.filas}, minmax(0, 1fr))` }}
             >
-              {estado.celdas.map((img, idx) =>
-                img ? (
+              {estado.celdas.map((c, idx) =>
+                c ? (
                   <div
                     key={idx}
                     className="relative aspect-square cursor-crosshair select-none overflow-hidden"
                     onClick={() => clicCelda(idx, estado.filas)}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img} alt="" className="w-full h-full object-cover block" />
+                    <div
+                      className="absolute inset-0 bg-no-repeat"
+                      style={{
+                        backgroundImage: `url("${estado.imgs[c.i] ?? ""}")`,
+                        backgroundPosition: c.pos,
+                        backgroundSize: c.size,
+                      }}
+                    />
                     {seleccionadas.has(idx) && (
                       <span className="absolute inset-0 border-2 border-white outline outline-2 outline-[#1a73e8] bg-[#1a73e8]/10 pointer-events-none">
                         <span className="absolute top-0.5 right-0.5 bg-[#1a73e8] text-white text-[10px] leading-none px-1 py-0.5 rounded-sm">
@@ -290,7 +330,6 @@ export default function CaptchaRemoto({
                     )}
                   </div>
                 ) : (
-                  // Tile consumida (desafío dinámico): gris con check
                   <div
                     key={idx}
                     className="aspect-square grid place-items-center bg-[#e8eaed] text-[#34c759] text-[16px]"

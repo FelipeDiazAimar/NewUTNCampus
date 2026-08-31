@@ -160,19 +160,23 @@ export class SesionCaptcha {
   }
 
   // ── Lectura estructurada del desafío (espejo DOM) ──────────────────────────
-  // Serializa la grilla real celda por celda: imagen (data-URL del
-  // background-image computado) + texto + filas. Es la fuente de verdad: se
-  // re-emite solo cuando la firma cambia (nueva ronda, tile dinámica que se
-  // reemplaza al seleccionar, cambio de instrucciones).
+  // Serializa la grilla real celda por celda. Las imágenes viajan como
+  // data-URLs (únicas, dedupeadas): las tiles a veces son data-URLs y a veces
+  // URLs a google.com/recaptcha/api2/payload, que el navegador del usuario NO
+  // puede cargar (CORP: Cross-Origin-Resource-Policy same-origin) — por eso se
+  // hace fetch same-origin desde el propio iframe y se convierte a data-URL.
+  // Cada celda lleva pos/size del background porque puede tratarse de un
+  // sprite único cortado con background-position.
   private async leerDesafioDOM(): Promise<{
     texto: string;
     filas: number;
-    celdas: string[];
+    imgs: string[];
+    celdas: ({ i: number; pos: string; size: string } | null)[];
   } | null> {
     const frame = this.frameDesafio();
     if (!frame) return null;
-    return await frame
-      .evaluate(() => {
+    const leido = await frame
+      .evaluate(async () => {
         const inst = document.querySelector(".rc-imageselect-instructions");
         const target =
           document.querySelector("#rc-imageselect-target") ||
@@ -183,31 +187,71 @@ export class SesionCaptcha {
         const tds = target.querySelectorAll("td");
         if (!tds.length) return null;
 
-        const celdas: string[] = [];
+        const aDataUrl = async (url: string): Promise<string> => {
+          if (!url || url.startsWith("data:")) return url;
+          try {
+            const blob = await fetch(url, { credentials: "include", cache: "no-store" }).then((r) => r.blob());
+            return await new Promise<string>((resolve) => {
+              const fr = new FileReader();
+              fr.onload = () => resolve(String(fr.result));
+              fr.onerror = () => resolve("");
+              fr.readAsDataURL(blob);
+            });
+          } catch {
+            return "";
+          }
+        };
+
+        const imgs: string[] = [];
+        const mapa = new Map<string, number>(); // url original -> índice en imgs
+        const celdas: { i: number; pos: string; size: string }[] = [];
+        let vacias = 0;
+
         for (const td of tds) {
           const tileEl =
             td.querySelector<HTMLElement>(".rc-image-tile") ||
             td.querySelector<HTMLElement>('[style*="background-image"]');
-          let img = "";
-          if (tileEl) {
-            const bg = getComputedStyle(tileEl).backgroundImage;
-            const m = bg && bg.match(/url\(["']?(.*?)["']?\)/);
-            if (m) img = m[1];
+          if (!tileEl) {
+            celdas.push(null as unknown as { i: number; pos: string; size: string });
+            vacias++;
+            continue;
           }
-          if (!img) {
-            const imgEl = td.querySelector("img");
-            if (imgEl && imgEl.src) img = imgEl.src;
+          const cs = getComputedStyle(tileEl);
+          const m = cs.backgroundImage && cs.backgroundImage.match(/url\(["']?(.*?)["']?\)/);
+          const urlOriginal = m ? m[1] : td.querySelector("img")?.src || "";
+          if (!urlOriginal) {
+            celdas.push(null as unknown as { i: number; pos: string; size: string });
+            vacias++;
+            continue;
           }
-          celdas.push(img);
+          let idx = mapa.get(urlOriginal);
+          if (idx === undefined) {
+            const dataUrl = await aDataUrl(urlOriginal);
+            idx = imgs.length;
+            imgs.push(dataUrl);
+            mapa.set(urlOriginal, idx);
+          }
+          celdas.push({ i: idx, pos: cs.backgroundPosition, size: cs.backgroundSize });
         }
+
+        // Si ninguna celda tiene imagen utilizable, el markup cambió: que el
+        // llamador caiga al modo screenshot.
+        if (vacias === celdas.length) return null;
 
         return {
           texto: (inst as HTMLElement).innerText.trim(),
           filas: target.querySelectorAll("tr").length || 3,
+          imgs,
           celdas,
         };
       })
       .catch(() => null);
+    if (!leido) return null;
+    // data-URLs vacías por fallo de fetch => marcamos la celda como vacía
+    const celdas = leido.celdas.map((c) =>
+      c && leido.imgs[c.i] === "" ? null : c
+    );
+    return { texto: leido.texto, filas: leido.filas, imgs: leido.imgs, celdas };
   }
 
   private arrancarPolling() {
@@ -244,8 +288,10 @@ export class SesionCaptcha {
         if (firma !== this.domFirma) {
           this.domFirma = firma;
           this.emitir("desafio", {
+            modo: "dom",
             texto: dom.texto,
             filas: dom.filas,
+            imgs: dom.imgs,
             celdas: dom.celdas,
           });
         }
@@ -319,9 +365,10 @@ export class SesionCaptcha {
         this.ultimaImagenActiva = true;
         this.refrescarHasta = 0;
         this.emitir("desafio", {
+          modo: "screenshot",
           texto: this.textoPendiente,
           filas: this.filasPendiente,
-          celdas: [this.imgPendiente], // celda única = imagen completa
+          imagen: this.imgPendiente,
         });
         this.imgPendiente = null;
       }
