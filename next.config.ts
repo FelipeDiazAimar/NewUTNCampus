@@ -11,11 +11,21 @@ const nextConfig: NextConfig = {
   // serverless (Chromium descomprimido en /tmp, ws nativo, etc).
   serverExternalPackages: ["googleapis", "playwright-core", "@sparticuz/chromium", "ws"],
   // playwright-core requiere browsers.json y assets dinámicos en runtime; el
-  // file tracing de Vercel los poda (requerimiento no estático) y la función
-  // /api/captcha crashea con "Cannot find module .../playwright-core/browsers.json".
-  // Se fuerza la inclusión completa de los paquetes del browser en esa ruta.
+  // file tracing (nft) no sigue el require de ruta computada en coreBundle.js
+  // y los poda => "Cannot find module .../browsers.json". Con Turbopack la
+  // clave específica no alcanzó (issues vercel/next.js#89207, vercel/vercel#15654):
+  // se usa clave global + específicas, cubriendo los formatos de clave que
+  // documentan App Router ("/api/captcha" y "/api/captcha/route").
   outputFileTracingIncludes: {
+    "/**": [
+      "./node_modules/playwright-core/**/*",
+      "./node_modules/@sparticuz/**/*",
+    ],
     "/api/captcha": [
+      "./node_modules/playwright-core/**/*",
+      "./node_modules/@sparticuz/**/*",
+    ],
+    "/api/captcha/route": [
       "./node_modules/playwright-core/**/*",
       "./node_modules/@sparticuz/**/*",
     ],

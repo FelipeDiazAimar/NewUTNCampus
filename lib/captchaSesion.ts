@@ -6,6 +6,8 @@
 // Las constantes de selectores y el comportamiento se validaron contra el
 // widget real entre el 30 y el 31/08/2026.
 
+import fs from "node:fs";
+import path from "node:path";
 import type { Browser, Page } from "playwright-core";
 
 const BASE = "https://turnos.frsfco.utn.edu.ar:4443";
@@ -74,6 +76,15 @@ export class SesionCaptcha {
       throw new Error("Hay demasiadas sesiones de captcha activas. Probá en unos minutos.");
     }
     sesionesActivas++;
+    // Diagnóstico del tracing: si nft volvió a podar browsers.json, este log
+    // lo dice antes de que el import de playwright-core reviente.
+    try {
+      const pwRoot = path.join(process.cwd(), "node_modules", "playwright-core");
+      const presente = fs.existsSync(path.join(pwRoot, "browsers.json"));
+      console.log("[captcha] browsers.json presente en el bundle:", presente);
+    } catch {
+      /* diagnóstico best-effort */
+    }
     try {
       this.browser = await lanzarChromium();
     } catch (e) {
