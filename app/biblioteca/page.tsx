@@ -9,6 +9,7 @@ import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import DropdownSelect, { type DropdownOption } from "@/components/DropdownSelect";
 import CalendarPicker from "@/components/CalendarPicker";
+import CaptchaRemoto from "@/components/biblioteca/CaptchaRemoto";
 
 type UserProfile = {
   nombre: string;
@@ -73,6 +74,7 @@ export default function BibliotecaPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [captchaAbierto, setCaptchaAbierto] = useState(false);
   const prefSaved = useRef(false);
 
   const [profile, setProfile] = useState<UserProfile>({
@@ -275,8 +277,6 @@ export default function BibliotecaPage() {
     e.preventDefault();
     if (isGuestMode()) { triggerGuestBlock(); return; }
     if (isOffline()) { triggerOfflineBlock(); return; }
-    setSubmitStatus("loading");
-    setErrorMsg("");
     try {
       if (!profile.nombre || !profile.apellido || !profile.dni || !profile.email) {
         setErrorMsg("Por favor completa tus datos personales primero.");
@@ -288,29 +288,57 @@ export default function BibliotecaPage() {
         setSubmitStatus("error");
         return;
       }
-
-      const formData = new FormData();
-      formData.append("nro_documento", profile.dni);
-      formData.append("tipo_documento", profile.tipoDocumento);
-      formData.append("nombre", profile.nombre);
-      formData.append("apellido", profile.apellido);
-      formData.append("email", profile.email);
-      formData.append("telefono", profile.telefono);
-      formData.append("localidad", profile.localidad);
-      formData.append("provincia", profile.provincia);
-      formData.append("responsable", turno.area);
-      formData.append("tematica", turno.tematica);
-      formData.append("datepicker", toApiDate(turno.fecha));
-      formData.append("horarios", turno.horario);
-
       if (!prefSaved.current) saveToSupabase({ area_id: turno.area, tematica_id: turno.tematica });
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setSubmitStatus("success");
-      setTimeout(() => router.push("/dashboard"), 2000);
+      // El alta real requiere captcha: abrir la verificación remota y postear
+      // el token en onResuelto.
+      setSubmitStatus("idle");
+      setCaptchaAbierto(true);
     } catch {
       setErrorMsg("Error al procesar el turno. Intenta de nuevo.");
       setSubmitStatus("error");
+    }
+  };
+
+  const handleCaptchaResuelto = async (token: string) => {
+    setCaptchaAbierto(false);
+    setSubmitStatus("loading");
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/biblioteca/pedir-turno", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          responsable: turno.area,
+          areaDesc: areaOptions.find((a) => a.value === turno.area)?.label ?? "",
+          tematica: turno.tematica,
+          tematicaDesc: tematicaOpts.find((t) => t.value === turno.tematica)?.label ?? "",
+          fecha: toApiDate(turno.fecha),
+          idHorario: turno.horario,
+          horarioDesc: horarioOpts.find((h) => h.value === turno.horario)?.label ?? "",
+          tipoDocumento: profile.tipoDocumento,
+          nroDocumento: profile.dni,
+          nombre: profile.nombre,
+          apellido: profile.apellido,
+          email: profile.email,
+          telefono: profile.telefono,
+          localidad: profile.localidad,
+          provincia: profile.provincia,
+          captchaToken: token,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSubmitStatus("success");
+        setErrorMsg("");
+        setTimeout(() => router.push("/dashboard"), 2500);
+      } else {
+        setSubmitStatus("error");
+        setErrorMsg(json.mensaje || "El sistema de turnos rechazó la solicitud.");
+      }
+    } catch {
+      setSubmitStatus("error");
+      setErrorMsg("Error de red al confirmar el turno. Intenta de nuevo.");
     }
   };
 
@@ -452,6 +480,14 @@ export default function BibliotecaPage() {
             </button>
           </div>
         </form>
+
+        {/* Verificación remota (captcha) */}
+        {captchaAbierto && submitStatus !== "success" && (
+          <CaptchaRemoto
+            onResuelto={handleCaptchaResuelto}
+            onCancelar={() => setCaptchaAbierto(false)}
+          />
+        )}
 
         {/* Datos personales accordion */}
         <div className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] overflow-hidden">

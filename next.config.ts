@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   turbopack: {},
-  serverExternalPackages: ["googleapis"],
+  // Paquetes con binarios/dinámica que Next no debe empaquetar en el bundle
+  // serverless (Chromium descomprimido en /tmp, ws nativo, etc).
+  serverExternalPackages: ["googleapis", "playwright-core", "@sparticuz/chromium", "ws"],
   async redirects() {
     return [
       {

@@ -55,3 +55,7 @@ sourcefiles/
 # generated at build time (scripts/generate-precache-manifest.mjs)
 /public/precache-manifest.json
 /public/pdf.worker.min.mjs
+
+# captcha remoto (local)
+scripts/captcha-remoto/.perfil-chromium/
+scripts/captcha-remoto/debug/

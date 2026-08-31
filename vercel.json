@@ -1,1 +1,13 @@
-{}
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "functions": {
+    "app/api/captcha/route.ts": {
+      "memory": 2048,
+      "maxDuration": 300
+    },
+    "app/api/biblioteca/pedir-turno/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
