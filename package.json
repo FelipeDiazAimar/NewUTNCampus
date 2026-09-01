@@ -50,6 +50,7 @@
     "eslint-config-next": "16.2.6",
     "playwright": "^1.62.1",
     "tailwindcss": "^4",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vercel": "^59.10.0"
   }
 }

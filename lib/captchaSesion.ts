@@ -161,12 +161,17 @@ export class SesionCaptcha {
 
   // ── Lectura estructurada del desafío (espejo DOM) ──────────────────────────
   // Serializa la grilla real celda por celda. Las imágenes viajan como
-  // data-URLs (únicas, dedupeadas): las tiles a veces son data-URLs y a veces
-  // URLs a google.com/recaptcha/api2/payload, que el navegador del usuario NO
-  // puede cargar (CORP: Cross-Origin-Resource-Policy same-origin) — por eso se
-  // hace fetch same-origin desde el propio iframe y se convierte a data-URL.
-  // Cada celda lleva pos/size del background porque puede tratarse de un
-  // sprite único cortado con background-position.
+  // data-URLs (dedupeadas): las tiles a veces son data-URLs y a veces URLs a
+  // google.com/recaptcha/api2/payload, que el navegador del usuario NO puede
+  // cargar (CORP same-origin) — por eso se hace fetch same-origin desde el
+  // propio iframe y se convierte a data-URL. Cada celda lleva pos/size del
+  // background (puede ser un sprite único cortado con background-position).
+  //
+  // Descubrimiento genérico de tiles: cualquier elemento del target con
+  // background-image real, quedándonos con los más internos. Si algo falla se
+  // loguea el motivo (una vez por motivo) y el caller cae al modo screenshot.
+  private ultimoMotivoDom = "(inicial)";
+
   private async leerDesafioDOM(): Promise<{
     texto: string;
     filas: number;
@@ -182,15 +187,16 @@ export class SesionCaptcha {
           document.querySelector("#rc-imageselect-target") ||
           document.querySelector(".rc-imageselect-target") ||
           document.querySelector("table");
-        if (!inst || !target || (target as HTMLElement).offsetHeight === 0) return null;
-
-        const tds = target.querySelectorAll("td");
-        if (!tds.length) return null;
+        if (!inst || !target || (target as HTMLElement).offsetHeight === 0) {
+          return { motivo: "sin-target" } as const;
+        }
 
         const aDataUrl = async (url: string): Promise<string> => {
-          if (!url || url.startsWith("data:")) return url;
+          if (url.startsWith("data:")) return url;
           try {
-            const blob = await fetch(url, { credentials: "include", cache: "no-store" }).then((r) => r.blob());
+            const blob = await fetch(url, { credentials: "include", cache: "no-store" }).then(
+              (r) => r.blob()
+            );
             return await new Promise<string>((resolve) => {
               const fr = new FileReader();
               fr.onload = () => resolve(String(fr.result));
@@ -202,55 +208,122 @@ export class SesionCaptcha {
           }
         };
 
-        const imgs: string[] = [];
-        const mapa = new Map<string, number>(); // url original -> índice en imgs
-        const celdas: { i: number; pos: string; size: string }[] = [];
-        let vacias = 0;
+        // Tile de una unidad de celda: el elemento con background-image más
+        // interno entre el contenedor y sus descendientes de tile.
+        const leerCelda = async (cont: HTMLElement) => {
+          const candidatos: HTMLElement[] = [
+            cont,
+            ...Array.from(
+              cont.querySelectorAll<HTMLElement>(
+                "[class*='rc-image-tile'], [style*='background-image']"
+              )
+            ),
+          ];
+          for (let i = candidatos.length - 1; i >= 0; i--) {
+            const cs = getComputedStyle(candidatos[i]);
+            const bg = cs.backgroundImage;
+            if (bg && bg !== "none" && bg.includes("url(")) {
+              const m = bg.match(/url\(["']?(.*?)["']?\)/);
+              return {
+                urlOriginal: m ? m[1] : candidatos[i].querySelector("img")?.src || "",
+                pos: cs.backgroundPosition,
+                size: cs.backgroundSize,
+              };
+            }
+          }
+          const imgEl = cont.querySelector("img");
+          if (imgEl && imgEl.src) {
+            return { urlOriginal: imgEl.src, pos: "center", size: "contain" };
+          }
+          return null;
+        };
 
-        for (const td of tds) {
-          const tileEl =
-            td.querySelector<HTMLElement>(".rc-image-tile") ||
-            td.querySelector<HTMLElement>('[style*="background-image"]');
-          if (!tileEl) {
-            celdas.push(null as unknown as { i: number; pos: string; size: string });
-            vacias++;
-            continue;
+        const imgs: string[] = [];
+        const mapa = new Map<string, number>();
+        const celdas: ({ i: number; pos: string; size: string } | null)[] = [];
+
+        // Unidades de celda: los td mantienen la alineación de la grilla
+        // (un td sin tile => celda null/consumida, no se salta).
+        const tds = target.querySelectorAll("td");
+        if (tds.length) {
+          for (const td of tds) {
+            const r = await leerCelda(td);
+            if (!r) {
+              celdas.push(null);
+              continue;
+            }
+            let idx = mapa.get(r.urlOriginal);
+            if (idx === undefined) {
+              const dataUrl = await aDataUrl(r.urlOriginal);
+              idx = imgs.length;
+              imgs.push(dataUrl);
+              mapa.set(r.urlOriginal, idx);
+            }
+            celdas.push({ i: idx, pos: r.pos, size: r.size });
           }
-          const cs = getComputedStyle(tileEl);
-          const m = cs.backgroundImage && cs.backgroundImage.match(/url\(["']?(.*?)["']?\)/);
-          const urlOriginal = m ? m[1] : td.querySelector("img")?.src || "";
-          if (!urlOriginal) {
-            celdas.push(null as unknown as { i: number; pos: string; size: string });
-            vacias++;
-            continue;
+        } else {
+          // Sin tabla: los elementos hoja con fondo son las celdas
+          const elems = Array.from(
+            target.querySelectorAll<HTMLElement>(
+              "[class*='rc-image-tile'], [style*='background-image']"
+            )
+          );
+          const conBg = elems.filter((el) => {
+            const bg = getComputedStyle(el).backgroundImage;
+            return bg && bg !== "none" && bg.includes("url(");
+          });
+          const tiles = conBg.filter(
+            (el) => !conBg.some((otro) => otro !== el && el.contains(otro))
+          );
+          for (const tileEl of tiles) {
+            const cs = getComputedStyle(tileEl);
+            const m = cs.backgroundImage.match(/url\(["']?(.*?)["']?\)/);
+            const urlOriginal = m ? m[1] : tileEl.querySelector("img")?.src || "";
+            if (!urlOriginal) {
+              celdas.push(null);
+              continue;
+            }
+            let idx = mapa.get(urlOriginal);
+            if (idx === undefined) {
+              const dataUrl = await aDataUrl(urlOriginal);
+              idx = imgs.length;
+              imgs.push(dataUrl);
+              mapa.set(urlOriginal, idx);
+            }
+            celdas.push({ i: idx, pos: cs.backgroundPosition, size: cs.backgroundSize });
           }
-          let idx = mapa.get(urlOriginal);
-          if (idx === undefined) {
-            const dataUrl = await aDataUrl(urlOriginal);
-            idx = imgs.length;
-            imgs.push(dataUrl);
-            mapa.set(urlOriginal, idx);
-          }
-          celdas.push({ i: idx, pos: cs.backgroundPosition, size: cs.backgroundSize });
         }
 
-        // Si ninguna celda tiene imagen utilizable, el markup cambió: que el
-        // llamador caiga al modo screenshot.
-        if (vacias === celdas.length) return null;
+        if (celdas.every((c) => c === null)) return { motivo: "todas-vacias" } as const;
+
+        const trs = target.querySelectorAll("tr").length;
+        const porCount: Record<number, number> = { 4: 2, 9: 3, 16: 4 };
+        const filas =
+          trs ||
+          porCount[celdas.length] ||
+          (Number.isInteger(Math.sqrt(celdas.length)) ? Math.sqrt(celdas.length) : 3);
 
         return {
+          motivo: "ok" as const,
           texto: (inst as HTMLElement).innerText.trim(),
-          filas: target.querySelectorAll("tr").length || 3,
+          filas,
           imgs,
           celdas,
         };
       })
-      .catch(() => null);
-    if (!leido) return null;
+      .catch((e: Error) =>
+        ({ motivo: "excepcion: " + String(e.message || e).slice(0, 120) } as const)
+      );
+
+    const motivo = "motivo" in (leido ?? {}) ? (leido as { motivo: string }).motivo : "ok";
+    if (motivo !== this.ultimoMotivoDom) {
+      this.ultimoMotivoDom = motivo;
+      console.log("[captcha] lectura DOM:", motivo);
+    }
+    if (!leido || !("celdas" in leido) || leido.motivo !== "ok") return null;
+
     // data-URLs vacías por fallo de fetch => marcamos la celda como vacía
-    const celdas = leido.celdas.map((c) =>
-      c && leido.imgs[c.i] === "" ? null : c
-    );
+    const celdas = leido.celdas.map((c) => (c && leido.imgs[c.i] === "" ? null : c));
     return { texto: leido.texto, filas: leido.filas, imgs: leido.imgs, celdas };
   }
 
@@ -287,6 +360,7 @@ export class SesionCaptcha {
         const firma = JSON.stringify(dom);
         if (firma !== this.domFirma) {
           this.domFirma = firma;
+          console.log(`[captcha] desafio via DOM (${dom.celdas.length} celdas, ${dom.imgs.length} imgs)`);
           this.emitir("desafio", {
             modo: "dom",
             texto: dom.texto,
@@ -364,6 +438,7 @@ export class SesionCaptcha {
       } else if (this.imgPendiente && Date.now() - this.hashDesde >= 500) {
         this.ultimaImagenActiva = true;
         this.refrescarHasta = 0;
+        console.log("[captcha] desafio via SCREENSHOT (fallback: lectura DOM:", this.ultimoMotivoDom + ")");
         this.emitir("desafio", {
           modo: "screenshot",
           texto: this.textoPendiente,
