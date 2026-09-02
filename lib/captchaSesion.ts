@@ -5,14 +5,29 @@
 // Port de scripts/captcha-remoto/server.mjs (prototipo funcional y probado).
 // Las constantes de selectores y el comportamiento se validaron contra el
 // widget real entre el 30 y el 31/08/2026.
+//
+// Detección de cambios: 100% por evento. Un MutationObserver inyectado en los
+// iframes del reCAPTCHA (anchor + bframe) llama a un binding expuesto por
+// Playwright (`window.__captchaEvento`) cada vez que el DOM del widget muta.
+// Node coalesce la ráfaga con un debounce corto, re-serializa la grilla y
+// emite solo si la firma cambió. No hay polling por intervalo ni fallback de
+// screenshot: el espejo es lectura DOM pura.
 
 import fs from "node:fs";
 import path from "node:path";
-import type { Browser, Page } from "playwright-core";
+import type { Browser, Frame, Page } from "playwright-core";
 
 const BASE = "https://turnos.frsfco.utn.edu.ar:4443";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+
+// Ventana de coalescing: agrupa una ráfaga de mutaciones (Google anima el
+// widget) en una sola lectura. No corre ningún timer mientras el DOM está
+// quieto, así que sigue siendo estrictamente por evento.
+const DEBOUNCE_MS = 120;
+// Tope: si las mutaciones no paran (animaciones encadenadas), forzamos una
+// lectura igual para no quedarnos sin espejo mientras el widget "respira".
+const DEBOUNCE_MAX_MS = 1200;
 
 export const MAX_SESIONES_CAPTCHA = 2;
 let sesionesActivas = 0;
@@ -48,19 +63,13 @@ export class SesionCaptcha {
   private page: Page | null = null;
   private _token: string | null = null;
   private abortado = false;
-  private polling: ReturnType<typeof setInterval> | null = null;
   private leyendo = false;
   private domFirma: string | null = null;
-  // Fallback screenshot (si la lectura DOM falla)
-  private ultimaImagenActiva = false;
-  private ultimoHash: string | null = null;
-  private refrescarHasta = 0;
-  private hashDesde = 0;
-  private imgPendiente: string | null = null;
-  private textoPendiente = "";
-  private filasPendiente = 3;
   private ultimoError: string | null = null;
+  private ultimoMotivoDom = "(inicial)";
   private mousePos: { x: number; y: number } | null = null;
+  private debounce: ReturnType<typeof setTimeout> | null = null;
+  private debounceDesde = 0;
 
   constructor(send: EnviarFn) {
     this.send = send;
@@ -101,6 +110,17 @@ export class SesionCaptcha {
       timezoneId: "America/Argentina/Cordoba",
     });
     this.page = await context.newPage();
+
+    // Binding disponible en window de TODOS los frames (incluidos los iframes
+    // cross-origin del reCAPTCHA y los que se creen después, como el bframe del
+    // desafío). Se registra una sola vez, antes de navegar.
+    await this.page.exposeFunction("__captchaEvento", () => this.onMutacion());
+
+    // Reinyecta el observer cuando el bframe se crea / re-navega (nueva ronda,
+    // recarga del desafío).
+    this.page.on("frameattached", (f) => void this.instalarObserver(f));
+    this.page.on("framenavigated", (f) => void this.instalarObserver(f));
+
     await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
     await this.page.waitForFunction(
       () =>
@@ -108,14 +128,20 @@ export class SesionCaptcha {
         !!document.querySelector(".g-recaptcha iframe"),
       { timeout: 20000 }
     );
+
+    // Observers en el frame principal + los que ya existan (anchor).
+    await this.instalarObserver(this.page.mainFrame());
+    for (const f of this.page.frames()) await this.instalarObserver(f);
+
     this.emitir("listo");
-    this.arrancarPolling();
+    // Lectura inicial por si el widget ya trae estado.
+    this.onMutacion();
   }
 
   async cerrar(): Promise<void> {
     this.abortado = true;
-    if (this.polling) clearInterval(this.polling);
-    this.polling = null;
+    if (this.debounce) clearTimeout(this.debounce);
+    this.debounce = null;
     try {
       await this.browser?.close();
     } catch {
@@ -135,6 +161,57 @@ export class SesionCaptcha {
   }
   private frameDesafio() {
     return this.page?.frames().find((f) => f.url().includes("/recaptcha/api2/bframe"));
+  }
+
+  // Instala un MutationObserver en el documento del frame que vigila los
+  // cambios relevantes del widget (childList + atributos de estado) y avisa a
+  // Node vía el binding. Idempotente por documento (`__obsCaptcha`).
+  private async instalarObserver(frame: Frame): Promise<void> {
+    if (this.abortado) return;
+    const url = frame.url();
+    const esRelevante =
+      frame === this.page?.mainFrame() ||
+      url.includes("/recaptcha/api2/anchor") ||
+      url.includes("/recaptcha/api2/bframe");
+    if (!esRelevante) return;
+    await frame
+      .evaluate(() => {
+        const w = window as unknown as { __obsCaptcha?: MutationObserver; __captchaEvento?: () => void };
+        if (w.__obsCaptcha || typeof w.__captchaEvento !== "function") return;
+        w.__obsCaptcha = new MutationObserver(() => {
+          try {
+            w.__captchaEvento!();
+          } catch {
+            /* binding aún no disponible */
+          }
+        });
+        w.__obsCaptcha.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class", "style", "src", "aria-checked", "aria-hidden"],
+        });
+      })
+      .catch(() => {
+        /* el frame puede haberse desprendido */
+      });
+  }
+
+  // Disparador de evento: coalesce la ráfaga de mutaciones y procesa una vez.
+  private onMutacion(): void {
+    if (this.abortado) return;
+    const ahora = Date.now();
+    if (this.debounce) {
+      // Si la ráfaga ya lleva demasiado, dejamos que dispare en vez de reiniciar.
+      if (ahora - this.debounceDesde >= DEBOUNCE_MAX_MS) return;
+      clearTimeout(this.debounce);
+    } else {
+      this.debounceDesde = ahora;
+    }
+    this.debounce = setTimeout(() => {
+      this.debounce = null;
+      void this.procesarCambio();
+    }, DEBOUNCE_MS);
   }
 
   // El área clicable del desafío. En reCAPTCHA es un ID (#rc-imageselect-target),
@@ -169,9 +246,7 @@ export class SesionCaptcha {
   //
   // Descubrimiento genérico de tiles: cualquier elemento del target con
   // background-image real, quedándonos con los más internos. Si algo falla se
-  // loguea el motivo (una vez por motivo) y el caller cae al modo screenshot.
-  private ultimoMotivoDom = "(inicial)";
-
+  // loguea el motivo (una vez por motivo).
   private async leerDesafioDOM(): Promise<{
     texto: string;
     filas: number;
@@ -327,42 +402,52 @@ export class SesionCaptcha {
     return { texto: leido.texto, filas: leido.filas, imgs: leido.imgs, celdas };
   }
 
-  private arrancarPolling() {
-    this.polling = setInterval(() => this.pollTick(), 500);
+  // ¿El desafío de imágenes está visible en pantalla? (instrucciones + target
+  // con alto). Sirve para distinguir "no hay desafío" (benigno) de "hay
+  // desafío pero no lo pude serializar" (markup cambiado => error visible).
+  private async desafioActivo(): Promise<boolean> {
+    const frame = this.frameDesafio();
+    if (!frame) return false;
+    return frame
+      .evaluate(() => {
+        const inst = document.querySelector(".rc-imageselect-instructions");
+        const target =
+          document.querySelector("#rc-imageselect-target") ||
+          document.querySelector(".rc-imageselect-target") ||
+          document.querySelector("table");
+        return !!inst && !!target && (target as HTMLElement).offsetHeight > 0;
+      })
+      .catch(() => false);
   }
 
-  // Re-lectura inmediata después de una acción: los desafíos dinámicos
-  // reemplazan la imagen de la tile al seleccionarla, sin apretar VERIFICAR.
-  private programarRelectura() {
-    setTimeout(() => this.pollTick(), 250);
-  }
-
-  private async pollTick(): Promise<void> {
+  // Procesa un cambio del widget (llamado tras el debounce). Hace lo mismo que
+  // el viejo tick de polling menos el loop y sin fallback de screenshot.
+  private async procesarCambio(): Promise<void> {
     if (this.abortado || !this.page || this.leyendo) return;
     this.leyendo = true;
     try {
-      // ¿token?
+      // ¿token? (resuelto)
       const token = await this.page.evaluate(() => {
         const g = (globalThis as { grecaptcha?: { getResponse: () => string } }).grecaptcha;
         return g ? g.getResponse() : "";
       });
       if (token) {
         this._token = token;
-        if (this.polling) clearInterval(this.polling);
-        this.polling = null;
         this.emitir("resuelto", { token });
         return;
       }
 
-      // ¿desafío de imágenes? — modo DOM (espejo estructurado)
+      // ¿desafío de imágenes? — espejo DOM estructurado
       const dom = await this.leerDesafioDOM();
+      let problemaLectura: string | null = null;
       if (dom) {
         const firma = JSON.stringify(dom);
         if (firma !== this.domFirma) {
           this.domFirma = firma;
-          console.log(`[captcha] desafio via DOM (${dom.celdas.length} celdas, ${dom.imgs.length} imgs)`);
+          console.log(
+            `[captcha] desafio via DOM (${dom.celdas.length} celdas, ${dom.imgs.length} imgs)`
+          );
           this.emitir("desafio", {
-            modo: "dom",
             texto: dom.texto,
             filas: dom.filas,
             imgs: dom.imgs,
@@ -370,83 +455,41 @@ export class SesionCaptcha {
           });
         }
       } else {
-        // Fallback: lectura por screenshot (comportamiento probado de Fase 1)
         this.domFirma = null;
-        await this.pollTickScreenshot();
-      }
-
-      // ¿error visible del widget? (no colgarse en "Verificando")
-      const anchor = this.frameCheckbox();
-      if (anchor) {
-        const err = await anchor
-          .evaluate(() => {
-            const el = document.querySelector(".rc-anchor-error-message");
-            return el && getComputedStyle(el).display !== "none" ? (el as HTMLElement).innerText.trim() : null;
-          })
-          .catch(() => null);
-        if (err && err !== this.ultimoError) {
-          this.ultimoError = err;
-          this.emitir("error-widget", { mensaje: err });
-        } else if (!err) {
-          this.ultimoError = null;
+        // Sin fallback de screenshot: si el desafío está visible pero no se
+        // pudo leer, es un problema (probable cambio de markup de Google).
+        if (await this.desafioActivo()) {
+          problemaLectura =
+            "No se pudo leer el desafío (posible cambio del widget). Recargá e intentá de nuevo.";
         }
       }
+
+      // ¿error visible del widget del anchor? (no colgarse en "Verificando")
+      const anchor = this.frameCheckbox();
+      const errWidget = anchor
+        ? await anchor
+            .evaluate(() => {
+              const el = document.querySelector(".rc-anchor-error-message");
+              return el && getComputedStyle(el).display !== "none"
+                ? (el as HTMLElement).innerText.trim()
+                : null;
+            })
+            .catch(() => null)
+        : null;
+
+      const err = errWidget || problemaLectura;
+      if (err) {
+        if (err !== this.ultimoError) {
+          this.ultimoError = err;
+          this.emitir("error-widget", { mensaje: err });
+        }
+      } else {
+        this.ultimoError = null;
+      }
     } catch {
-      /* la página puede estar navegando; ignorar el tick */
+      /* la página puede estar navegando; ignorar el evento */
     } finally {
       this.leyendo = false;
-    }
-  }
-
-  // Modo screenshot: solo si la lectura DOM no devuelve nada pero el desafío
-  // sigue activo (markup de Google cambiado, etc).
-  private async pollTickScreenshot(): Promise<void> {
-    const desafio = this.frameDesafio();
-    if (!desafio) return;
-    const activo = await desafio
-      .evaluate(() => {
-        const inst = document.querySelector(".rc-imageselect-instructions");
-        const target =
-          document.querySelector("#rc-imageselect-target") ||
-          document.querySelector(".rc-imageselect-target") ||
-          document.querySelector("table");
-        return inst && target && (target as HTMLElement).offsetHeight > 0
-          ? { texto: (inst as HTMLElement).innerText.trim() }
-          : null;
-      })
-      .catch(() => null);
-    if (!activo) {
-      this.ultimaImagenActiva = false;
-      this.ultimoHash = null;
-      this.imgPendiente = null;
-      return;
-    }
-    const target = await this.elementoDesafio();
-    if (!target) return;
-    const enVentana = Date.now() < this.refrescarHasta;
-    if (!this.ultimaImagenActiva || enVentana) {
-      const img = await target.screenshot({ type: "jpeg", quality: 55 });
-      const hash = img.toString("base64");
-      if (hash !== this.ultimoHash) {
-        this.ultimoHash = hash;
-        this.hashDesde = Date.now();
-        this.imgPendiente = img.toString("base64");
-        this.textoPendiente = activo.texto;
-        this.filasPendiente = await desafio
-          .evaluate(() => document.querySelectorAll(".rc-imageselect-target tr").length || 3)
-          .catch(() => 3);
-      } else if (this.imgPendiente && Date.now() - this.hashDesde >= 500) {
-        this.ultimaImagenActiva = true;
-        this.refrescarHasta = 0;
-        console.log("[captcha] desafio via SCREENSHOT (fallback: lectura DOM:", this.ultimoMotivoDom + ")");
-        this.emitir("desafio", {
-          modo: "screenshot",
-          texto: this.textoPendiente,
-          filas: this.filasPendiente,
-          imagen: this.imgPendiente,
-        });
-        this.imgPendiente = null;
-      }
     }
   }
 
@@ -510,7 +553,7 @@ export class SesionCaptcha {
       await border.click().catch(() => {});
     }
     this.emitir("verificando");
-    this.programarRelectura();
+    // El resultado (desafío / resuelto / error) llega por el MutationObserver.
   }
 
   async clicEnDesafio(nx: number, ny: number): Promise<void> {
@@ -520,7 +563,7 @@ export class SesionCaptcha {
     const box = await target.boundingBox();
     if (!box) return;
     await this.clicHumano(box.x + nx * box.width, box.y + ny * box.height);
-    this.programarRelectura();
+    // El reemplazo dinámico de la tile lo capta el MutationObserver.
   }
 
   async verificar(): Promise<void> {
@@ -528,11 +571,7 @@ export class SesionCaptcha {
     if (!frame) return;
     const btn = await frame.$("#recaptcha-verify-button");
     if (btn) await btn.click();
-    this.ultimaImagenActiva = false;
-    this.ultimoHash = null;
-    this.imgPendiente = null;
-    this.refrescarHasta = Date.now() + 15000;
-    this.programarRelectura();
+    // La ronda siguiente / el ✔ / el error llegan por el MutationObserver.
   }
 
   async recargar(): Promise<void> {
@@ -540,10 +579,7 @@ export class SesionCaptcha {
     if (!frame) return;
     const btn = await frame.$("#recaptcha-reload-button");
     if (btn) await btn.click();
-    this.ultimaImagenActiva = false;
-    this.ultimoHash = null;
-    this.imgPendiente = null;
-    this.refrescarHasta = Date.now() + 15000;
-    this.programarRelectura();
+    this.ultimoError = null;
+    // El nuevo desafío llega por el MutationObserver.
   }
 }

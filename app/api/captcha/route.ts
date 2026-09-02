@@ -6,15 +6,17 @@
 // simultáneas.
 //
 // SOLO funciona en Vercel (o `vc dev`); el upgrade WS no existe en `next dev`.
-// Para desarrollo local usar el worker standalone
-// (scripts/captcha-remoto/server.mjs) apuntando NEXT_PUBLIC_CAPTCHA_WS_URL.
+// Se prueba deployando a un preview de Vercel.
+//
+// Esta ruta solo reenvía: la SesionCaptcha detecta los cambios del widget por
+// evento (MutationObserver en los iframes del reCAPTCHA) y empuja el estado.
 //
 // Protocolo (JSON):
 //   C→S: {type:"iniciar"} | {type:"clic-checkbox"} | {type:"clic-tile",nx,ny}
 //        | {type:"verificar"} | {type:"recargar"} | {type:"abortar"}
 //   S→C: {type:"iniciado"} | {type:"estado",fase,...} | {type:"error",mensaje}
-//   fases: listo | verificando | desafio{imagen,texto,filas} | resuelto{token}
-//          | abortado | error-widget{mensaje}
+//   fases: listo | verificando | desafio{texto,filas,imgs,celdas} |
+//          resuelto{token} | abortado | error-widget{mensaje}
 
 import { experimental_upgradeWebSocket, type WebSocketData } from "@vercel/functions";
 import { WebSocket } from "ws";

@@ -101,8 +101,15 @@ Navegador del usuario              Vercel Function (instancia pinned)
   (`scrollIntoView` sobre el iframe), no dentro del iframe cross-origin.
 - El desafío puede ser **multi-ronda**: tras VERIFICAR llegan más imágenes sin
   pasar el captcha. La UI lo comunica ("puede venir otra ronda").
-- Envío de imágenes **estable** (hash idéntico en 2 lecturas) y solo tras
-  VERIFICAR/recargar → el tráfico baja de decenas de MB a cientos de KB.
+- **Detección por evento, no por polling**: un `MutationObserver` inyectado en
+  los iframes del reCAPTCHA (`api2/anchor` + `api2/bframe`) avisa a Node vía un
+  binding de Playwright (`window.__captchaEvento`) cada vez que el DOM del
+  widget muta. Node coalesce la ráfaga con un debounce corto (~120 ms, tope
+  1.2 s), re-serializa la grilla y emite **solo si la firma del DOM cambió**.
+  No hay `setInterval` ni re-lecturas temporizadas.
+- **Espejo DOM puro, sin screenshots**: si el desafío está visible pero la
+  serialización falla (probable cambio de markup de Google), se emite
+  `error-widget` — no hay modo screenshot de reserva.
 - Selección de tiles con feedback local instantáneo (borde azul + ✔), toggle con
   re-clic, y clic remoto al centro exacto de la celda (`(col+0.5)/filas`).
 
@@ -123,9 +130,9 @@ Componentes:
 
 | Pieza | Path | Rol |
 |---|---|---|
-| Cliente del captcha | `components/biblioteca/CaptchaRemoto.tsx` | WS + espejo (checkbox, desafío, selecciones) |
-| Ruta WS del captcha | `app/api/captcha/route.ts` | Upgrade + `SesionCaptcha` (una por conexión) |
-| Sesión headless | `lib/captchaSesion.ts` | Port de `scripts/captcha-remoto/server.mjs` |
+| Cliente del captcha | `components/biblioteca/CaptchaRemoto.tsx` | Clon visual del reCAPTCHA + espejo WS (checkbox, desafío, selecciones) |
+| Ruta WS del captcha | `app/api/captcha/route.ts` | Upgrade + `SesionCaptcha` (una por conexión); solo reenvía |
+| Sesión headless | `lib/captchaSesion.ts` | Playwright + Chromium; espejo DOM por evento (`MutationObserver` → binding) |
 | Cliente del legacy | `lib/turnosLegacy.ts` | warm-up + POST multipart + clasificación de respuesta |
 | Booking | `app/api/biblioteca/pedir-turno/route.ts` | Valida datos + token, llama a `lib/turnosLegacy` |
 | Página | `app/biblioteca/page.tsx` | Submit real: captcha → booking → banners |
@@ -169,22 +176,29 @@ Variables y configuración:
    - El server serializa la grilla real celda por celda (data-URLs del
      `background-image` computado) + texto + filas, y re-emite solo cuando la
      firma del DOM cambia.
-   - Re-lectura inmediata (~250 ms) tras cada clic reenviado: cubre los desafíos
-     dinámicos que reemplazan la imagen de la tile al seleccionarla, sin
-     apretar VERIFICAR.
-   - Fallback automático al modo screenshot (Fase 1) si la lectura DOM no
-     devuelve nada (celdas.length === 1 en el protocolo).
    - Cliente: grilla por celdas con selección local optimista y merge por
-     imagen (imagen nueva = tile reemplazada = deseleccionada; `''` = tile
-     consumida, gris con ✔).
+     imagen (imagen nueva = tile reemplazada = deseleccionada; celda `null` =
+     tile consumida, gris con ✔).
    - Aviso visible de auto-submit: "Al resolver el captcha se pedirá el turno
      automáticamente con los datos del formulario".
-4. **Pendiente**: fix del 500 en `POST /api/biblioteca/preferencias` (surfacing
+4. **Fase 3 — Espejo por evento + widget fiel** ✅ implementada en esta rama:
+   - Se eliminó el polling por `setInterval`: la detección de cambios ahora es
+     100% por evento (`MutationObserver` en `api2/anchor` + `api2/bframe` →
+     binding `window.__captchaEvento` → debounce ~120 ms en Node → re-lectura
+     y emisión solo si cambió la firma). Los desafíos dinámicos (tile que se
+     reemplaza al seleccionarla) los capta el observer sin timers.
+   - Se eliminó el **modo screenshot** por completo (protocolo, estado del
+     server y rama del cliente). El espejo es lectura DOM pura; si el desafío
+     está visible y no se puede serializar, se emite `error-widget`.
+   - `CaptchaRemoto.tsx` re-estilizado como clon visual fiel del reCAPTCHA de
+     Google (caja `#f9f9f9`/`#d3d3d3`, logo SVG, header `#1a73e8` del desafío,
+     botón VERIFICAR azul). Sigue siendo no funcional: lo maneja el estado WSS.
+5. **Pendiente**: fix del 500 en `POST /api/biblioteca/preferencias` (surfacing
    del error PostgREST agregado; probablemente falten columnas de perfil en la
    tabla — verificar schema en Supabase), "Mis turnos" + cancelación, watcher
    de disponibilidad.
-5. **Limpieza**: `scripts/captcha-remoto/` y `scripts/pedir-turno-biblioteca.mjs`
-   quedan como herramientas locales de diagnóstico.
+6. **Limpieza**: `scripts/pedir-turno-biblioteca.mjs` queda como herramienta
+   local de diagnóstico.
 
 ## 7. Riesgos y plan B
 
