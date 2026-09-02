@@ -148,6 +148,15 @@ Variables y configuración:
   `maxDuration: 300` para la ruta captcha.
 - Chromium: en producción se usa `@sparticuz/chromium` (Linux); como fallback
   (dev local) el launcher cae al `playwright` completo si está instalado.
+- `CAPTCHA_PROXIES` (opcional, opt-in): lista (coma o salto de línea) de
+  proxies por los que sale el headless — `host:port` / `http://user:clave@host:port`
+  / `socks5://host:port`. Sin la variable, salida directa. Se prueban en
+  tandas de 3 y se usa el primero que hace CONNECT a infra de Google. Existe
+  porque la IP de datacenter de Vercel arrastra mala reputación con reCAPTCHA
+  (bucle infinito de desafíos 4×4). Las listas públicas gratis probaron estar
+  muertas/inalcanzables; para una IP **residencial** de verdad hay un helper
+  en `scripts/proxy-casero/` (proxy Node + túnel bore desde una PC en una casa).
+  `CAPTCHA_PROXIES=off` fuerza salida directa.
 
 ## 5. Seguridad
 

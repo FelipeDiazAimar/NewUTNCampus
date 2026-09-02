@@ -59,3 +59,7 @@ sourcefiles/
 # captcha remoto (local)
 scripts/captcha-remoto/.perfil-chromium/
 scripts/captcha-remoto/debug/
+
+# proxy casero (binarios descargados + credenciales generadas)
+scripts/proxy-casero/bin/
+scripts/proxy-casero/credentials.txt
