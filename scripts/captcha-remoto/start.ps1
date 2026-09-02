@@ -1,27 +1,27 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Worker del captcha remoto + túnel.
+# ---------------------------------------------------------------------------
+# Worker del captcha remoto + tunel.
 #
-# Corre el Chromium ACÁ (IP residencial de esta PC, sin proxy) y expone el
+# Corre el Chromium ACA (IP residencial de esta PC, sin proxy) y expone el
 # WebSocket con un Cloudflare quick tunnel (TLS incluido -> wss://). Por el
-# túnel viaja SOLO el WebSocket de la app, no el tráfico de Google.
+# tunel viaja SOLO el WebSocket de la app, no el trafico de Google.
 #
 # Uso:
 #   .\start.ps1                 headless (default)
-#   .\start.ps1 -Headful        Chrome con ventana visible (mejor reputación)
+#   .\start.ps1 -Headful        Chrome con ventana visible (mejor reputacion)
 #   .\start.ps1 -Origin https://tu-app.vercel.app   (allowlist de origin)
 #
-#   1) Ejecutar.  Copiar las 2 env vars que imprime -> Vercel -> Settings ->
+#   1) Ejecutar. Copiar las 2 env vars que imprime -> Vercel -> Settings ->
 #      Environment Variables (Production + Preview).
 #   2) BORRAR CAPTCHA_PROXIES en Vercel (o ponerla en off).
-#   3) Redeploy.  Dejar esta ventana abierta.
+#   3) Redeploy. Dejar esta ventana abierta.
 #
-# El subdominio de trycloudflare.com cambia en cada arranque => al reiniciar,
+# El subdominio de trycloudflare.com cambia en cada arranque: al reiniciar,
 # actualizar NEXT_PUBLIC_CAPTCHA_WS_URL en Vercel y redeploy.
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 param([switch]$Headful, [string]$Origin = "")
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
-$root = Resolve-Path (Join-Path $dir "..\..")
+$root = (Resolve-Path (Join-Path $dir "..\..")).Path
 $bin = Join-Path $dir "bin"
 $tokFile = Join-Path $dir "worker-token.txt"
 $PORT = 8788
@@ -40,7 +40,7 @@ if (Test-Path $tokFile) {
 # 2) Browser de Playwright (una vez)
 Write-Host "Verificando Chromium de Playwright..."
 Push-Location $root
-try { npx --yes playwright install chromium 2>&1 | Select-Object -Last 3 | ForEach-Object { Write-Host "  $_" } }
+try { & npx --yes playwright install chromium 2>&1 | Select-Object -Last 3 | ForEach-Object { Write-Host "  $_" } }
 finally { Pop-Location }
 
 # 3) cloudflared
@@ -50,22 +50,20 @@ if (-not (Test-Path $cf)) {
   Invoke-WebRequest "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cf
 }
 
-# 4) Arrancar el worker  (node + el cli de tsx directamente: Start-Process no
-#    puede lanzar npx.cmd, y matar el PID de node corta limpio)
+# 4) Arrancar el worker (node + cli de tsx directo: Start-Process no lanza
+#    npx.cmd, y matar el PID de node corta limpio)
 $env:CAPTCHA_WORKER_PORT = "$PORT"
 $env:CAPTCHA_WORKER_TOKEN = $TOKEN
 if ($Origin) { $env:CAPTCHA_ALLOWED_ORIGINS = $Origin }
 if ($Headful) { $env:CAPTCHA_HEADFUL = "1" }
 $tsxCli = Join-Path $root "node_modules\tsx\dist\cli.mjs"
 $serverMts = Join-Path $dir "server.mts"
-if (-not (Test-Path $tsxCli)) { throw "Falta node_modules\tsx — corré 'npm install' en la raíz del repo." }
-Push-Location $root
+if (-not (Test-Path $tsxCli)) { throw "Falta node_modules/tsx. Corre 'npm install' en la raiz del repo." }
 $worker = Start-Process node -ArgumentList "`"$tsxCli`"", "`"$serverMts`"" -PassThru -NoNewWindow
-Pop-Location
 Start-Sleep -Seconds 2
-if ($worker.HasExited) { throw "El worker no arrancó (revisá la consola)." }
+if ($worker.HasExited) { throw "El worker no arranco (revisa la consola)." }
 
-# 5) Túnel + leer la URL
+# 5) Tunel + leer la URL
 Write-Host "Abriendo Cloudflare quick tunnel..."
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = $cf
@@ -76,10 +74,11 @@ $psi.UseShellExecute = $false
 $cfp = [System.Diagnostics.Process]::Start($psi)
 
 $wssHost = $null
-for ($i = 0; $i -lt 120 -and -not $cfp.HasExited; $i++) {
+$rx = 'https://([a-z0-9-]+\.trycloudflare\.com)'
+for ($i = 0; $i -lt 150 -and -not $cfp.HasExited; $i++) {
   $line = $cfp.StandardError.ReadLine()
   if ($null -eq $line) { Start-Sleep -Milliseconds 200; continue }
-  $m = [regex]::Match($line, "https://([a-z0-9-]+\.trycloudflare\.com)")
+  $m = [regex]::Match($line, $rx)
   if ($m.Success) { $wssHost = $m.Groups[1].Value; break }
 }
 if (-not $wssHost) {
@@ -88,7 +87,7 @@ if (-not $wssHost) {
 }
 
 Write-Host ""
-Write-Host "======================================================================"
+Write-Host "===================================================================="
 Write-Host " EN VERCEL -> Settings -> Environment Variables (Production + Preview):"
 Write-Host ""
 Write-Host "   NEXT_PUBLIC_CAPTCHA_WS_URL        = wss://$wssHost"
@@ -97,10 +96,10 @@ Write-Host ""
 Write-Host " Y BORRAR (o poner en 'off'):  CAPTCHA_PROXIES"
 Write-Host ""
 Write-Host " Guardar -> Redeploy. Probar el captcha."
-Write-Host " Headful: $($Headful.IsPresent)   Origin allowlist: $(if($Origin){$Origin}else{'(cualquiera)'})"
+Write-Host " Headful: $($Headful.IsPresent)   Origin: $(if($Origin){$Origin}else{'(cualquiera)'})"
 Write-Host ""
 Write-Host " DEJA ESTA VENTANA ABIERTA. Ctrl+C para frenar todo."
-Write-Host "======================================================================"
+Write-Host "===================================================================="
 
 try { $cfp.WaitForExit() }
 finally {
