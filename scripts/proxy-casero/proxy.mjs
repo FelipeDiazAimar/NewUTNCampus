@@ -88,12 +88,30 @@ server.on("connect", (req, clientSocket, head) => {
     return;
   }
   const [host, puerto] = req.url.split(":");
+  const t0 = Date.now();
+  let subidos = 0;
+  let bajados = 0;
   const upstream = net.connect(Number(puerto) || 443, host, () => {
+    log("  upstream conectado", host, (Date.now() - t0) + "ms");
     clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-    if (head && head.length) upstream.write(head);
+    if (head && head.length) {
+      upstream.write(head);
+      subidos += head.length;
+    }
     upstream.pipe(clientSocket);
     clientSocket.pipe(upstream);
   });
+  clientSocket.on("data", (c) => {
+    if (subidos === 0) log("  1er chunk cliente->google", c.length, "b");
+    subidos += c.length;
+  });
+  upstream.on("data", (c) => {
+    if (bajados === 0) log("  1er chunk google->cliente", c.length, "b", (Date.now() - t0) + "ms");
+    bajados += c.length;
+  });
+  const fin = (quien) => log("  cerró " + quien, "subida=" + subidos, "bajada=" + bajados, (Date.now() - t0) + "ms");
+  upstream.on("close", () => fin("google"));
+  clientSocket.on("close", () => fin("cliente"));
   upstream.on("error", (e) => {
     log("  upstream error", host, String(e.code || e.message));
     clientSocket.end();

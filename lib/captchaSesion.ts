@@ -267,8 +267,8 @@ export class SesionCaptcha {
     this.page.on("framenavigated", (f) => void this.instalarObserver(f));
 
     try {
-      // 60s: por el túnel residencial la página del legacy + embeds cargan lento.
-      await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+      // 90s: por el túnel residencial la página del legacy + embeds cargan lento.
+      await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
       this.diag("iniciar:goto-ok", `${BASE}/`);
     } catch (e) {
       this.diag("iniciar:goto-ERROR", String((e as Error).message || e));
@@ -315,9 +315,9 @@ export class SesionCaptcha {
   ): Promise<BrowserContext | null> {
     if (!this.browser) return null;
     const TANDA = 3;
-    // Generoso: por un túnel residencial (Vercel -> bore -> PC -> proxy -> web)
-    // el primer request en frío tarda varios segundos.
-    const TIMEOUT = 20000;
+    // Muy generoso: por un túnel público (bore.pub) el primer request en frío
+    // puede tardar decenas de segundos.
+    const TIMEOUT = 60000;
     for (let base = 0; base < proxies.length && !this.abortado; base += TANDA) {
       const grupo = proxies.slice(base, base + TANDA);
       const pruebas = grupo.map(async (px) => {
