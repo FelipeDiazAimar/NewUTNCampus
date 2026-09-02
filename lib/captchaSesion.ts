@@ -237,16 +237,18 @@ export class SesionCaptcha {
   }
 
   // ── Lectura estructurada del desafío (espejo DOM) ──────────────────────────
-  // Serializa la grilla real celda por celda. Las imágenes viajan como
-  // data-URLs (dedupeadas): las tiles a veces son data-URLs y a veces URLs a
-  // google.com/recaptcha/api2/payload, que el navegador del usuario NO puede
-  // cargar (CORP same-origin) — por eso se hace fetch same-origin desde el
-  // propio iframe y se convierte a data-URL. Cada celda lleva pos/size del
-  // background (puede ser un sprite único cortado con background-position).
+  // Serializa la grilla real celda por celda. La imagen del desafío se dedupea
+  // y viaja como data-URL (fetch same-origin desde el propio iframe: las URLs a
+  // google.com/recaptcha/api2/payload el navegador del usuario NO puede
+  // cargarlas por CORP).
   //
-  // Descubrimiento genérico de tiles: cualquier elemento del target con
-  // background-image real, quedándonos con los más internos. Si algo falla se
-  // loguea el motivo (una vez por motivo).
+  // El reCAPTCHA recorta cada celda de UNA imagen por geometría (un <img>
+  // grande con transform/translate distinto por celda, o una copia por celda
+  // dentro de un wrapper overflow:hidden). Por eso cada celda lleva un
+  // background-position/-size en % — reconstruido desde los rects renderizados
+  // de la celda y de la imagen — que el cliente pinta a cualquier tamaño. Si el
+  // desafío usa un sprite con background-image real, se normaliza pos/size a %.
+  // Si algo falla se loguea el motivo (una vez por motivo).
   private async leerDesafioDOM(): Promise<{
     texto: string;
     filas: number;
@@ -283,32 +285,85 @@ export class SesionCaptcha {
           }
         };
 
-        // Tile de una unidad de celda: el elemento con background-image más
-        // interno entre el contenedor y sus descendientes de tile.
+        // La imagen "grande" del desafío (una sola para toda la grilla en el
+        // 3x3/4x4 inicial; las celdas la recortan por geometría).
+        const imgGrande =
+          (target.querySelector(
+            "img[class*='rc-image-tile'], img[src*='payload'], img[src*='recaptcha']"
+          ) as HTMLImageElement | null) || (target.querySelector("img") as HTMLImageElement | null);
+
+        // Reconstruye el recorte de una celda como background-position/-size en
+        // % (independiente del tamaño al que el cliente pinte la celda) a partir
+        // de los rects renderizados de la celda y de la imagen.
+        const cropDesde = (cellEl: HTMLElement, imgEl: HTMLElement) => {
+          const cr = cellEl.getBoundingClientRect();
+          const ir = imgEl.getBoundingClientRect();
+          const IW = ir.width;
+          const IH = ir.height;
+          const CW = cr.width;
+          const CH = cr.height;
+          if (!IW || !IH || !CW || !CH) return { pos: "center" as const, size: "cover" as const };
+          const sizeX = (IW / CW) * 100;
+          const sizeY = (IH / CH) * 100;
+          const posX = IW > CW ? ((cr.left - ir.left) / (IW - CW)) * 100 : 50;
+          const posY = IH > CH ? ((cr.top - ir.top) / (IH - CH)) * 100 : 50;
+          return {
+            pos: `${posX.toFixed(3)}% ${posY.toFixed(3)}%`,
+            size: `${sizeX.toFixed(3)}% ${sizeY.toFixed(3)}%`,
+          };
+        };
+
+        // Tile de una unidad de celda. Prioridad:
+        //   1) <img> (propia de la celda, o la grande compartida) => crop por
+        //      geometría — el caso normal del reCAPTCHA.
+        //   2) background-image sprite => se normaliza pos/size a %.
         const leerCelda = async (cont: HTMLElement) => {
+          // Tile consumida (ronda dinámica): la celda se atenúa o su imagen
+          // propia queda vacía => null (el cliente la pinta gris con ✔).
+          const sel = cont.querySelector("[class*='dynamic-selected'], [class*='tile-selected']");
+          if (sel && parseFloat(getComputedStyle(sel).opacity || "1") < 0.3) return null;
+
+          const propia = cont.querySelector("img") as HTMLImageElement | null;
+          const propiaVacia = !!propia && propia.complete && propia.naturalWidth === 0;
+          if (propiaVacia) return null;
+          const imgEl = propia && propia.src ? propia : imgGrande;
+          if (imgEl && imgEl.src) {
+            const g = cropDesde(cont, imgEl);
+            return { urlOriginal: imgEl.src, pos: g.pos, size: g.size };
+          }
+
           const candidatos: HTMLElement[] = [
-            cont,
             ...Array.from(
               cont.querySelectorAll<HTMLElement>(
                 "[class*='rc-image-tile'], [style*='background-image']"
               )
             ),
+            cont,
           ];
           for (let i = candidatos.length - 1; i >= 0; i--) {
-            const cs = getComputedStyle(candidatos[i]);
+            const el = candidatos[i];
+            const cs = getComputedStyle(el);
             const bg = cs.backgroundImage;
             if (bg && bg !== "none" && bg.includes("url(")) {
               const m = bg.match(/url\(["']?(.*?)["']?\)/);
+              if (!m) continue;
+              // px -> % relativo al propio elemento del fondo
+              const br = el.getBoundingClientRect();
+              const sz = cs.backgroundSize.split(" ");
+              const ps = cs.backgroundPosition.split(" ");
+              const aPct = (v: string, base: number) =>
+                v.endsWith("%") || !v.endsWith("px") || !base
+                  ? v
+                  : `${(parseFloat(v) / base) * 100}%`;
               return {
-                urlOriginal: m ? m[1] : candidatos[i].querySelector("img")?.src || "",
-                pos: cs.backgroundPosition,
-                size: cs.backgroundSize,
+                urlOriginal: m[1],
+                pos: `${aPct(ps[0] || "50%", br.width)} ${aPct(ps[1] || "50%", br.height)}`,
+                size:
+                  sz.length === 2
+                    ? `${aPct(sz[0], br.width)} ${aPct(sz[1], br.height)}`
+                    : cs.backgroundSize,
               };
             }
-          }
-          const imgEl = cont.querySelector("img");
-          if (imgEl && imgEl.src) {
-            return { urlOriginal: imgEl.src, pos: "center", size: "contain" };
           }
           return null;
         };

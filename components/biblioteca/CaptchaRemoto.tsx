@@ -49,29 +49,22 @@ function wsUrl(): string {
   return proto + location.host + "/api/captcha";
 }
 
-// Glifo del logo de reCAPTCHA recreado con SVG (flechas en círculo).
+// Recreación simple del logo de reCAPTCHA: dos flechas curvas formando un
+// círculo, en el azul de Google.
 function LogoRecaptcha() {
   return (
-    <svg viewBox="0 0 32 32" className="w-8 h-8" aria-hidden="true">
+    <svg viewBox="0 0 40 40" className="w-8 h-8" aria-hidden="true" fill="none">
       <path
+        d="M20 6V1l-7 6 7 6V8a12 12 0 0 1 10.7 6.6l2.5-1.5A15 15 0 0 0 20 6Z"
         fill="#1c3aa9"
-        d="M16 4a12 12 0 0 1 10.4 6l-3 1.7A8.5 8.5 0 0 0 16 7.5V4z"
       />
       <path
+        d="M20 32a12 12 0 0 1-10.7-6.6l-2.5 1.5A15 15 0 0 0 20 34v5l7-6-7-6v6Z"
         fill="#4285f4"
-        d="M26.4 10 28 4l-6.6 1.5L26.4 10z"
       />
       <path
-        fill="#00a55b"
-        d="M16 28A12 12 0 0 1 5.6 22l3-1.7A8.5 8.5 0 0 0 16 24.5V28z"
-      />
-      <path
-        fill="#00a55b"
-        d="M5.6 22 4 28l6.6-1.5L5.6 22z"
-      />
-      <path
+        d="M8 20c0-2.2.6-4.3 1.6-6.1L7.1 12.4A15 15 0 0 0 5 20c0 1 .1 2 .3 3l2.9-.8C8.1 21.5 8 20.8 8 20Z"
         fill="#9aa0a6"
-        d="M4 16A12 12 0 0 1 5.6 10l3 1.7A8.5 8.5 0 0 0 7.5 16H4z"
       />
     </svg>
   );
@@ -205,18 +198,19 @@ export default function CaptchaRemoto({
     estado.fase === "conectando" || estado.fase === "iniciando" || estado.fase === "verificando";
 
   return (
-    <div className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-6 mb-6">
+    <div className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-6 mb-6 flex flex-col items-center text-center">
       <h2 className="text-[16px] font-semibold text-[var(--fg)] mb-1">Verificación de seguridad</h2>
       {estado.fase !== "resuelto" && (
-        <p className="text-[12px] text-[#ff9500] mb-4">
+        <p className="text-[12px] text-[#ff9500] mb-4 max-w-[304px]">
           Al resolver el captcha se pedirá el turno automáticamente con los datos del formulario.
         </p>
       )}
 
-      {/* ── Clon del widget anchor de reCAPTCHA ──────────────────────────── */}
+      {/* ── Clon del widget anchor de reCAPTCHA (se oculta durante el desafío) ── */}
+      {estado.fase !== "desafio" && (
       <div
         onClick={estado.fase === "listo" ? clicCheckbox : undefined}
-        className={`flex items-center gap-3 w-full max-w-[304px] rounded-[3px] border border-[#d3d3d3] bg-[#f9f9f9] px-3 py-3 shadow-[0_0_4px_1px_rgba(0,0,0,0.08)] select-none ${
+        className={`flex items-center gap-3 w-full max-w-[304px] rounded-[3px] border border-[#d3d3d3] bg-[#f9f9f9] px-3 py-3 shadow-[0_0_4px_1px_rgba(0,0,0,0.08)] select-none text-left ${
           estado.fase === "listo" ? "cursor-pointer" : ""
         }`}
         role="checkbox"
@@ -254,6 +248,7 @@ export default function CaptchaRemoto({
           <span className="text-[8px] leading-tight">Privacidad · Términos</span>
         </span>
       </div>
+      )}
 
       {/* Texto de estado bajo el checkbox */}
       {cargando && (
@@ -268,7 +263,7 @@ export default function CaptchaRemoto({
 
       {/* ── Panel del desafío de imágenes ───────────────────────────────── */}
       {estado.fase === "desafio" && (
-        <div className="mt-3 w-full max-w-[304px] rounded-[3px] border border-[#ccc] bg-white overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.15)]">
+        <div className="mt-3 w-full max-w-[304px] rounded-[3px] border border-[#ccc] bg-white overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.15)] text-left">
           <div className="bg-[#1a73e8] text-white px-4 pt-3 pb-4">
             <p className="text-[15px] leading-tight">{estado.texto}</p>
           </div>
@@ -357,7 +352,7 @@ export default function CaptchaRemoto({
 
       {/* error */}
       {estado.fase === "error" && (
-        <div className="mt-3 rounded-xl border border-[#ff3b30]/30 bg-[#ff3b30]/10 p-3">
+        <div className="mt-3 w-full max-w-[304px] rounded-xl border border-[#ff3b30]/30 bg-[#ff3b30]/10 p-3 text-left">
           <p className="text-[13px] text-[#ff3b30]">{estado.mensaje}</p>
           <button
             type="button"
