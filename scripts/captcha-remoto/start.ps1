@@ -50,16 +50,20 @@ if (-not (Test-Path $cf)) {
   Invoke-WebRequest "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cf
 }
 
-# 4) Arrancar el worker
+# 4) Arrancar el worker  (node + el cli de tsx directamente: Start-Process no
+#    puede lanzar npx.cmd, y matar el PID de node corta limpio)
 $env:CAPTCHA_WORKER_PORT = "$PORT"
 $env:CAPTCHA_WORKER_TOKEN = $TOKEN
 if ($Origin) { $env:CAPTCHA_ALLOWED_ORIGINS = $Origin }
 if ($Headful) { $env:CAPTCHA_HEADFUL = "1" }
+$tsxCli = Join-Path $root "node_modules\tsx\dist\cli.mjs"
+$serverMts = Join-Path $dir "server.mts"
+if (-not (Test-Path $tsxCli)) { throw "Falta node_modules\tsx — corré 'npm install' en la raíz del repo." }
 Push-Location $root
-$worker = Start-Process npx -ArgumentList "tsx scripts/captcha-remoto/server.mts" -PassThru -NoNewWindow
+$worker = Start-Process node -ArgumentList "`"$tsxCli`"", "`"$serverMts`"" -PassThru -NoNewWindow
 Pop-Location
 Start-Sleep -Seconds 2
-if ($worker.HasExited) { throw "El worker no arrancó." }
+if ($worker.HasExited) { throw "El worker no arrancó (revisá la consola)." }
 
 # 5) Túnel + leer la URL
 Write-Host "Abriendo Cloudflare quick tunnel..."
