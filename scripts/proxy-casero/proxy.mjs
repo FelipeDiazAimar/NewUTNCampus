@@ -27,10 +27,18 @@ function autorizado(req) {
   return u === USER && p === PASS;
 }
 
+const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
+
 const server = http.createServer((req, res) => {
-  if (!autorizado(req)) {
-    res.writeHead(407, { "Proxy-Authenticate": 'Basic realm="proxy"' });
-    return res.end("Proxy auth required");
+  const ok = autorizado(req);
+  log("REQ ", req.method, req.url, "auth=" + (req.headers["proxy-authorization"] ? "sí" : "no"), ok ? "OK" : "407");
+  if (!ok) {
+    res.writeHead(407, {
+      "Proxy-Authenticate": 'Basic realm="proxy"',
+      "Content-Length": "0",
+      Connection: "close",
+    });
+    return res.end();
   }
   let target;
   try {
@@ -64,21 +72,32 @@ const server = http.createServer((req, res) => {
 // CONNECT = tunneling HTTPS. Es lo que usa el captcha para llegar a
 // www.gstatic.com / www.google.com / turnos.frsfco.utn.edu.ar por 443.
 server.on("connect", (req, clientSocket, head) => {
-  if (!autorizado(req)) {
-    clientSocket.write(
-      'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="proxy"\r\n\r\n'
+  const ok = autorizado(req);
+  log("CONNECT", req.url, "auth=" + (req.headers["proxy-authorization"] ? "sí" : "no"), ok ? "OK" : "407");
+  clientSocket.on("error", () => {});
+  if (!ok) {
+    // end(data): garantiza que el 407 se envía ANTES del FIN (con write+end por
+    // separado, sobre un túnel lento, el FIN puede cortar el 407 y el cliente
+    // se cuelga esperando la respuesta).
+    clientSocket.end(
+      "HTTP/1.1 407 Proxy Authentication Required\r\n" +
+        'Proxy-Authenticate: Basic realm="proxy"\r\n' +
+        "Content-Length: 0\r\n" +
+        "Connection: close\r\n\r\n"
     );
-    return clientSocket.end();
+    return;
   }
   const [host, puerto] = req.url.split(":");
   const upstream = net.connect(Number(puerto) || 443, host, () => {
     clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-    upstream.write(head);
+    if (head && head.length) upstream.write(head);
     upstream.pipe(clientSocket);
     clientSocket.pipe(upstream);
   });
-  upstream.on("error", () => clientSocket.end());
-  clientSocket.on("error", () => upstream.destroy());
+  upstream.on("error", (e) => {
+    log("  upstream error", host, String(e.code || e.message));
+    clientSocket.end();
+  });
 });
 
 server.on("clientError", (_e, sock) => {

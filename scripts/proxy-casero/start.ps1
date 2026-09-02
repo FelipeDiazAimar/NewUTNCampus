@@ -11,9 +11,12 @@
 #      Environment Variables (Production) -> pegar -> Save -> Redeploy.
 #   3) DEJAR ESTA VENTANA ABIERTA. Si la cerrás, se cae el túnel.
 #
-# bore.pub asigna un puerto distinto cada vez que arranca => si reiniciás el
-# script, actualizá CAPTCHA_PROXIES en Vercel con el puerto nuevo.
+# bore.pub asigna un puerto al azar cada arranque. Para que NO cambie (y no
+# tener que editar la env var en cada reinicio), pasá uno fijo:
+#   .\start.ps1 -RemotePort 33245
+# bore.pub lo concede si está libre; si no, cae a uno al azar.
 # ─────────────────────────────────────────────────────────────────────────────
+param([int]$RemotePort = 0)
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
 $bin = Join-Path $dir "bin"
@@ -65,7 +68,9 @@ if ($proxyProc.HasExited) { throw "El proxy no arrancó (¿node en el PATH?)" }
 Write-Host "Abriendo tunel con bore.pub..."
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = $bore
-$psi.Arguments = "local $LOCAL_PORT --to bore.pub"
+$boreArgs = "local $LOCAL_PORT --to bore.pub"
+if ($RemotePort -gt 0) { $boreArgs += " --port $RemotePort" }
+$psi.Arguments = $boreArgs
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.UseShellExecute = $false
