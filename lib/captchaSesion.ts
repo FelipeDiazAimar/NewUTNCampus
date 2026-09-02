@@ -34,6 +34,17 @@ let sesionesActivas = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Flags que sacan las señales más obvias de automatización.
+const STEALTH_ARGS = [
+  "--disable-blink-features=AutomationControlled",
+  "--disable-features=IsolateOrigins,site-per-process,AutomationControlled",
+  "--disable-infobars",
+  "--no-default-browser-check",
+  "--disable-dev-shm-usage",
+];
+// Playwright agrega --enable-automation por defecto (delata al navegador).
+const IGNORAR_ARGS = ["--enable-automation", "--disable-extensions"];
+
 // En Vercel: @sparticuz/chromium (binario Linux para serverless, se descomprime
 // en /tmp). En dev local (no-Linux): cae al playwright completo si está.
 async function lanzarChromium() {
@@ -43,17 +54,64 @@ async function lanzarChromium() {
     const chromiumPkg = core.default ?? core;
     const executablePath = await chromiumPkg.executablePath();
     return chromium.launch({
-      args: [...(chromiumPkg.args ?? []), "--disable-blink-features=AutomationControlled"],
+      args: [...(chromiumPkg.args ?? []), ...STEALTH_ARGS],
+      ignoreDefaultArgs: IGNORAR_ARGS,
       executablePath,
       headless: true,
     });
   }
   const full = await import("playwright");
   return full.chromium.launch({
+    ignoreDefaultArgs: IGNORAR_ARGS,
     headless: true,
-    args: ["--disable-blink-features=AutomationControlled", "--window-size=1280,800"],
+    args: [...STEALTH_ARGS, "--window-size=1280,800"],
   });
 }
+
+// Parche de fingerprint que corre en TODOS los frames antes de sus scripts:
+// borra navigator.webdriver, rellena languages/plugins/chrome y falsea el
+// vendor de WebGL — las señales que reCAPTCHA usa para marcar "headless".
+const STEALTH_INIT = `
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  } catch (e) {}
+  try {
+    Object.defineProperty(navigator, 'languages', { get: () => ['es-AR', 'es', 'en'] });
+  } catch (e) {}
+  try {
+    const mk = (name) => ({ name, filename: name, description: '', length: 1 });
+    const plugins = [mk('Chrome PDF Plugin'), mk('Chrome PDF Viewer'), mk('Native Client')];
+    Object.defineProperty(navigator, 'plugins', { get: () => plugins });
+    Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf' }] });
+  } catch (e) {}
+  try {
+    if (!window.chrome) window.chrome = {};
+    if (!window.chrome.runtime) window.chrome.runtime = {};
+  } catch (e) {}
+  try {
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+  } catch (e) {}
+  try {
+    const q = navigator.permissions && navigator.permissions.query;
+    if (q) {
+      navigator.permissions.query = (p) =>
+        p && p.name === 'notifications'
+          ? Promise.resolve({ state: Notification.permission, onchange: null })
+          : q(p);
+    }
+  } catch (e) {}
+  try {
+    const gp = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function (n) {
+      if (n === 37445) return 'Intel Inc.';
+      if (n === 37446) return 'Intel Iris OpenGL Engine';
+      return gp.call(this, n);
+    };
+  } catch (e) {}
+})();
+`;
 
 type EnviarFn = (obj: Record<string, unknown>) => void;
 
@@ -125,8 +183,16 @@ export class SesionCaptcha {
       viewport: { width: 1280, height: 800 },
       locale: "es-AR",
       timezoneId: "America/Argentina/Cordoba",
+      deviceScaleFactor: 1,
+      isMobile: false,
+      hasTouch: false,
+      colorScheme: "light",
+      extraHTTPHeaders: { "Accept-Language": "es-AR,es;q=0.9,en;q=0.8" },
     });
+    // Parche de fingerprint antes de cualquier script de la página.
+    await context.addInitScript(STEALTH_INIT);
     this.page = await context.newPage();
+    this.diag("iniciar:context-stealth-ok");
 
     // Binding disponible en window de TODOS los frames (incluidos los iframes
     // cross-origin del reCAPTCHA y los que se creen después, como el bframe del
@@ -169,9 +235,36 @@ export class SesionCaptcha {
       frames: this.page.frames().map((f) => f.url().slice(0, 80)),
     });
 
+    // Warm-up: un rato de "actividad humana" (mouse paseando, scroll suave)
+    // antes de que el usuario tilde el checkbox. reCAPTCHA puntúa el
+    // comportamiento previo, no solo el clic.
+    await this.warmup();
+
     this.emitir("listo");
     // Lectura inicial por si el widget ya trae estado.
     this.onMutacion();
+  }
+
+  private async warmup(): Promise<void> {
+    if (!this.page) return;
+    try {
+      const puntos: Array<[number, number]> = [
+        [200 + Math.random() * 300, 200 + Math.random() * 200],
+        [500 + Math.random() * 400, 300 + Math.random() * 250],
+        [300 + Math.random() * 500, 450 + Math.random() * 200],
+      ];
+      for (const [x, y] of puntos) {
+        await this.page.mouse.move(x, y, { steps: 8 + Math.floor(Math.random() * 10) });
+        await sleep(120 + Math.random() * 260);
+      }
+      await this.page.mouse.wheel(0, 120 + Math.random() * 160);
+      await sleep(300 + Math.random() * 500);
+      await this.page.mouse.wheel(0, -(80 + Math.random() * 120));
+      await sleep(400 + Math.random() * 700);
+      this.diag("iniciar:warmup-ok");
+    } catch (e) {
+      this.diag("iniciar:warmup-error", String((e as Error).message || e).slice(0, 80));
+    }
   }
 
   async cerrar(): Promise<void> {
