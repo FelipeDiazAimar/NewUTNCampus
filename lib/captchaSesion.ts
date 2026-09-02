@@ -267,7 +267,8 @@ export class SesionCaptcha {
     this.page.on("framenavigated", (f) => void this.instalarObserver(f));
 
     try {
-      await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      // 60s: por el túnel residencial la página del legacy + embeds cargan lento.
+      await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
       this.diag("iniciar:goto-ok", `${BASE}/`);
     } catch (e) {
       this.diag("iniciar:goto-ERROR", String((e as Error).message || e));
@@ -314,7 +315,9 @@ export class SesionCaptcha {
   ): Promise<BrowserContext | null> {
     if (!this.browser) return null;
     const TANDA = 3;
-    const TIMEOUT = 5000;
+    // Generoso: por un túnel residencial (Vercel -> bore -> PC -> proxy -> web)
+    // el primer request en frío tarda varios segundos.
+    const TIMEOUT = 20000;
     for (let base = 0; base < proxies.length && !this.abortado; base += TANDA) {
       const grupo = proxies.slice(base, base + TANDA);
       const pruebas = grupo.map(async (px) => {
@@ -322,9 +325,12 @@ export class SesionCaptcha {
         try {
           ctx = await this.browser!.newContext({ ...opcs, proxy: px });
           const p = await ctx.newPage();
-          await p.goto("https://www.gstatic.com/generate_204", {
+          // robots.txt: 200 con cuerpo (un 204 rompe la navegación top-level),
+          // en infra de Google => valida también que Google es alcanzable.
+          // waitUntil "commit": alcanza con que llegue la respuesta.
+          await p.goto("https://www.google.com/robots.txt", {
             timeout: TIMEOUT,
-            waitUntil: "domcontentloaded",
+            waitUntil: "commit",
           });
           await p.close();
           return { ok: true as const, ctx, server: px.server };
