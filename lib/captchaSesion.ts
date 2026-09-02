@@ -280,34 +280,7 @@ export class SesionCaptcha {
       this.diag("proxy:directo", "CAPTCHA_PROXIES=off");
     } else {
       this.diag("proxy:probando-lista", { candidatos: proxies.length });
-      let i = 0;
-      for (const px of proxies) {
-        i++;
-        let ctx: BrowserContext | null = null;
-        try {
-          ctx = await this.browser.newContext({ ...opcsContext, proxy: px });
-          const p = await ctx.newPage();
-          // CONNECT de prueba a infra de Google (204, chico y rápido).
-          await p.goto("https://www.gstatic.com/generate_204", {
-            timeout: 6000,
-            waitUntil: "domcontentloaded",
-          });
-          await p.close();
-          context = ctx;
-          this.diag("proxy:ok", { server: px.server, intento: i });
-          break;
-        } catch (e) {
-          this.diag("proxy:fallo", {
-            server: px.server,
-            error: String((e as Error).message || e).slice(0, 70),
-          });
-          try {
-            await ctx?.close();
-          } catch {
-            /* nada */
-          }
-        }
-      }
+      context = await this.elegirProxy(proxies, opcsContext);
       if (!context) {
         this.diag("proxy:TODOS-FALLARON", `${proxies.length} proxies sin conexión`);
         throw new Error(
@@ -370,6 +343,59 @@ export class SesionCaptcha {
     this.emitir("listo");
     // Lectura inicial por si el widget ya trae estado.
     this.onMutacion();
+  }
+
+  // Prueba proxies en tandas paralelas (5 a la vez) con un CONNECT a infra de
+  // Google. Devuelve el contexto del primero que conecta y cierra el resto.
+  private async elegirProxy(
+    proxies: ProxyCfg[],
+    opcs: Parameters<Browser["newContext"]>[0]
+  ): Promise<BrowserContext | null> {
+    if (!this.browser) return null;
+    const TANDA = 5;
+    const TIMEOUT = 5000;
+    for (let base = 0; base < proxies.length && !this.abortado; base += TANDA) {
+      const grupo = proxies.slice(base, base + TANDA);
+      const pruebas = grupo.map(async (px) => {
+        let ctx: BrowserContext | null = null;
+        try {
+          ctx = await this.browser!.newContext({ ...opcs, proxy: px });
+          const p = await ctx.newPage();
+          await p.goto("https://www.gstatic.com/generate_204", {
+            timeout: TIMEOUT,
+            waitUntil: "domcontentloaded",
+          });
+          await p.close();
+          return { ok: true as const, ctx, server: px.server };
+        } catch (e) {
+          try {
+            await ctx?.close();
+          } catch {
+            /* nada */
+          }
+          return { ok: false as const, server: px.server, error: String((e as Error).message || e) };
+        }
+      });
+      const resultados = await Promise.all(pruebas);
+      const ganador = resultados.find((r) => r.ok);
+      for (const r of resultados) {
+        if (r === ganador) continue;
+        if (r.ok) {
+          try {
+            await r.ctx.close();
+          } catch {
+            /* nada */
+          }
+        } else {
+          this.diag("proxy:fallo", { server: r.server, error: r.error.slice(0, 60) });
+        }
+      }
+      if (ganador && ganador.ok) {
+        this.diag("proxy:ok", { server: ganador.server, intento: base + 1 });
+        return ganador.ctx;
+      }
+    }
+    return null;
   }
 
   private async warmup(): Promise<void> {
