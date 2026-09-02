@@ -84,8 +84,13 @@ function parsearProxies(): ProxyCfg[] {
 
 const HAY_PROXY = parsearProxies().length > 0;
 
+// CAPTCHA_HEADFUL=1 => Chrome con ventana visible (solo tiene sentido en el
+// worker de escritorio: con IP residencial + navegador real la reputación con
+// reCAPTCHA es casi perfecta). En Vercel se ignora (siempre headless).
+const HEADFUL = process.env.CAPTCHA_HEADFUL === "1" && process.platform !== "linux";
+
 // En Vercel: @sparticuz/chromium (binario Linux para serverless, se descomprime
-// en /tmp). En dev local (no-Linux): cae al playwright completo si está.
+// en /tmp). En dev local / worker (no-Linux): cae al playwright completo.
 async function lanzarChromium() {
   // Si hay proxies, se lanza con un proxy "per-context" ficticio para poder
   // fijar el proxy real (y rotarlo) a nivel de contexto sin relanzar Chromium.
@@ -106,7 +111,7 @@ async function lanzarChromium() {
   const full = await import("playwright");
   return full.chromium.launch({
     ignoreDefaultArgs: IGNORAR_ARGS,
-    headless: true,
+    headless: !HEADFUL,
     args: [...STEALTH_ARGS, "--window-size=1280,800"],
     proxy,
   });

@@ -49,9 +49,14 @@ type Diag = { paso: string; detalle?: unknown; t: number };
 
 function wsUrl(): string {
   const custom = process.env.NEXT_PUBLIC_CAPTCHA_WS_URL;
-  if (custom) return custom;
-  const proto = location.protocol === "https:" ? "wss://" : "ws://";
-  return proto + location.host + "/api/captcha";
+  const base = custom || `${location.protocol === "https:" ? "wss://" : "ws://"}${location.host}/api/captcha`;
+  // Token del worker standalone (no es secreto real: va en el bundle; sirve
+  // junto con la URL efímera del túnel y el tope de sesiones).
+  const token = process.env.NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN;
+  if (custom && token) {
+    return base + (base.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+  }
+  return base;
 }
 
 // Recreación simple del logo de reCAPTCHA: dos flechas curvas formando un

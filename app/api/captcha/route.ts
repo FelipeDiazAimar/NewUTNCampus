@@ -21,7 +21,7 @@
 
 import { experimental_upgradeWebSocket, type WebSocketData } from "@vercel/functions";
 import { WebSocket } from "ws";
-import { SesionCaptcha, MAX_SESIONES_CAPTCHA } from "@/lib/captchaSesion";
+import { crearCaptchaHandler } from "@/lib/captchaHandler";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -42,65 +42,15 @@ export async function GET(req: Request) {
     return new Response("No autorizado", { status: 401 });
   }
 
-  return experimental_upgradeWebSocket((ws: WebSocket) => {
-    let sesion: SesionCaptcha | null = null;
-
-    const send = (obj: Record<string, unknown>) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
-    };
-
-    ws.on("message", async (data: WebSocketData) => {
-      let msg: Record<string, unknown>;
-      try {
-        msg = JSON.parse(String(data));
-      } catch {
-        return;
-      }
-      console.log("[captcha] C->S", msg.type, msg.type === "clic-tile" ? { nx: msg.nx, ny: msg.ny } : "");
-      try {
-        switch (msg.type) {
-          case "iniciar": {
-            if (!SesionCaptcha.cupoDisponible) {
-              send({
-                type: "error",
-                mensaje: `Hay ${MAX_SESIONES_CAPTCHA} sesiones activas. Esperá un momento.`,
-              });
-              return;
-            }
-            sesion = new SesionCaptcha(send);
-            send({ type: "iniciado" });
-            await sesion.iniciar();
-            break;
-          }
-          case "clic-checkbox":
-            await sesion?.clicCheckbox();
-            break;
-          case "clic-tile":
-            await sesion?.clicEnDesafio(Number(msg.nx), Number(msg.ny));
-            break;
-          case "verificar":
-            await sesion?.verificar();
-            break;
-          case "recargar":
-            await sesion?.recargar();
-            break;
-          case "abortar":
-            await sesion?.cerrar();
-            sesion = null;
-            send({ type: "estado", fase: "abortado" });
-            break;
-        }
-      } catch (e) {
-        const mensaje = String((e as Error).message || e);
-        console.error("[captcha] handler ERROR en", msg.type, "-", mensaje);
-        send({ type: "diag", paso: `handler:ERROR:${msg.type}`, detalle: mensaje, t: Date.now() });
-        send({ type: "error", mensaje });
-      }
-    });
-
-    ws.on("close", async () => {
-      await sesion?.cerrar();
-      sesion = null;
-    });
-  }, { maxPayload: MAX_PAYLOAD });
+  return experimental_upgradeWebSocket(
+    (ws: WebSocket) => {
+      const send = (obj: Record<string, unknown>) => {
+        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+      };
+      const handler = crearCaptchaHandler(send);
+      ws.on("message", (data: WebSocketData) => void handler.manejar(data));
+      ws.on("close", () => void handler.cerrar());
+    },
+    { maxPayload: MAX_PAYLOAD }
+  );
 }
