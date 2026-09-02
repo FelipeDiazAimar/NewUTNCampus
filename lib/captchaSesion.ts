@@ -325,8 +325,9 @@ export class SesionCaptcha {
         };
 
         // La imagen "grande" del desafío (una sola para toda la grilla en el
-        // 3x3/4x4 inicial; las celdas la recortan por geometría).
-        const imgGrande =
+        // 3x3/4x4 inicial; las celdas la recortan por geometría). Se re-apunta
+        // a la tabla entrante más abajo, ya calculada `tabla`.
+        let imgGrande =
           (target.querySelector(
             "img[class*='rc-image-tile'], img[src*='payload'], img[src*='recaptcha']"
           ) as HTMLImageElement | null) || (target.querySelector("img") as HTMLImageElement | null);
@@ -414,9 +415,24 @@ export class SesionCaptcha {
         const mapa = new Map<string, number>();
         const celdas: ({ i: number; pos: string; size: string } | null)[] = [];
 
+        // Durante la transición entre desafíos reCAPTCHA deja DOS tablas en el
+        // DOM (la saliente + la entrante) => leer todos los <td> daba grillas
+        // fantasma de 32 celdas / 8 filas. Nos quedamos con la última tabla
+        // visible (la entrante).
+        const tablas = Array.from(target.querySelectorAll("table")).filter(
+          (t) => (t as HTMLElement).offsetHeight > 0 && (t as HTMLElement).getClientRects().length > 0
+        );
+        const tabla: Element = tablas[tablas.length - 1] || target;
+        imgGrande =
+          (tabla.querySelector(
+            "img[class*='rc-image-tile'], img[src*='payload'], img[src*='recaptcha']"
+          ) as HTMLImageElement | null) ||
+          (tabla.querySelector("img") as HTMLImageElement | null) ||
+          imgGrande;
+
         // Unidades de celda: los td mantienen la alineación de la grilla
         // (un td sin tile => celda null/consumida, no se salta).
-        const tds = target.querySelectorAll("td");
+        const tds = tabla.querySelectorAll("td");
         if (tds.length) {
           for (const td of tds) {
             const r = await leerCelda(td);
@@ -468,7 +484,7 @@ export class SesionCaptcha {
 
         if (celdas.every((c) => c === null)) return { motivo: "todas-vacias" } as const;
 
-        const trs = target.querySelectorAll("tr").length;
+        const trs = tabla.querySelectorAll("tr").length;
         const porCount: Record<number, number> = { 4: 2, 9: 3, 16: 4 };
         const filas =
           trs ||
