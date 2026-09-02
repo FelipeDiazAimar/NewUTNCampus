@@ -310,7 +310,10 @@ export function FileViewer({ content }: { content: MoodleContent }) {
               </svg>
             )}
           </button>
-          <button onClick={handleSaveAs} title="Guardar como…" className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
+          {/* "Guardar como…" (elegir carpeta) sólo tiene sentido en escritorio;
+              en móvil el navegador no soporta showSaveFilePicker y haría lo
+              mismo que el botón de descarga directa. */}
+          <button onClick={handleSaveAs} title="Guardar como…" className="hidden lg:block text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
               <polyline points="12,11 12,17"/>
