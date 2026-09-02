@@ -67,8 +67,15 @@ export async function POST(req: NextRequest) {
 
   if (!res.ok) {
     const err = await res.text();
-    console.error("[biblioteca/preferencias POST]", err);
-    return NextResponse.json({ error: "Error guardando" }, { status: 500 });
+    console.error("[biblioteca/preferencias POST]", res.status, err);
+    let detalle = err.slice(0, 400);
+    try {
+      const j = JSON.parse(err);
+      detalle = j.message || j.error_description || detalle;
+    } catch {
+      /* body no JSON */
+    }
+    return NextResponse.json({ error: "Error guardando", detalle }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

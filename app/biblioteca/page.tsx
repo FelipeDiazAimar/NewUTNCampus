@@ -9,6 +9,7 @@ import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import DropdownSelect, { type DropdownOption } from "@/components/DropdownSelect";
 import CalendarPicker from "@/components/CalendarPicker";
+import CaptchaRemoto from "@/components/biblioteca/CaptchaRemoto";
 
 type UserProfile = {
   nombre: string;
@@ -73,12 +74,14 @@ export default function BibliotecaPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [captchaAbierto, setCaptchaAbierto] = useState(false);
   const prefSaved = useRef(false);
 
   const [profile, setProfile] = useState<UserProfile>({
     nombre: "", apellido: "", dni: "", tipoDocumento: "DNI",
     email: "", telefono: "", localidad: "", provincia: "", carrera: "",
   });
+  const [dniLookup, setDniLookup] = useState<"idle" | "loading" | "found" | "not_found" | "error">("idle");
 
   const [turno, setTurno] = useState<TurnoData>({
     area: "",
@@ -252,6 +255,38 @@ export default function BibliotecaPage() {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
 
+  // ── Autocompletado por DNI (como el buscarPersona() del original) ──────────
+  const buscarPersona = useCallback(async (rawDni: string) => {
+    const dni = rawDni.trim();
+    if (!/^\d{6,15}$/.test(dni)) return;
+    setDniLookup("loading");
+    try {
+      const res = await fetch(`/api/biblioteca/buscar-persona?dni=${dni}`);
+      const json = await res.json();
+      if (json.status === "found") {
+        setProfile((prev) => ({
+          ...prev,
+          nombre: json.nombre || prev.nombre,
+          apellido: json.apellido || prev.apellido,
+          tipoDocumento: (["DNI", "Pasaporte", "LC", "LE", "DU"] as const).includes(json.tipo_documento)
+            ? json.tipo_documento
+            : prev.tipoDocumento,
+          email: json.email || prev.email,
+          telefono: json.telefono || prev.telefono,
+          localidad: json.localidad || prev.localidad,
+          provincia: json.provincia || prev.provincia,
+        }));
+        setDniLookup("found");
+      } else if (json.status === "not_found") {
+        setDniLookup("not_found");
+      } else {
+        setDniLookup("error");
+      }
+    } catch {
+      setDniLookup("error");
+    }
+  }, []);
+
   const saveProfile = () => {
     if (isGuestMode()) { triggerGuestBlock(); return; }
     if (isOffline()) { triggerOfflineBlock(); return; }
@@ -275,8 +310,6 @@ export default function BibliotecaPage() {
     e.preventDefault();
     if (isGuestMode()) { triggerGuestBlock(); return; }
     if (isOffline()) { triggerOfflineBlock(); return; }
-    setSubmitStatus("loading");
-    setErrorMsg("");
     try {
       if (!profile.nombre || !profile.apellido || !profile.dni || !profile.email) {
         setErrorMsg("Por favor completa tus datos personales primero.");
@@ -288,29 +321,57 @@ export default function BibliotecaPage() {
         setSubmitStatus("error");
         return;
       }
-
-      const formData = new FormData();
-      formData.append("nro_documento", profile.dni);
-      formData.append("tipo_documento", profile.tipoDocumento);
-      formData.append("nombre", profile.nombre);
-      formData.append("apellido", profile.apellido);
-      formData.append("email", profile.email);
-      formData.append("telefono", profile.telefono);
-      formData.append("localidad", profile.localidad);
-      formData.append("provincia", profile.provincia);
-      formData.append("responsable", turno.area);
-      formData.append("tematica", turno.tematica);
-      formData.append("datepicker", toApiDate(turno.fecha));
-      formData.append("horarios", turno.horario);
-
       if (!prefSaved.current) saveToSupabase({ area_id: turno.area, tematica_id: turno.tematica });
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setSubmitStatus("success");
-      setTimeout(() => router.push("/dashboard"), 2000);
+      // El alta real requiere captcha: abrir la verificación remota y postear
+      // el token en onResuelto.
+      setSubmitStatus("idle");
+      setCaptchaAbierto(true);
     } catch {
       setErrorMsg("Error al procesar el turno. Intenta de nuevo.");
       setSubmitStatus("error");
+    }
+  };
+
+  const handleCaptchaResuelto = async (token: string) => {
+    setCaptchaAbierto(false);
+    setSubmitStatus("loading");
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/biblioteca/pedir-turno", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          responsable: turno.area,
+          areaDesc: areaOptions.find((a) => a.value === turno.area)?.label ?? "",
+          tematica: turno.tematica,
+          tematicaDesc: tematicaOpts.find((t) => t.value === turno.tematica)?.label ?? "",
+          fecha: toApiDate(turno.fecha),
+          idHorario: turno.horario,
+          horarioDesc: horarioOpts.find((h) => h.value === turno.horario)?.label ?? "",
+          tipoDocumento: profile.tipoDocumento,
+          nroDocumento: profile.dni,
+          nombre: profile.nombre,
+          apellido: profile.apellido,
+          email: profile.email,
+          telefono: profile.telefono,
+          localidad: profile.localidad,
+          provincia: profile.provincia,
+          captchaToken: token,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSubmitStatus("success");
+        setErrorMsg("");
+        setTimeout(() => router.push("/dashboard"), 2500);
+      } else {
+        setSubmitStatus("error");
+        setErrorMsg(json.mensaje || "El sistema de turnos rechazó la solicitud.");
+      }
+    } catch {
+      setSubmitStatus("error");
+      setErrorMsg("Error de red al confirmar el turno. Intenta de nuevo.");
     }
   };
 
@@ -453,6 +514,14 @@ export default function BibliotecaPage() {
           </div>
         </form>
 
+        {/* Verificación remota (captcha) */}
+        {captchaAbierto && submitStatus !== "success" && (
+          <CaptchaRemoto
+            onResuelto={handleCaptchaResuelto}
+            onCancelar={() => setCaptchaAbierto(false)}
+          />
+        )}
+
         {/* Datos personales accordion */}
         <div className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] overflow-hidden">
           <button
@@ -486,11 +555,34 @@ export default function BibliotecaPage() {
                 {([ ["dni", "Nro. Documento", "12345678", "text"], ["nombre", "Nombre", "Juan", "text"] ] as const).map(([f, lbl, ph, tp]) => (
                   <div key={f}>
                     <label className="block text-[12px] font-semibold text-[var(--secondary)] uppercase tracking-wider mb-1.5">{lbl}</label>
-                    <input type={tp} value={profile[f]} onChange={(e) => handleProfileChange(f, e.target.value)} placeholder={ph}
-                      className="w-full rounded-lg border border-[var(--separator)] bg-[var(--surface)] px-3 py-2 text-[14px] text-[var(--fg)] outline-none focus:border-[#007aff]" />
+                    <input
+                      type={tp}
+                      value={profile[f]}
+                      onChange={(e) => handleProfileChange(f, e.target.value)}
+                      onBlur={f === "dni" ? (e) => buscarPersona(e.currentTarget.value) : undefined}
+                      placeholder={ph}
+                      className="w-full rounded-lg border border-[var(--separator)] bg-[var(--surface)] px-3 py-2 text-[14px] text-[var(--fg)] outline-none focus:border-[#007aff]"
+                    />
                   </div>
                 ))}
               </div>
+
+              {dniLookup !== "idle" && (
+                <p
+                  className={`text-[12px] ${
+                    dniLookup === "found"
+                      ? "text-[#34c759]"
+                      : dniLookup === "error"
+                      ? "text-[#ff3b30]"
+                      : "text-[var(--secondary)]"
+                  }`}
+                >
+                  {dniLookup === "loading" && "Buscando datos en el sistema de turnos..."}
+                  {dniLookup === "found" && "Datos autocompletados desde el sistema de turnos."}
+                  {dniLookup === "not_found" && "No hay datos previos registrados con ese documento."}
+                  {dniLookup === "error" && "No se pudo consultar el sistema de turnos."}
+                </p>
+              )}
 
               <div>
                 <label className="block text-[12px] font-semibold text-[var(--secondary)] uppercase tracking-wider mb-1.5">Apellido</label>
