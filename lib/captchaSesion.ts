@@ -15,7 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { Browser, Frame, Page } from "playwright-core";
+import type { Browser, BrowserContext, Frame, Page } from "playwright-core";
 
 const BASE = "https://turnos.frsfco.utn.edu.ar:4443";
 const UA =
@@ -45,9 +45,51 @@ const STEALTH_ARGS = [
 // Playwright agrega --enable-automation por defecto (delata al navegador).
 const IGNORAR_ARGS = ["--enable-automation", "--disable-extensions"];
 
+// ── Proxy (residencial) ──────────────────────────────────────────────────────
+// La IP de datacenter de Vercel arrastra mala reputación con reCAPTCHA (bucle
+// infinito de desafíos 4x4). Con CAPTCHA_PROXIES el headless sale por un proxy.
+//
+// CAPTCHA_PROXIES: lista separada por coma o salto de línea. Cada entrada:
+//   host:port                         (se asume http://)
+//   http://host:port
+//   http://usuario:clave@host:port
+//   socks5://host:port                (socks4 NO lo soporta Playwright)
+// Se prueban en orden (hasta MAX_PROXY_INTENTOS) y se usa el primero que
+// conecta. Sin la variable, el headless sale directo (comportamiento actual).
+type ProxyCfg = { server: string; username?: string; password?: string };
+
+const MAX_PROXY_INTENTOS = 15;
+
+function parsearProxies(): ProxyCfg[] {
+  const raw = process.env.CAPTCHA_PROXIES?.trim();
+  if (!raw) return [];
+  return raw
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((tok): ProxyCfg => {
+      const conEsquema = tok.includes("://") ? tok : "http://" + tok;
+      try {
+        const u = new URL(conEsquema);
+        const cfg: ProxyCfg = { server: `${u.protocol}//${u.host}` };
+        if (u.username) cfg.username = decodeURIComponent(u.username);
+        if (u.password) cfg.password = decodeURIComponent(u.password);
+        return cfg;
+      } catch {
+        return { server: conEsquema };
+      }
+    })
+    .slice(0, MAX_PROXY_INTENTOS);
+}
+
+const HAY_PROXY = !!process.env.CAPTCHA_PROXIES?.trim();
+
 // En Vercel: @sparticuz/chromium (binario Linux para serverless, se descomprime
 // en /tmp). En dev local (no-Linux): cae al playwright completo si está.
 async function lanzarChromium() {
+  // Si hay proxies, se lanza con un proxy "per-context" ficticio para poder
+  // fijar el proxy real (y rotarlo) a nivel de contexto sin relanzar Chromium.
+  const proxy = HAY_PROXY ? { server: "http://per-context" } : undefined;
   const { chromium } = await import("playwright-core");
   if (process.platform === "linux") {
     const core = await import("@sparticuz/chromium");
@@ -58,6 +100,7 @@ async function lanzarChromium() {
       ignoreDefaultArgs: IGNORAR_ARGS,
       executablePath,
       headless: true,
+      proxy,
     });
   }
   const full = await import("playwright");
@@ -65,6 +108,7 @@ async function lanzarChromium() {
     ignoreDefaultArgs: IGNORAR_ARGS,
     headless: true,
     args: [...STEALTH_ARGS, "--window-size=1280,800"],
+    proxy,
   });
 }
 
@@ -178,7 +222,7 @@ export class SesionCaptcha {
       this.diag("iniciar:chromium-ERROR", String((e as Error).message || e));
       throw e;
     }
-    const context = await this.browser.newContext({
+    const opcsContext = {
       userAgent: UA,
       viewport: { width: 1280, height: 800 },
       locale: "es-AR",
@@ -186,13 +230,54 @@ export class SesionCaptcha {
       deviceScaleFactor: 1,
       isMobile: false,
       hasTouch: false,
-      colorScheme: "light",
+      colorScheme: "light" as const,
       extraHTTPHeaders: { "Accept-Language": "es-AR,es;q=0.9,en;q=0.8" },
-    });
+    };
+
+    const proxies = parsearProxies();
+    let context: BrowserContext | null = null;
+    if (proxies.length === 0) {
+      context = await this.browser.newContext(opcsContext);
+      this.diag("proxy:directo", "sin CAPTCHA_PROXIES");
+    } else {
+      for (const px of proxies) {
+        let ctx: BrowserContext | null = null;
+        try {
+          ctx = await this.browser.newContext({ ...opcsContext, proxy: px });
+          const p = await ctx.newPage();
+          // CONNECT de prueba a infra de Google (204, chico y rápido).
+          await p.goto("https://www.gstatic.com/generate_204", {
+            timeout: 9000,
+            waitUntil: "domcontentloaded",
+          });
+          await p.close();
+          context = ctx;
+          this.diag("proxy:ok", px.server);
+          break;
+        } catch (e) {
+          this.diag("proxy:fallo", {
+            server: px.server,
+            error: String((e as Error).message || e).slice(0, 90),
+          });
+          try {
+            await ctx?.close();
+          } catch {
+            /* nada */
+          }
+        }
+      }
+      if (!context) {
+        this.diag("proxy:TODOS-FALLARON", `${proxies.length} proxies sin conexión`);
+        throw new Error(
+          "Ningún proxy de CAPTCHA_PROXIES respondió. Actualizá la lista o quitá la variable para salir directo."
+        );
+      }
+    }
+
     // Parche de fingerprint antes de cualquier script de la página.
     await context.addInitScript(STEALTH_INIT);
     this.page = await context.newPage();
-    this.diag("iniciar:context-stealth-ok");
+    this.diag("iniciar:context-ok");
 
     // Binding disponible en window de TODOS los frames (incluidos los iframes
     // cross-origin del reCAPTCHA y los que se creen después, como el bframe del
