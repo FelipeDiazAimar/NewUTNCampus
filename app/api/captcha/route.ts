@@ -15,6 +15,7 @@
 //   C→S: {type:"iniciar"} | {type:"clic-checkbox"} | {type:"clic-tile",nx,ny}
 //        | {type:"verificar"} | {type:"recargar"} | {type:"abortar"}
 //   S→C: {type:"iniciado"} | {type:"estado",fase,...} | {type:"error",mensaje}
+//        | {type:"diag",paso,detalle,t}  (traza paso a paso para depurar)
 //   fases: listo | verificando | desafio{texto,filas,imgs,celdas} |
 //          resuelto{token} | abortado | error-widget{mensaje}
 
@@ -55,6 +56,7 @@ export async function GET(req: Request) {
       } catch {
         return;
       }
+      console.log("[captcha] C->S", msg.type, msg.type === "clic-tile" ? { nx: msg.nx, ny: msg.ny } : "");
       try {
         switch (msg.type) {
           case "iniciar": {
@@ -89,7 +91,10 @@ export async function GET(req: Request) {
             break;
         }
       } catch (e) {
-        send({ type: "error", mensaje: String((e as Error).message || e) });
+        const mensaje = String((e as Error).message || e);
+        console.error("[captcha] handler ERROR en", msg.type, "-", mensaje);
+        send({ type: "diag", paso: `handler:ERROR:${msg.type}`, detalle: mensaje, t: Date.now() });
+        send({ type: "error", mensaje });
       }
     });
 

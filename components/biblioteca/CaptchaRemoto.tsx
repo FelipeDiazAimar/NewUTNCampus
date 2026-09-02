@@ -40,7 +40,12 @@ type MensajeServidor = {
   celdas?: CeldaDom[];
   token?: string;
   mensaje?: string;
+  paso?: string;
+  detalle?: unknown;
+  t?: number;
 };
+
+type Diag = { paso: string; detalle?: unknown; t: number };
 
 function wsUrl(): string {
   const custom = process.env.NEXT_PUBLIC_CAPTCHA_WS_URL;
@@ -79,8 +84,12 @@ export default function CaptchaRemoto({
 }) {
   const [estado, setEstado] = useState<Estado>({ fase: "conectando" });
   const [seleccionadas, setSeleccionadas] = useState<Set<number>>(new Set());
+  const [diags, setDiags] = useState<Diag[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-  const prevCeldas = useRef<CeldaDom[]>([]);
+  // Ronda actual: texto de la consigna + data-URL por celda. Sirve para
+  // resetear la selección cuando cambia el desafío (y solo conservarla en las
+  // celdas cuya imagen no cambió dentro de la misma ronda).
+  const rondaRef = useRef<{ texto: string; firmas: string[] }>({ texto: "", firmas: [] });
 
   useEffect(() => {
     const ws = new WebSocket(wsUrl());
@@ -89,6 +98,10 @@ export default function CaptchaRemoto({
     ws.onopen = () => ws.send(JSON.stringify({ type: "iniciar" }));
     ws.onmessage = (ev) => {
       const m: MensajeServidor = JSON.parse(ev.data);
+      if (m.type === "diag") {
+        setDiags((d) => [...d, { paso: m.paso || "?", detalle: m.detalle, t: m.t || Date.now() }].slice(-60));
+        return;
+      }
       if (m.type === "error") {
         setEstado({ fase: "error", mensaje: m.mensaje || "Error del servidor" });
         return;
@@ -104,28 +117,24 @@ export default function CaptchaRemoto({
           );
           break;
         case "desafio": {
-          // Merge — conservar selección solo en celdas cuya firma (img + pos +
-          // size) no cambió (tile reemplazada = deseleccionada; celda null =
-          // consumida).
           const celdas = m.celdas ?? [];
-          setSeleccionadas((prev) => {
-            const nuevas = new Set<number>();
+          const imgs = m.imgs ?? [];
+          const texto = m.texto || "";
+          // Firma por celda = su data-URL (o marcador si es null/consumida).
+          const firmaDe = (c: CeldaDom) => (c ? imgs[c.i] ?? "" : "·null·");
+          const prev = rondaRef.current;
+          // Misma ronda solo si la consigna y la cantidad de celdas coinciden.
+          const mismaRonda = prev.texto === texto && prev.firmas.length === celdas.length;
+          setSeleccionadas((old) => {
+            if (!mismaRonda) return new Set();
+            const next = new Set<number>();
             celdas.forEach((c, idx) => {
-              const prevC = prevCeldas.current[idx];
-              if (c && prevC && c.i === prevC.i && c.pos === prevC.pos && prev.has(idx)) {
-                nuevas.add(idx);
-              }
+              if (c && old.has(idx) && prev.firmas[idx] === firmaDe(c)) next.add(idx);
             });
-            return nuevas;
+            return next;
           });
-          prevCeldas.current = celdas;
-          setEstado({
-            fase: "desafio",
-            texto: m.texto || "",
-            filas: m.filas || 3,
-            imgs: m.imgs ?? [],
-            celdas,
-          });
+          rondaRef.current = { texto, firmas: celdas.map(firmaDe) };
+          setEstado({ fase: "desafio", texto, filas: m.filas || 3, imgs, celdas });
           break;
         }
         case "resuelto":
@@ -375,6 +384,49 @@ export default function CaptchaRemoto({
         >
           Cancelar verificación
         </button>
+      )}
+
+      {/* ── Panel de diagnóstico (traza paso a paso del server) ──────────── */}
+      {diags.length > 0 && (
+        <details className="mt-3 w-full max-w-[304px] text-left" open={estado.fase === "error"}>
+          <summary className="text-[11px] text-[var(--secondary)] cursor-pointer select-none">
+            Diagnóstico · {diags.length} pasos
+          </summary>
+          <div className="mt-1 max-h-48 overflow-auto rounded-lg bg-[#111] text-[#d0d0d0] text-[10px] font-mono leading-tight p-2 space-y-0.5">
+            {diags.map((d, i) => (
+              <div key={i} className={d.paso.includes("ERROR") || d.paso.includes("EXCEPCION") || d.paso.includes("TIMEOUT") || d.paso.includes("SIN-") ? "text-[#ff6b6b]" : ""}>
+                <span className="text-[#666]">
+                  {new Date(d.t).toLocaleTimeString("es-AR", { hour12: false })}
+                </span>{" "}
+                <span className="text-[#6cf]">{d.paso}</span>
+                {d.detalle !== undefined && d.detalle !== "" && (
+                  <span className="text-[#bbb]">
+                    {" "}
+                    {typeof d.detalle === "string" ? d.detalle : JSON.stringify(d.detalle)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard?.writeText(
+                diags
+                  .map(
+                    (d) =>
+                      `${new Date(d.t).toISOString()} ${d.paso} ${
+                        d.detalle === undefined ? "" : typeof d.detalle === "string" ? d.detalle : JSON.stringify(d.detalle)
+                      }`
+                  )
+                  .join("\n")
+              );
+            }}
+            className="mt-1 text-[10px] text-[var(--secondary)] underline hover:text-[var(--fg)]"
+          >
+            Copiar traza
+          </button>
+        </details>
       )}
     </div>
   );

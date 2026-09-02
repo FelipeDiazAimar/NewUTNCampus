@@ -70,6 +70,7 @@ export class SesionCaptcha {
   private mousePos: { x: number; y: number } | null = null;
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private debounceDesde = 0;
+  private eventos = 0;
 
   constructor(send: EnviarFn) {
     this.send = send;
@@ -81,6 +82,19 @@ export class SesionCaptcha {
 
   private emitir(fase: string, extra: Record<string, unknown> = {}) {
     this.send({ type: "estado", fase, ...extra });
+  }
+
+  // Traza de diagnóstico: va a los Runtime Logs de Vercel Y al cliente (panel
+  // colapsable del widget), para ver en qué paso falla sin abrir el dashboard.
+  private diag(paso: string, detalle?: unknown) {
+    let d: unknown = detalle;
+    try {
+      d = detalle === undefined ? undefined : JSON.parse(JSON.stringify(detalle));
+    } catch {
+      d = String(detalle);
+    }
+    console.log("[captcha:diag]", paso, d ?? "");
+    this.send({ type: "diag", paso, detalle: d, t: Date.now() });
   }
 
   async iniciar(): Promise<void> {
@@ -98,9 +112,12 @@ export class SesionCaptcha {
       /* diagnóstico best-effort */
     }
     try {
+      this.diag("iniciar:lanzando-chromium");
       this.browser = await lanzarChromium();
+      this.diag("iniciar:chromium-ok");
     } catch (e) {
       sesionesActivas--;
+      this.diag("iniciar:chromium-ERROR", String((e as Error).message || e));
       throw e;
     }
     const context = await this.browser.newContext({
@@ -115,23 +132,42 @@ export class SesionCaptcha {
     // cross-origin del reCAPTCHA y los que se creen después, como el bframe del
     // desafío). Se registra una sola vez, antes de navegar.
     await this.page.exposeFunction("__captchaEvento", () => this.onMutacion());
+    this.diag("iniciar:binding-expuesto");
 
     // Reinyecta el observer cuando el bframe se crea / re-navega (nueva ronda,
     // recarga del desafío).
     this.page.on("frameattached", (f) => void this.instalarObserver(f));
     this.page.on("framenavigated", (f) => void this.instalarObserver(f));
 
-    await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await this.page.waitForFunction(
-      () =>
-        typeof (globalThis as { grecaptcha?: unknown }).grecaptcha !== "undefined" &&
-        !!document.querySelector(".g-recaptcha iframe"),
-      { timeout: 20000 }
-    );
+    try {
+      await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      this.diag("iniciar:goto-ok", `${BASE}/`);
+    } catch (e) {
+      this.diag("iniciar:goto-ERROR", String((e as Error).message || e));
+      throw e;
+    }
+    try {
+      await this.page.waitForFunction(
+        () =>
+          typeof (globalThis as { grecaptcha?: unknown }).grecaptcha !== "undefined" &&
+          !!document.querySelector(".g-recaptcha iframe"),
+        { timeout: 20000 }
+      );
+      this.diag("iniciar:grecaptcha-listo");
+    } catch (e) {
+      this.diag(
+        "iniciar:grecaptcha-TIMEOUT",
+        "no apareció grecaptcha/.g-recaptcha iframe en 20s — ¿cambió la página del legacy?"
+      );
+      throw e;
+    }
 
     // Observers en el frame principal + los que ya existan (anchor).
     await this.instalarObserver(this.page.mainFrame());
     for (const f of this.page.frames()) await this.instalarObserver(f);
+    this.diag("iniciar:observers-instalados", {
+      frames: this.page.frames().map((f) => f.url().slice(0, 80)),
+    });
 
     this.emitir("listo");
     // Lectura inicial por si el widget ya trae estado.
@@ -174,10 +210,12 @@ export class SesionCaptcha {
       url.includes("/recaptcha/api2/anchor") ||
       url.includes("/recaptcha/api2/bframe");
     if (!esRelevante) return;
-    await frame
+    const cual = url.includes("anchor") ? "anchor" : url.includes("bframe") ? "bframe" : "main";
+    const res = await frame
       .evaluate(() => {
         const w = window as unknown as { __obsCaptcha?: MutationObserver; __captchaEvento?: () => void };
-        if (w.__obsCaptcha || typeof w.__captchaEvento !== "function") return;
+        if (typeof w.__captchaEvento !== "function") return "sin-binding";
+        if (w.__obsCaptcha) return "ya-instalado";
         w.__obsCaptcha = new MutationObserver(() => {
           try {
             w.__captchaEvento!();
@@ -191,15 +229,16 @@ export class SesionCaptcha {
           attributes: true,
           attributeFilter: ["class", "style", "src", "aria-checked", "aria-hidden"],
         });
+        return "instalado";
       })
-      .catch(() => {
-        /* el frame puede haberse desprendido */
-      });
+      .catch((e: Error) => "error: " + String(e.message || e).slice(0, 80));
+    if (res !== "ya-instalado") this.diag("observer:" + cual, res);
   }
 
   // Disparador de evento: coalesce la ráfaga de mutaciones y procesa una vez.
   private onMutacion(): void {
     if (this.abortado) return;
+    this.eventos++;
     const ahora = Date.now();
     if (this.debounce) {
       // Si la ráfaga ya lleva demasiado, dejamos que dispare en vez de reiniciar.
@@ -303,13 +342,16 @@ export class SesionCaptcha {
           const CW = cr.width;
           const CH = cr.height;
           if (!IW || !IH || !CW || !CH) return { pos: "center" as const, size: "cover" as const };
-          const sizeX = (IW / CW) * 100;
-          const sizeY = (IH / CH) * 100;
-          const posX = IW > CW ? ((cr.left - ir.left) / (IW - CW)) * 100 : 50;
-          const posY = IH > CH ? ((cr.top - ir.top) / (IH - CH)) * 100 : 50;
+          // Redondeo a entero: el sub-pixel de getBoundingClientRect fluctúa
+          // entre lecturas y haría cambiar la firma del DOM en cada evento
+          // (re-emisiones fantasma => la grilla "parpadea" y nunca avanza).
+          const sizeX = Math.round((IW / CW) * 100);
+          const sizeY = Math.round((IH / CH) * 100);
+          const posX = IW > CW ? Math.round(((cr.left - ir.left) / (IW - CW)) * 100) : 50;
+          const posY = IH > CH ? Math.round(((cr.top - ir.top) / (IH - CH)) * 100) : 50;
           return {
-            pos: `${posX.toFixed(3)}% ${posY.toFixed(3)}%`,
-            size: `${sizeX.toFixed(3)}% ${sizeY.toFixed(3)}%`,
+            pos: `${posX}% ${posY}%`,
+            size: `${sizeX}% ${sizeY}%`,
           };
         };
 
@@ -354,7 +396,7 @@ export class SesionCaptcha {
               const aPct = (v: string, base: number) =>
                 v.endsWith("%") || !v.endsWith("px") || !base
                   ? v
-                  : `${(parseFloat(v) / base) * 100}%`;
+                  : `${Math.round((parseFloat(v) / base) * 100)}%`;
               return {
                 urlOriginal: m[1],
                 pos: `${aPct(ps[0] || "50%", br.width)} ${aPct(ps[1] || "50%", br.height)}`,
@@ -483,11 +525,19 @@ export class SesionCaptcha {
     try {
       // ¿token? (resuelto)
       const token = await this.page.evaluate(() => {
-        const g = (globalThis as { grecaptcha?: { getResponse: () => string } }).grecaptcha;
-        return g ? g.getResponse() : "";
+        const g = (globalThis as { grecaptcha?: { getResponse: (id?: number) => string } }).grecaptcha;
+        if (!g) return "__no-grecaptcha__";
+        try {
+          return g.getResponse() || "";
+        } catch {
+          return "";
+        }
       });
-      if (token) {
+      if (token === "__no-grecaptcha__") {
+        this.diag("procesar:sin-grecaptcha", "window.grecaptcha no existe en el frame principal");
+      } else if (token) {
         this._token = token;
+        this.diag("procesar:RESUELTO", { tokenLen: token.length });
         this.emitir("resuelto", { token });
         return;
       }
@@ -499,9 +549,14 @@ export class SesionCaptcha {
         const firma = JSON.stringify(dom);
         if (firma !== this.domFirma) {
           this.domFirma = firma;
-          console.log(
-            `[captcha] desafio via DOM (${dom.celdas.length} celdas, ${dom.imgs.length} imgs)`
-          );
+          this.diag("procesar:desafio", {
+            evento: this.eventos,
+            celdas: dom.celdas.length,
+            nulas: dom.celdas.filter((c) => c === null).length,
+            imgs: dom.imgs.length,
+            filas: dom.filas,
+            texto: dom.texto.slice(0, 60),
+          });
           this.emitir("desafio", {
             texto: dom.texto,
             filas: dom.filas,
@@ -511,9 +566,14 @@ export class SesionCaptcha {
         }
       } else {
         this.domFirma = null;
+        const activo = await this.desafioActivo();
+        this.diag("procesar:sin-desafio-legible", {
+          motivoDom: this.ultimoMotivoDom,
+          desafioVisible: activo,
+        });
         // Sin fallback de screenshot: si el desafío está visible pero no se
         // pudo leer, es un problema (probable cambio de markup de Google).
-        if (await this.desafioActivo()) {
+        if (activo) {
           problemaLectura =
             "No se pudo leer el desafío (posible cambio del widget). Recargá e intentá de nuevo.";
         }
@@ -531,6 +591,7 @@ export class SesionCaptcha {
             })
             .catch(() => null)
         : null;
+      if (errWidget) this.diag("procesar:error-anchor", errWidget);
 
       const err = errWidget || problemaLectura;
       if (err) {
@@ -541,8 +602,8 @@ export class SesionCaptcha {
       } else {
         this.ultimoError = null;
       }
-    } catch {
-      /* la página puede estar navegando; ignorar el evento */
+    } catch (e) {
+      this.diag("procesar:EXCEPCION", String((e as Error).message || e).slice(0, 160));
     } finally {
       this.leyendo = false;
     }
@@ -584,12 +645,15 @@ export class SesionCaptcha {
 
   async clicCheckbox(): Promise<void> {
     const frame = this.frameCheckbox();
-    if (!frame || !this.page) return;
+    if (!frame || !this.page) {
+      this.diag("clic-checkbox:SIN-FRAME-ANCHOR");
+      return;
+    }
     const border =
       (await frame.$(".recaptcha-checkbox-border").catch(() => null)) ||
       (await frame.$(".recaptcha-checkbox").catch(() => null));
     if (!border) {
-      console.error("[captcha] WARNING: no se encontró el checkbox");
+      this.diag("clic-checkbox:SIN-CHECKBOX", "no se encontró .recaptcha-checkbox-border");
       return;
     }
     await this.scrollAlWidget("recaptcha/api2/anchor");
@@ -601,39 +665,103 @@ export class SesionCaptcha {
       destino.x >= 0 &&
       destino.x + destino.width <= 1280;
     if (enViewport && destino) {
-      console.log("[captcha] clic humanizado en el checkbox");
+      this.diag("clic-checkbox:humano", { x: Math.round(destino.x), y: Math.round(destino.y) });
       await this.clicHumano(destino.x + destino.width / 2, destino.y + destino.height / 2);
     } else {
-      console.log("[captcha] checkbox fuera de viewport, fallback a click() nativo");
-      await border.click().catch(() => {});
+      this.diag("clic-checkbox:nativo", { box: destino, motivo: "fuera de viewport" });
+      await border.click().catch((e) => this.diag("clic-checkbox:click-ERROR", String(e)));
     }
     this.emitir("verificando");
     // El resultado (desafío / resuelto / error) llega por el MutationObserver.
   }
 
   async clicEnDesafio(nx: number, ny: number): Promise<void> {
+    const frame = this.frameDesafio();
+    if (!frame || !this.page) {
+      this.diag("clic-tile:SIN-FRAME-BFRAME");
+      return;
+    }
     const target = await this.elementoDesafio();
-    if (!target || !this.page) return;
+    if (!target) {
+      this.diag("clic-tile:SIN-TARGET");
+      return;
+    }
     await this.scrollAlWidget("recaptcha/api2/bframe");
     const box = await target.boundingBox();
-    if (!box) return;
-    await this.clicHumano(box.x + nx * box.width, box.y + ny * box.height);
+    if (!box) {
+      this.diag("clic-tile:SIN-BOX");
+      return;
+    }
+    const x = box.x + nx * box.width;
+    const y = box.y + ny * box.height;
+
+    // Diagnóstico de mapeo de coordenadas: comparo el rect del target usado
+    // contra el de la tabla real y reporto qué elemento cae en el punto
+    // normalizado (dentro del bframe). Si "enPunto" no es una tile, el mapeo
+    // está mal.
+    const geo = await frame
+      .evaluate((n: { nx: number; ny: number }) => {
+        const t =
+          document.querySelector("#rc-imageselect-target") ||
+          document.querySelector(".rc-imageselect-target");
+        const tabla = document.querySelector("table");
+        const r = (el: Element | null) =>
+          el ? (({ x, y, w, h }) => ({ x, y, w, h }))({
+            x: Math.round(el.getBoundingClientRect().left),
+            y: Math.round(el.getBoundingClientRect().top),
+            w: Math.round(el.getBoundingClientRect().width),
+            h: Math.round(el.getBoundingClientRect().height),
+          }) : null;
+        const tr = (t || tabla)?.getBoundingClientRect();
+        let enPunto = "";
+        if (tr) {
+          const el = document.elementFromPoint(tr.left + n.nx * tr.width, tr.top + n.ny * tr.height);
+          enPunto = el ? `${el.tagName}.${(el.className || "").toString().slice(0, 40)}` : "null";
+        }
+        return { target: r(t), tabla: r(tabla), enPunto };
+      }, { nx, ny })
+      .catch((e: Error) => ({ error: String(e.message || e) }));
+    this.diag("clic-tile", { nx: +nx.toFixed(3), ny: +ny.toFixed(3), abs: { x: Math.round(x), y: Math.round(y) }, geo });
+
+    await this.clicHumano(x, y);
     // El reemplazo dinámico de la tile lo capta el MutationObserver.
   }
 
   async verificar(): Promise<void> {
     const frame = this.frameDesafio();
-    if (!frame) return;
+    if (!frame) {
+      this.diag("verificar:SIN-FRAME-BFRAME");
+      return;
+    }
     const btn = await frame.$("#recaptcha-verify-button");
-    if (btn) await btn.click();
+    if (!btn) {
+      this.diag("verificar:SIN-BOTON", "no se encontró #recaptcha-verify-button");
+      return;
+    }
+    const info = await btn
+      .evaluate((b) => ({
+        texto: (b as HTMLElement).innerText.trim(),
+        disabled: (b as HTMLButtonElement).disabled || b.getAttribute("aria-disabled") === "true",
+      }))
+      .catch(() => null);
+    this.diag("verificar:click", info);
+    await btn.click().catch((e) => this.diag("verificar:click-ERROR", String(e)));
     // La ronda siguiente / el ✔ / el error llegan por el MutationObserver.
   }
 
   async recargar(): Promise<void> {
     const frame = this.frameDesafio();
-    if (!frame) return;
+    if (!frame) {
+      this.diag("recargar:SIN-FRAME-BFRAME");
+      return;
+    }
     const btn = await frame.$("#recaptcha-reload-button");
-    if (btn) await btn.click();
+    if (!btn) {
+      this.diag("recargar:SIN-BOTON");
+      return;
+    }
+    this.diag("recargar:click");
+    await btn.click().catch((e) => this.diag("recargar:click-ERROR", String(e)));
     this.ultimoError = null;
     // El nuevo desafío llega por el MutationObserver.
   }
