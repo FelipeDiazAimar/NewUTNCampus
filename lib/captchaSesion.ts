@@ -49,60 +49,21 @@ const IGNORAR_ARGS = ["--enable-automation", "--disable-extensions"];
 // La IP de datacenter de Vercel arrastra mala reputación con reCAPTCHA (bucle
 // infinito de desafíos 4x4). El headless sale por un proxy.
 //
-// CAPTCHA_PROXIES (opcional): lista separada por coma o salto de línea. Cada
-// entrada: host:port | http://host:port | http://usuario:clave@host:port |
+// CAPTCHA_PROXIES (opcional, OPT-IN): lista separada por coma o salto de línea.
+// Cada entrada: host:port | http://host:port | http://usuario:clave@host:port |
 // socks5://host:port  (socks4 NO lo soporta Playwright).
-//   - sin la variable => se usa PROXIES_DEFAULT (lista de abajo, curada de
-//     proxy5.net: solo Argentina, Anónimo/Élite, HTTP/HTTPS/SOCKS5).
-//   - CAPTCHA_PROXIES="off" (o none/direct) => sin proxy, salida directa.
-// Se prueban en orden (hasta MAX_PROXY_INTENTOS) y se usa el primero que
-// conecta. Son proxies públicos gratis: se caen seguido y muchos ya están
-// marcados por Google — es un intento, no una garantía.
+//   - sin la variable => salida directa (comportamiento por defecto).
+// Se prueban en tandas de 5 y se usa el primero que conecta (CONNECT a infra de
+// Google). Pensado para una lista de proxies RESIDENCIALES de verdad; las
+// listas públicas gratis probaron estar muertas/inalcanzables desde Vercel.
 type ProxyCfg = { server: string; username?: string; password?: string };
 
-const MAX_PROXY_INTENTOS = 25;
-
-// Curada de proxy5.net (AR, Anónimo/Élite, con soporte HTTP/HTTPS/SOCKS5),
-// ordenada por uptime desc / latencia asc. Snapshot: rota rápido; para algo
-// estable, setear CAPTCHA_PROXIES.
-const PROXIES_DEFAULT: string[] = [
-  "168.196.246.114:8080",
-  "200.45.73.115:3577",
-  "181.209.78.78:999",
-  "186.123.26.22:8080",
-  "socks5://200.43.43.120:4145",
-  "181.10.200.154:3128",
-  "190.18.170.230:5678",
-  "164.163.42.51:10000",
-  "38.226.251.67:999",
-  "186.65.109.21:81",
-  "179.60.219.34:999",
-  "177.136.86.145:999",
-  "38.224.254.9:999",
-  "138.121.161.86:8095",
-  "181.209.107.154:999",
-  "200.32.120.26:999",
-  "187.102.216.163:999",
-  "170.80.95.2:11211",
-  "181.111.164.210:999",
-  "socks5://181.3.123.169:1080",
-  "181.209.82.90:1994",
-  "socks5://181.209.111.226:1080",
-  "190.221.139.22:3128",
-  "45.6.4.60:8080",
-  "181.25.55.117:8080",
-  "181.209.111.85:999",
-  "181.13.239.17:58000",
-  "181.209.77.250:999",
-  "131.196.191.251:9876",
-  "187.102.219.32:999",
-];
+const MAX_PROXY_INTENTOS = 20;
 
 function parsearProxies(): ProxyCfg[] {
   const env = process.env.CAPTCHA_PROXIES?.trim();
-  if (env && /^(off|none|direct)$/i.test(env)) return [];
-  const raw = env && env.length ? env : PROXIES_DEFAULT.join(",");
-  return raw
+  if (!env || /^(off|none|direct)$/i.test(env)) return [];
+  return env
     .split(/[\n,]+/)
     .map((s) => s.trim())
     .filter(Boolean)
@@ -352,7 +313,7 @@ export class SesionCaptcha {
     opcs: Parameters<Browser["newContext"]>[0]
   ): Promise<BrowserContext | null> {
     if (!this.browser) return null;
-    const TANDA = 5;
+    const TANDA = 3;
     const TIMEOUT = 5000;
     for (let base = 0; base < proxies.length && !this.abortado; base += TANDA) {
       const grupo = proxies.slice(base, base + TANDA);
@@ -393,6 +354,14 @@ export class SesionCaptcha {
       if (ganador && ganador.ok) {
         this.diag("proxy:ok", { server: ganador.server, intento: base + 1 });
         return ganador.ctx;
+      }
+      // Si el navegador se cayó durante la tanda, no tiene sentido seguir.
+      const muerto =
+        !this.browser.isConnected() ||
+        resultados.some((r) => !r.ok && /has been closed|Target (page|closed)|browserContext/i.test(r.error));
+      if (muerto) {
+        this.diag("proxy:navegador-caido", "el sondeo tumbó a Chromium; corto acá");
+        return null;
       }
     }
     return null;
