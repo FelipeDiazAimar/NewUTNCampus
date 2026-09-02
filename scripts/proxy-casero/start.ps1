@@ -16,7 +16,11 @@
 #   .\start.ps1 -RemotePort 33245
 # bore.pub lo concede si está libre; si no, cae a uno al azar.
 # ─────────────────────────────────────────────────────────────────────────────
-param([int]$RemotePort = 0)
+#   .\start.ps1 -NoAuth        (proxy abierto, sin usuario/clave — para
+#                               descartar el bug de Playwright con auth+CONNECT.
+#                               Solo para probar; el bore.pub:PUERTO queda
+#                               abierto a quien lo adivine.)
+param([int]$RemotePort = 0, [switch]$NoAuth)
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
 $bin = Join-Path $dir "bin"
@@ -25,7 +29,11 @@ $LOCAL_PORT = 8787
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 
 # 1) Credenciales del proxy (se generan una sola vez y quedan en credentials.txt)
-if (Test-Path $credFile) {
+if ($NoAuth) {
+  $USER = ""
+  $PASS = ""
+  Write-Host "MODO SIN AUTH (proxy abierto)."
+} elseif (Test-Path $credFile) {
   $c = Get-Content $credFile
   $USER = (($c | Select-String '^user=') -split '=', 2)[1]
   $PASS = (($c | Select-String '^pass=') -split '=', 2)[1]
@@ -90,7 +98,8 @@ if (-not $remotePort) {
   throw "No pude leer el puerto de bore. Salida de bore arriba."
 }
 
-$val = "http://${USER}:${PASS}@bore.pub:$remotePort"
+if ($USER) { $val = "http://${USER}:${PASS}@bore.pub:$remotePort" }
+else { $val = "http://bore.pub:$remotePort" }
 Write-Host ""
 Write-Host "======================================================================"
 Write-Host " EN VERCEL -> Settings -> Environment Variables (Production):"
