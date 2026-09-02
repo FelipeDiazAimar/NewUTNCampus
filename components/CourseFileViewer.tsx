@@ -6,6 +6,7 @@ import Spinner from "@/components/Spinner";
 import type { MoodleContent } from "@/lib/moodle";
 import { reportClientError } from "@/lib/clientErrorReporter";
 import { getFile, saveFile, stableFileKey } from "@/lib/offlineFileCache";
+import { downloadFile } from "@/lib/downloadFile";
 
 // Identifica la materia actual para que FileViewer pueda agrupar los archivos
 // guardados offline por materia sin que cada nivel intermedio del árbol
@@ -221,6 +222,24 @@ export function FileViewer({ content }: { content: MoodleContent }) {
     if (!isActive && state.phase === "panel") setState({ phase: "idle" });
   }, [isActive, state.phase]);
 
+  const [downloading, setDownloading] = useState(false);
+
+  // Descarga directa. Usa el helper compartido, que en la PWA instalada evita
+  // que el WebView navegue al recurso y abra el visor nativo del teléfono.
+  const handleDownload = useCallback(async (e: MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadFile(downloadUrl, fileName, { offlineKey });
+    } catch (err) {
+      reportClientError("warning", `Descarga (${fileName}): ${(err as Error).message}`);
+    } finally {
+      setDownloading(false);
+    }
+  }, [downloading, downloadUrl, fileName, offlineKey]);
+
   // "Guardar como…" — deja elegir carpeta de destino (igual que el botón del visor).
   // Cae a la descarga normal si el navegador no soporta la File System Access API.
   const handleSaveAs = useCallback(async (e: MouseEvent) => {
@@ -248,10 +267,7 @@ export function FileViewer({ content }: { content: MoodleContent }) {
       if ((err as Error).message !== "not supported") {
         reportClientError("warning", `Guardar archivo como (${fileName}): ${(err as Error).message}`);
       }
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = fileName;
-      a.click();
+      await downloadFile(downloadUrl, fileName, { offlineKey });
     }
   }, [downloadUrl, fileName, offlineKey]);
 
@@ -283,13 +299,17 @@ export function FileViewer({ content }: { content: MoodleContent }) {
               </svg>
             )}
           </button>
-          <a href={downloadUrl} download={fileName} title="Descargar" onClick={(e) => e.stopPropagation()} className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7,10 12,15 17,10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-          </a>
+          <button onClick={handleDownload} disabled={downloading} title="Descargar" className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors disabled:opacity-50">
+            {downloading ? (
+              <Spinner size={16} color="currentColor" />
+            ) : (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            )}
+          </button>
           <button onClick={handleSaveAs} title="Guardar como…" className="text-[var(--secondary)] hover:text-[var(--accent)] transition-colors">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -318,14 +338,18 @@ export function FileViewer({ content }: { content: MoodleContent }) {
           {state.phase === "none" && (
             <div className="py-5 text-center px-4">
               <p className="text-sm text-[var(--secondary)] mb-3">No se puede previsualizar este formato.</p>
-              <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#007aff] text-white rounded-2xl text-sm font-semibold">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7,10 12,15 17,10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Descargar
-              </a>
+              <button onClick={handleDownload} disabled={downloading} className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#007aff] text-white rounded-2xl text-sm font-semibold disabled:opacity-60">
+                {downloading ? (
+                  <Spinner size={16} color="#fff" />
+                ) : (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7,10 12,15 17,10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                )}
+                {downloading ? "Descargando…" : "Descargar"}
+              </button>
             </div>
           )}
           {/* eslint-disable-next-line @next/next/no-img-element */}

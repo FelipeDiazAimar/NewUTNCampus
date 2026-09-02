@@ -20,6 +20,7 @@ import type { AssignInfo, SubmittedFile } from "@/app/api/assign/route";
 import { isGuestMode, triggerGuestBlock } from "@/lib/guest";
 import { isOffline, triggerOfflineBlock } from "@/lib/offline";
 import { reportClientError } from "@/lib/clientErrorReporter";
+import { downloadFile } from "@/lib/downloadFile";
 
 interface AssignmentViewerProps {
   /** URL del módulo assign en Moodle (mod/assign/view.php?id=…). */
@@ -136,6 +137,20 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
   const [deleting, setDeleting] = useState(false);
 
   const { openPanel, activeKey } = usePdfPreview();
+
+  // URL del adjunto que se está descargando (para el spinner de esa fila).
+  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
+  const handleAttachmentDownload = useCallback(async (fileUrl: string, fileName: string) => {
+    if (downloadingUrl) return;
+    setDownloadingUrl(fileUrl);
+    try {
+      await downloadFile(`/api/files?ref=${encodeURIComponent(fileUrl)}`, fileName);
+    } catch (e) {
+      reportClientError("warning", `Descarga de adjunto (${fileName}): ${(e as Error).message}`);
+    } finally {
+      setDownloadingUrl(null);
+    }
+  }, [downloadingUrl]);
 
   const [comments, setComments] = useState<CommentItem[] | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -393,15 +408,15 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                         {inner}
                       </button>
                     ) : (
-                      <a
+                      <button
                         key={i}
-                        href={`/api/files?ref=${encodeURIComponent(file.url)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={rowClass}
+                        type="button"
+                        onClick={() => handleAttachmentDownload(file.url, file.name)}
+                        disabled={downloadingUrl === file.url}
+                        className={`${rowClass} disabled:opacity-60`}
                       >
                         {inner}
-                      </a>
+                      </button>
                     );
                   })}
                 </div>
@@ -473,15 +488,15 @@ export default function AssignmentViewer({ url, name, onClose }: AssignmentViewe
                         {inner}
                       </button>
                     ) : (
-                      <a
+                      <button
                         key={i}
-                        href={`/api/files?ref=${encodeURIComponent(file.url)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={rowClass}
+                        type="button"
+                        onClick={() => handleAttachmentDownload(file.url, file.name)}
+                        disabled={downloadingUrl === file.url}
+                        className={`${rowClass} disabled:opacity-60`}
                       >
                         {inner}
-                      </a>
+                      </button>
                     );
                   })}
                 </div>

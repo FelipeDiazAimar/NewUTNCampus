@@ -5,6 +5,7 @@ import Spinner from "@/components/Spinner";
 import { FileViewer } from "@/components/CourseFileViewer";
 import type { MoodleContent, MoodleModule } from "@/lib/moodle";
 import { reportClientError } from "@/lib/clientErrorReporter";
+import { downloadFile } from "@/lib/downloadFile";
 
 // Mirrors the shape returned by GET /api/folder (see app/api/folder/route.ts).
 export type FolderNode =
@@ -106,8 +107,26 @@ export default function FolderViewer({ mod }: { mod: MoodleModule }) {
   const [data, setData] = useState<FolderData | null>(inlineData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [zipBusy, setZipBusy] = useState(false);
 
   const id = folderIdFromUrl(mod.url);
+
+  // Descarga del .zip vía helper compartido: en la PWA instalada, un
+  // `<a href download>` haría que el WebView navegara al .zip y abriera el
+  // visor nativo del teléfono, dejando al usuario atrapado sin "atrás".
+  const downloadZip = useCallback(async () => {
+    if (!data?.downloadUrl || zipBusy) return;
+    const { name, downloadUrl } = data;
+    setZipBusy(true);
+    try {
+      const zipName = name.toLowerCase().endsWith(".zip") ? name : `${name}.zip`;
+      await downloadFile(`/api/files?ref=${encodeURIComponent(downloadUrl)}`, zipName);
+    } catch (e) {
+      reportClientError("warning", `Descarga de carpeta .zip (${name}): ${(e as Error).message}`);
+    } finally {
+      setZipBusy(false);
+    }
+  }, [data, zipBusy]);
 
   const toggle = useCallback(async () => {
     const next = !open;
@@ -188,13 +207,14 @@ export default function FolderViewer({ mod }: { mod: MoodleModule }) {
 
               {data.entries.length > 0 && (
                 <div className="px-4 py-3 border-t border-[rgba(60,60,67,0.08)]">
-                  <a
-                    href={`/api/files?ref=${encodeURIComponent(data.downloadUrl)}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[var(--surface)] border border-[var(--separator)] text-[13px] font-semibold text-[var(--accent)] active:opacity-70 transition-opacity"
+                  <button
+                    onClick={downloadZip}
+                    disabled={zipBusy}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[var(--surface)] border border-[var(--separator)] text-[13px] font-semibold text-[var(--accent)] active:opacity-70 transition-opacity disabled:opacity-60"
                   >
-                    <DownloadIcon className="w-4 h-4" />
-                    Descargar carpeta (.zip)
-                  </a>
+                    {zipBusy ? <Spinner size={16} color="currentColor" /> : <DownloadIcon className="w-4 h-4" />}
+                    {zipBusy ? "Preparando .zip…" : "Descargar carpeta (.zip)"}
+                  </button>
                 </div>
               )}
             </>

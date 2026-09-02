@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
 import type { Slide } from "@/app/api/convert/route";
 import AssignmentViewer from "./AssignmentViewer";
+import { downloadFile } from "@/lib/downloadFile";
 
 const PDFViewer = dynamic(() => import("./CampusPDFViewer"), { ssr: false });
 
@@ -623,10 +624,12 @@ function PanelContent({ entry, onAspectRatio, xlsxMode, initialScale = 1.0, file
       <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6" style={{ background: light ? "#f2f2f7" : "#525659" }}>
         <p className="text-[#ff6b6b] text-[14px]">No se pudo cargar</p>
         <p className="text-[rgba(255,107,107,0.6)] text-[12px] text-center">{ps.msg}</p>
-        <a href={`/api/files?ref=${encodeURIComponent(entry.fileUrl)}`}
+        <button
+          type="button"
+          onClick={() => { void downloadFile(`/api/files?ref=${encodeURIComponent(entry.fileUrl)}`, entry.name); }}
           className={`mt-2 px-4 py-2 text-[12px] rounded-lg transition-colors ${light ? "bg-black/10 text-[#1c1c1e] hover:bg-black/15" : "bg-white/10 text-white hover:bg-white/20"}`}>
           Descargar
-        </a>
+        </button>
       </div>
     );
   }
@@ -679,6 +682,7 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
   );
   const [isMobileOverlayOpen, setIsMobileOverlayOpen] = useState(false);
   const [xlsxMode, setXlsxMode] = useState<"pdf" | "excel">("excel");
+  const [downloading, setDownloading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const indexColumnRef = useRef<HTMLDivElement>(null);
 
@@ -804,6 +808,18 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
     else panelRef.current?.requestFullscreen().catch(() => {});
   }
 
+  // Descarga directa (a la carpeta de Descargas). Vía helper compartido para que
+  // en la PWA instalada no se abra el visor nativo del teléfono dentro de la app.
+  async function handleQuickDownload() {
+    if (!active || downloading) return;
+    setDownloading(true);
+    try {
+      await downloadFile(`/api/files?ref=${encodeURIComponent(active.fileUrl)}`, active.name);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function handleSaveAs() {
     if (!active) return;
     const filename = active.name;
@@ -819,10 +835,7 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
       await wr.close();
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
+      await downloadFile(url, filename);
     }
   }
 
@@ -875,19 +888,23 @@ export default function WorkspaceLayout({ children, courseTitle }: { children: R
       {active && (
         <>
           {/* Quick download (to default Downloads folder) */}
-          <a
-            href={`/api/files?ref=${encodeURIComponent(active.fileUrl)}`}
-            download={active.name}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleQuickDownload(); }}
+            disabled={downloading}
             title="Descargar"
-            onClick={(e) => e.stopPropagation()}
-            className={`flex items-center justify-center w-7 h-7 rounded transition-colors shrink-0 ${lightPanel ? "text-[#1c1c1e]/50 hover:text-[#1c1c1e] hover:bg-black/10" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+            className={`flex items-center justify-center w-7 h-7 rounded transition-colors shrink-0 disabled:opacity-50 ${lightPanel ? "text-[#1c1c1e]/50 hover:text-[#1c1c1e] hover:bg-black/10" : "text-white/60 hover:text-white hover:bg-white/10"}`}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7,10 12,15 17,10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-          </a>
+            {downloading ? (
+              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            )}
+          </button>
           {/* Save As (choose location) */}
           <IconBtn light={lightPanel} onClick={handleSaveAs} title="Guardar como…">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
