@@ -8,6 +8,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import LoginStatsSection from "./LoginStatsSection";
 import ErrorStatsSection from "./ErrorStatsSection";
 import CaptchaWorkersSection from "./CaptchaWorkersSection";
+import PushTestSection from "./PushTestSection";
 
 const TOOLS: {
   href: string;
@@ -20,7 +21,7 @@ const TOOLS: {
   {
     href: "/admin/testnotis",
     title: "Simulador PWA",
-    description: "Disparar notificaciones push y ver el agente de asistencia",
+    description: "Disparar notificaciones push de prueba a tus propios dispositivos",
     Icon: Bell,
     color: "#af52de",
     bg: "rgba(175,82,222,0.12)",
@@ -60,6 +61,8 @@ export default function AdminDashboardClient() {
         </div>
 
         <CaptchaWorkersSection />
+
+        <PushTestSection />
 
         <section className="mb-7">
           <p className="px-4 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">
