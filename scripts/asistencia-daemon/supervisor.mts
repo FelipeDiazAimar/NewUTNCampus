@@ -56,8 +56,14 @@ function abrirDaemon() {
   });
   daemon = p;
   p.on("exit", (code, sig) => {
+    // Ignorar el exit de un hijo que ya fue reemplazado / matado a propósito
+    // (reiniciarCiclo y frenar ponen daemon=null antes de que llegue este exit).
+    // Sin esto, un comando dispara reiniciarCiclo Y el exit del daemon viejo
+    // agenda otro reiniciarCiclo -> bucle de reinicio.
+    if (p !== daemon) return;
     if (apagando || frenado) return;
     log(`daemon salió (code=${code} sig=${sig}), reinicio en ${backoff}ms`);
+    daemon = null;
     setTimeout(reiniciarCiclo, backoff);
     backoff = Math.min(backoff * 2, 30000);
   });
