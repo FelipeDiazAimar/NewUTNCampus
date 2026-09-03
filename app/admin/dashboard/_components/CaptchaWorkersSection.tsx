@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Server } from "lucide-react";
+import { Server, RotateCw, Square, Play } from "lucide-react";
 
 type Worker = {
   id: string;
@@ -25,6 +25,10 @@ type Worker = {
   hace_ms: number;
   activa_hace_ms: number | null;
   conectada: boolean;
+  comando: string | null;
+  comando_pedido: string | null;
+  comando_ack: string | null;
+  comando_vencido: boolean;
 };
 
 function dur(ms: number): string {
@@ -53,6 +57,22 @@ function Dato({ k, v }: { k: string; v: React.ReactNode }) {
 export default function CaptchaWorkersSection() {
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState<string | null>(null);
+
+  async function mandarComando(id: string, cmd: "reiniciar" | "frenar" | "arrancar") {
+    setEnviando(id + cmd);
+    try {
+      await fetch("/api/admin/captcha-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, cmd }),
+      });
+    } catch {
+      /* el estado del comando se ve en el próximo poll */
+    } finally {
+      setEnviando(null);
+    }
+  }
 
   useEffect(() => {
     let vivo = true;
@@ -150,6 +170,38 @@ export default function CaptchaWorkersSection() {
                   </p>
                 </div>
               )}
+
+              {/* Comandos al supervisor */}
+              <div className="flex items-center gap-2 px-4 py-2.5 border-t border-[var(--separator)]">
+                {(
+                  [
+                    ["reiniciar", "Reiniciar", RotateCw, "#007aff"],
+                    ["frenar", "Frenar", Square, "#ff3b30"],
+                    ["arrancar", "Arrancar", Play, "#34c759"],
+                  ] as const
+                ).map(([cmd, label, Icon, color]) => (
+                  <button
+                    key={cmd}
+                    type="button"
+                    disabled={enviando === w.id + cmd}
+                    onClick={() => mandarComando(w.id, cmd)}
+                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-[var(--separator)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--fg)] transition-colors active:bg-black/5 disabled:opacity-40 dark:active:bg-white/5"
+                  >
+                    <Icon className="h-[13px] w-[13px]" style={{ color }} />
+                    {label}
+                  </button>
+                ))}
+                {w.comando && (
+                  <span className="ml-auto text-[11px] text-[var(--secondary)]">
+                    {w.comando}
+                    {w.comando_ack
+                      ? " · confirmado ✓"
+                      : w.comando_vencido
+                      ? " · sin respuesta"
+                      : " · pendiente…"}
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}

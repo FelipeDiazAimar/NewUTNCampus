@@ -72,7 +72,9 @@ Opciones:
 
 ## Setup (una vez)
 
-1. Correr `scripts/captcha-workers.sql` en Supabase (tabla del monitor).
+1. En Supabase correr, en orden:
+   - `scripts/captcha-workers.sql` (tabla del monitor)
+   - `scripts/captcha-workers-comando.sql` (columnas de comandos remotos)
 2. En **Vercel → Environment Variables** (Production + Preview), pegar lo que
    imprime `start.ps1`:
    - `NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN = ...`
@@ -99,38 +101,47 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1 `
 - Fallback manual: si querés forzar una URL fija, seteá
   `NEXT_PUBLIC_CAPTCHA_WS_URL` en Vercel (gana sobre el endpoint runtime).
 
+## Supervisor y comandos remotos
+
+`start.ps1` lanza `supervisor.mts`, que:
+
+- mantiene vivos **túnel + worker**; si cualquiera se cae, los reinicia solo
+  (con backoff);
+- cada 15 s consulta `GET /api/captcha/comando`: desde `/admin/dashboard` podés
+  apretar **Reiniciar / Frenar / Arrancar** ese worker. Sin SSH, sin puertos
+  abiertos — el supervisor sale a buscar la orden, no entra nadie.
+
+Como el túnel lo maneja el supervisor y su URL viaja en el heartbeat, **el
+cambio de subdominio de `trycloudflare.com` en cada reinicio ya no importa**: el
+cliente la toma de `/api/captcha/endpoint`.
+
 ## Cosas a saber
 
-- **El subdominio de `trycloudflare.com` cambia en cada arranque.** Al reiniciar
-  `start.ps1`, actualizá `NEXT_PUBLIC_CAPTCHA_WS_URL` en Vercel y redeployá.
-  Para algo permanente: named tunnel de Cloudflare (necesita cuenta + un dominio
-  en Cloudflare, gratis) con una URL fija.
-- El route `/api/captcha` de Vercel sigue existiendo como fallback: si borrás
-  `NEXT_PUBLIC_CAPTCHA_WS_URL`, la app vuelve a usarlo (con el bucle).
-- `worker-token.txt` y `bin/` están gitignoreados.
-- **Seguridad:** `NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN` viaja en el bundle del
-  cliente, no es secreto. Frena el abuso casual junto con: la URL efímera del
-  túnel, el `-Origin` allowlist, y el tope de **2 sesiones simultáneas**
-  (`MAX_SESIONES_CAPTCHA` en `lib/captchaSesion.ts`) — como mucho 2 Chromium a
-  la vez, y cada uno se cierra solo al resolver o al cerrar la pestaña.
+- El route `/api/captcha` de Vercel sigue como fallback: si no hay worker vivo
+  ni `NEXT_PUBLIC_CAPTCHA_WS_URL`, la app lo usa (con el bucle 4×4).
+- `*-token.txt`, `heartbeat-secret.txt`, `app-url.txt`, `bin/` están
+  gitignoreados.
+- **Seguridad:** `NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN` viaja en el bundle, no es
+  secreto — frena abuso casual junto con la URL efímera, el `-Origin` allowlist
+  y el tope de sesiones. `CAPTCHA_HEARTBEAT_SECRET` **sí es secreto** (solo
+  Vercel ↔ supervisor).
 
 ## La PC "definitiva" (la que vas a dejar prendida)
 
-- **Windows:** copiar el repo (o solo tener Node + `npm install`), correr
-  `start.ps1`. Arranque automático: Task Scheduler → tarea "Al iniciar sesión" →
-  `powershell -ExecutionPolicy Bypass -File C:\ruta\scripts\captcha-remoto\start.ps1`.
-- **Linux** (Node 22.6+):
+- **Windows:** clonar el repo, `npm install`, y correr una vez:
 
-  ```bash
-  npx playwright install chromium
-  CAPTCHA_WORKER_TOKEN=xxx CAPTCHA_WORKER_PORT=8788 \
-    node scripts/captcha-remoto/server.mts &
-  cloudflared tunnel --url http://localhost:8788
+  ```powershell
+  .\install-tarea.ps1 -Args "-AppUrl https://campusutn.dpdns.org -Origin https://campusutn.dpdns.org -MaxSesiones 14 -MaxCola 60 -Pool 3"
   ```
 
-  (bajar `cloudflared` de github.com/cloudflare/cloudflared/releases). Un par de
-  unidades `systemd` y queda permanente. Actualizar
-  `NEXT_PUBLIC_CAPTCHA_WS_URL` con la URL que imprima.
+  Registra la tarea `CaptchaRemotoWorker` que arranca al iniciar sesión y se
+  reinicia sola. Para recuperarse de un corte de luz sin login manual: activá el
+  inicio de sesión automático de Windows (`netplwiz`) y dejá la PC prendida.
+
+- **Linux** (Node 22.6+): usar `scripts/captcha-remoto/captcha-worker.service`
+  (systemd) — completar `User` / paths / secretos, `npx playwright install
+  chromium`, bajar `cloudflared` a `/usr/local/bin/`, y
+  `sudo systemctl enable --now captcha-worker`.
 
 ## Volver a Vercel (sin worker)
 

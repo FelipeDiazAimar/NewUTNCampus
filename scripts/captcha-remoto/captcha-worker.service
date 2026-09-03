@@ -1,0 +1,36 @@
+# systemd unit para la PC Linux "definitiva".
+#
+#   sudo cp scripts/captcha-remoto/captcha-worker.service /etc/systemd/system/
+#   sudo vi /etc/systemd/system/captcha-worker.service     # completar User/paths/secretos
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now captcha-worker
+#   journalctl -u captcha-worker -f                        # logs
+#
+# Antes:  npx playwright install chromium  (como el mismo User)
+#         bajar cloudflared a /usr/local/bin/
+
+[Unit]
+Description=Captcha remoto - worker (supervisor)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=CAMBIAR_USUARIO
+WorkingDirectory=/home/CAMBIAR_USUARIO/campus-utn
+Environment=CAPTCHA_WORKER_PORT=8788
+Environment=CAPTCHA_APP_URL=https://campusutn.dpdns.org
+Environment=CAPTCHA_HEARTBEAT_SECRET=PEGAR_SECRETO
+Environment=CAPTCHA_WORKER_TOKEN=PEGAR_TOKEN
+Environment=CAPTCHA_WORKER_NAME=pc-linux
+Environment=CAPTCHA_ALLOWED_ORIGINS=https://campusutn.dpdns.org
+Environment=CAPTCHA_MAX_SESIONES=14
+Environment=CAPTCHA_MAX_COLA=60
+Environment=CAPTCHA_POOL=3
+Environment=CLOUDFLARED_PATH=/usr/local/bin/cloudflared
+ExecStart=/usr/bin/node scripts/captcha-remoto/supervisor.mts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
