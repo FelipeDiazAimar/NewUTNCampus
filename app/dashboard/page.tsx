@@ -116,7 +116,6 @@ export default function DashboardPage() {
         col: 3,
         rowSpan: 1,
         colSpan: 1,
-        popup: true,
         // Desktop: debajo de Materias (col 2, fila 3)
         rowMd: 3,
         colMd: 2,
