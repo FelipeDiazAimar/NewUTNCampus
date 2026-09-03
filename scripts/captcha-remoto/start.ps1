@@ -59,7 +59,7 @@ if ($Origin) { $env:CAPTCHA_ALLOWED_ORIGINS = $Origin }
 if ($Headful) { $env:CAPTCHA_HEADFUL = "1" }
 $serverMts = Join-Path $dir "server.mts"
 $nodeMajor = [int](& node -e "console.log(process.versions.node.split('.')[0])")
-if ($nodeMajor -lt 22) { throw "Node $nodeMajor: se necesita Node 22.6+ (idealmente 24) para correr .mts nativo." }
+if ($nodeMajor -lt 22) { throw "Node ${nodeMajor}: se necesita Node 22.6+ (idealmente 24) para correr .mts nativo." }
 $worker = Start-Process node -ArgumentList "`"$serverMts`"" -PassThru -NoNewWindow
 Start-Sleep -Seconds 2
 if ($worker.HasExited) { throw "El worker no arranco (revisa la consola)." }
