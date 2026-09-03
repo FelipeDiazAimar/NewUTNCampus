@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import Breadcrumb from "@/components/Breadcrumb";
 import LoginStatsSection from "./LoginStatsSection";
 import ErrorStatsSection from "./ErrorStatsSection";
+import CaptchaWorkersSection from "./CaptchaWorkersSection";
 
 const TOOLS: {
   href: string;
@@ -56,6 +57,8 @@ export default function AdminDashboardClient() {
         <LoginStatsSection />
 
         <ErrorStatsSection />
+
+        <CaptchaWorkersSection />
 
         <section className="mb-7">
           <p className="px-4 mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--secondary)]">

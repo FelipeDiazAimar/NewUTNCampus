@@ -56,11 +56,13 @@ sourcefiles/
 /public/precache-manifest.json
 /public/pdf.worker.min.mjs
 
-# captcha remoto (local): binarios descargados + token generado
+# captcha remoto (local): binarios descargados + secretos/config generados
 scripts/captcha-remoto/.perfil-chromium/
 scripts/captcha-remoto/debug/
 scripts/captcha-remoto/bin/
 scripts/captcha-remoto/worker-token.txt
+scripts/captcha-remoto/heartbeat-secret.txt
+scripts/captcha-remoto/app-url.txt
 
 # proxy casero (binarios descargados + credenciales generadas)
 scripts/proxy-casero/bin/

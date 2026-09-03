@@ -337,6 +337,15 @@ async function mantenerPool(): Promise<void> {
   }
 }
 
+// Estado interno para el heartbeat/monitor.
+export function estadoInterno(): { activas: number; enCola: number; pool: number } {
+  return {
+    activas: sesionesActivas,
+    enCola: cola.filter((w) => !w.cancelado).length,
+    pool: pool.length,
+  };
+}
+
 // El worker lo llama al arrancar. En serverless no (POOL_OBJETIVO queda 0).
 export function iniciarPool(): void {
   if (POOL_OBJETIVO <= 0 || poolInterval) return;

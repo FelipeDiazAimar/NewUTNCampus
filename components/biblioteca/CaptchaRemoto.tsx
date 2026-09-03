@@ -49,23 +49,40 @@ type MensajeServidor = {
 
 type Diag = { paso: string; detalle?: unknown; t: number };
 
-// NEXT_PUBLIC_CAPTCHA_WS_URL puede ser UNA url o VARIAS separadas por coma (una
-// por PC worker). Devuelve la lista de candidatos ya barajada y con el token.
-function wsUrls(): string[] {
-  const custom = process.env.NEXT_PUBLIC_CAPTCHA_WS_URL?.trim();
+const rutaVercel = () =>
+  `${location.protocol === "https:" ? "wss://" : "ws://"}${location.host}/api/captcha`;
+
+function conToken(u: string): string {
   const token = process.env.NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN;
-  if (!custom) {
-    return [`${location.protocol === "https:" ? "wss://" : "ws://"}${location.host}/api/captcha`];
-  }
-  const lista = custom.split(",").map((s) => s.trim()).filter(Boolean);
-  // Fisher-Yates: reparte carga entre workers.
-  for (let i = lista.length - 1; i > 0; i--) {
+  return token ? u + (u.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : u;
+}
+
+function barajar<T>(a: T[]): T[] {
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [lista[i], lista[j]] = [lista[j], lista[i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return lista.map((u) =>
-    token ? u + (u.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : u
-  );
+  return a;
+}
+
+// Candidatos de WS, en orden de preferencia:
+//   1. NEXT_PUBLIC_CAPTCHA_WS_URL (una o varias separadas por coma) — override manual
+//   2. GET /api/captcha/endpoint — workers vivos segun el heartbeat (no hay que
+//      reconfigurar Vercel cuando el tunel cambia de URL)
+//   3. /api/captcha de Vercel (fallback; entra en el bucle 4x4)
+async function resolverUrls(): Promise<string[]> {
+  const custom = process.env.NEXT_PUBLIC_CAPTCHA_WS_URL?.trim();
+  if (custom) {
+    return barajar(custom.split(",").map((s) => s.trim()).filter(Boolean)).map(conToken);
+  }
+  try {
+    const r = await fetch("/api/captcha/endpoint", { cache: "no-store" });
+    const j = (await r.json()) as { urls?: string[] };
+    if (j.urls?.length) return barajar(j.urls.slice()).map(conToken);
+  } catch {
+    /* sin heartbeat: caemos a Vercel */
+  }
+  return [rutaVercel()];
 }
 
 // Recreación simple del logo de reCAPTCHA: dos flechas curvas formando un
@@ -106,7 +123,7 @@ export default function CaptchaRemoto({
   const rondaRef = useRef<{ texto: string; firmas: string[] }>({ texto: "", firmas: [] });
 
   useEffect(() => {
-    const urls = wsUrls();
+    let urls: string[] = [];
     let cancelado = false;
     let idx = 0;
     let arranco = false; // ya recibimos algo del server => no hacer failover
@@ -170,7 +187,7 @@ export default function CaptchaRemoto({
     };
 
     const conectar = () => {
-      if (cancelado) return;
+      if (cancelado || idx >= urls.length) return;
       const ws = new WebSocket(urls[idx]);
       wsRef.current = ws;
       arranco = false;
@@ -197,7 +214,11 @@ export default function CaptchaRemoto({
           });
       };
     };
-    conectar();
+    resolverUrls().then((r) => {
+      if (cancelado) return;
+      urls = r;
+      conectar();
+    });
 
     return () => {
       cancelado = true;

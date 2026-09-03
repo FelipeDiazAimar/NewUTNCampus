@@ -63,19 +63,41 @@ Opciones:
   `total = MaxSesiones + Pool` contextos. Recomendado `-Pool 2` o `3`. Se
   recicla cada 2,5 min y se rellena solo en segundo plano. (Sin efecto si usás
   `CAPTCHA_PROXIES`.)
+- `-Name TXT` — nombre del worker en el monitor de `/admin/dashboard`
+  (default: `COMPUTERNAME`).
+- `-AppUrl https://campusutn.dpdns.org` — base de la app, para mandar el
+  **heartbeat** al monitor. Se guarda en `app-url.txt` y se reusa. Con el
+  heartbeat andando **NO hace falta tocar `NEXT_PUBLIC_CAPTCHA_WS_URL`** en cada
+  reinicio: el cliente toma la URL de `/api/captcha/endpoint`.
 
-Después:
+## Setup (una vez)
 
-1. Copiá las 2 variables que imprime a **Vercel → Settings → Environment
-   Variables**, en **Production y Preview**:
-   - `NEXT_PUBLIC_CAPTCHA_WS_URL = wss://xxx.trycloudflare.com`
+1. Correr `scripts/captcha-workers.sql` en Supabase (tabla del monitor).
+2. En **Vercel → Environment Variables** (Production + Preview), pegar lo que
+   imprime `start.ps1`:
    - `NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN = ...`
-2. **Borrá `CAPTCHA_PROXIES`** (o ponela en `off`) — ya no se proxean nada.
-3. **Redeploy.**
-4. Probá el captcha. En el panel **Diagnóstico** tenés que ver `iniciar:*` y
-   llegar a `listo` (el Chromium levantó en tu PC). El bucle 4×4 debería
-   desaparecer o pasar a un desafío normal que sí acepta.
-5. **Dejá la ventana abierta.** Si la cerrás, el captcha vuelve a fallar.
+   - `CAPTCHA_HEARTBEAT_SECRET = ...`
+   - **Borrar `CAPTCHA_PROXIES`.**
+3. Redeploy.
+
+## Uso normal
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start.ps1 `
+  -AppUrl https://campusutn.dpdns.org -Origin https://campusutn.dpdns.org `
+  -MaxSesiones 14 -MaxCola 60 -Pool 3
+```
+
+- El cliente descubre el worker solo (heartbeat → `/api/captcha/endpoint`). No
+  reconfigurás nada en cada reinicio.
+- `/admin/dashboard` → sección **"Captcha remoto — workers"**: conectada/caída,
+  activa hace cuánto, conexiones (ahora / máx / total), cola, pool, errores,
+  tiempos de respuesta (último / promedio / mín / máx), y el motivo si está
+  caída.
+- **Dejá la ventana abierta.** Si la cerrás, el worker manda un último
+  heartbeat con `motivo: "cierre manual"` y el monitor lo muestra en rojo.
+- Fallback manual: si querés forzar una URL fija, seteá
+  `NEXT_PUBLIC_CAPTCHA_WS_URL` en Vercel (gana sobre el endpoint runtime).
 
 ## Cosas a saber
 
