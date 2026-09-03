@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
     rt_min_ms: n(b.rt_min_ms),
     materias_hoy: b.materias_hoy ? String(b.materias_hoy).slice(0, 500) : null,
     pushes_hoy: n(b.pushes_hoy),
+    cuentas: n(b.cuentas),
+    comisiones: n(b.comisiones),
   };
 
   try {
