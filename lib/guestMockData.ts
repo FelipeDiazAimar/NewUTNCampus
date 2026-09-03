@@ -203,7 +203,7 @@ export const MOCK_COURSE_SECTIONS: Record<number, { courseName: string; data: Mo
 export const MOCK_TAREAS = [
   // Sistemas de Información
   {
-    id: "10023", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10023",
+    id: "10023", url: "/api/cvg/mod/assign/view.php?id=10023",
     title: "TP1 — Diagramas de Flujo de Datos",
     course: "Sistemas de Información — ISI 4K (2026)", courseId: 1001,
     open: "2026-03-16T08:00:00", due: "2026-06-20T23:59:00",
@@ -211,7 +211,7 @@ export const MOCK_TAREAS = [
     submitted: false, graded: false, grade: "", status: "No entregado",
   },
   {
-    id: "10033", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10033",
+    id: "10033", url: "/api/cvg/mod/assign/view.php?id=10033",
     title: "TP2 — Casos de Uso y Diagramas ER",
     course: "Sistemas de Información — ISI 4K (2026)", courseId: 1001,
     open: "2026-04-07T08:00:00", due: "2026-05-09T23:59:00",
@@ -219,7 +219,7 @@ export const MOCK_TAREAS = [
     submitted: true, graded: true, grade: "8 / 10", status: "Enviado para calificar",
   },
   {
-    id: "10042", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10042",
+    id: "10042", url: "/api/cvg/mod/assign/view.php?id=10042",
     title: "TP3 — Análisis de un sistema ERP real",
     course: "Sistemas de Información — ISI 4K (2026)", courseId: 1001,
     open: "2026-05-19T08:00:00", due: "2026-07-04T23:59:00",
@@ -228,7 +228,7 @@ export const MOCK_TAREAS = [
   },
   // Gestión de Proyectos
   {
-    id: "10062", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10062",
+    id: "10062", url: "/api/cvg/mod/assign/view.php?id=10062",
     title: "TP1 — Presentación de cronograma de proyecto",
     course: "Gestión de Proyectos — ISI 4K (2026)", courseId: 1002,
     open: "2026-03-17T08:00:00", due: "2026-04-14T23:59:00",
@@ -236,7 +236,7 @@ export const MOCK_TAREAS = [
     submitted: true, graded: true, grade: "9 / 10", status: "Enviado para calificar",
   },
   {
-    id: "10072", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10072",
+    id: "10072", url: "/api/cvg/mod/assign/view.php?id=10072",
     title: "TP2 — Informe de avance del sprint",
     course: "Gestión de Proyectos — ISI 4K (2026)", courseId: 1002,
     open: "2026-05-06T08:00:00", due: "2026-06-28T23:59:00",
@@ -245,7 +245,7 @@ export const MOCK_TAREAS = [
   },
   // Seguridad Informática
   {
-    id: "10092", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10092",
+    id: "10092", url: "/api/cvg/mod/assign/view.php?id=10092",
     title: "TP1 — Análisis de amenazas",
     course: "Seguridad Informática — ISI 4K (2026)", courseId: 1003,
     open: "2026-04-07T08:00:00", due: "2026-07-05T23:59:00",
@@ -253,7 +253,7 @@ export const MOCK_TAREAS = [
     submitted: false, graded: false, grade: "", status: "No entregado",
   },
   {
-    id: "10102", url: "https://frsfco.cvg.utn.edu.ar/mod/assign/view.php?id=10102",
+    id: "10102", url: "/api/cvg/mod/assign/view.php?id=10102",
     title: "TP2 — Auditoría de vulnerabilidades web",
     course: "Seguridad Informática — ISI 4K (2026)", courseId: 1003,
     open: "2026-05-19T08:00:00", due: "2026-07-19T23:59:00",
@@ -269,7 +269,7 @@ const ME_ID = 9999;
 function mockMember(id: number, fullname: string, small: string): object {
   return {
     id, fullname,
-    profileurl: `https://frsfco.cvg.utn.edu.ar/user/profile.php?id=${id}`,
+    profileurl: `/api/cvg/user/profile.php?id=${id}`,
     profileimageurl: `https://ui-avatars.com/api/?name=${encodeURIComponent(fullname)}&background=007aff&color=fff&size=128`,
     profileimageurlsmall: `https://ui-avatars.com/api/?name=${encodeURIComponent(small)}&background=007aff&color=fff&size=32`,
     isonline: false,
@@ -329,13 +329,13 @@ export const MOCK_MESSAGES: Record<number, object[]> = {
 // Search results for non-contacts
 export const MOCK_SEARCH_USERS = [
   {
-    id: 401, fullname: "María López", profileurl: "https://frsfco.cvg.utn.edu.ar/user/profile.php?id=401",
+    id: 401, fullname: "María López", profileurl: "/api/cvg/user/profile.php?id=401",
     profileimageurl: "https://ui-avatars.com/api/?name=ML&background=34c759&color=fff&size=128",
     profileimageurlsmall: "https://ui-avatars.com/api/?name=ML&background=34c759&color=fff&size=32",
     isonline: false, isblocked: false, iscontact: false,
   },
   {
-    id: 402, fullname: "Carlos Rodríguez", profileurl: "https://frsfco.cvg.utn.edu.ar/user/profile.php?id=402",
+    id: 402, fullname: "Carlos Rodríguez", profileurl: "/api/cvg/user/profile.php?id=402",
     profileimageurl: "https://ui-avatars.com/api/?name=CR&background=ff9500&color=fff&size=128",
     profileimageurlsmall: "https://ui-avatars.com/api/?name=CR&background=ff9500&color=fff&size=32",
     isonline: true, isblocked: false, iscontact: false,
@@ -352,7 +352,7 @@ export const MOCK_DATOS_PERSONALES = {
   NombreGrupoSanguineo: "0 positivo",
   NumeroDocumento: "40123456",
   Cuil: "20-40123456-3",
-  Mail: "invitado@frsfco.utn.edu.ar",
+  Mail: "invitado@ejemplo.com",
   TelefonoFijo: "",
   Celular: "3564123456",
   IdEspecialidad: "2",

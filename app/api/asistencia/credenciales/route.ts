@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decryptCred } from "@/lib/crypto";
 import { supabaseFetch } from "@/lib/supabase";
+import { hasWorkerSecret } from "@/lib/workerAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,7 @@ export const dynamic = "force-dynamic";
 const DIAS_VIGENCIA = 30;
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.NOTIFICATIONS_WEBHOOK_SECRET;
-  if (!secret || req.headers.get("x-worker-secret") !== secret) {
+  if (!hasWorkerSecret(req)) {
     return NextResponse.json({ error: "no autorizado" }, { status: 401 });
   }
 

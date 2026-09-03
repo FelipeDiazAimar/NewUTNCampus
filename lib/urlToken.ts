@@ -9,7 +9,11 @@ import { REMEMBER_MAX_AGE } from "@/lib/cookies";
  * lib/crypto.ts (SESSION_SECRET), pero con un salt propio para derivar una
  * clave distinta aunque el secreto de entorno sea el mismo.
  */
-const SECRET = process.env.SESSION_SECRET || "campus-utn-dev-secret-change-me";
+// SESSION_SECRET es obligatorio (sin fallback), igual que en lib/crypto.ts.
+const SECRET = process.env.SESSION_SECRET;
+if (!SECRET) {
+  throw new Error("Falta SESSION_SECRET (env). Definilo en .env.local (dev) y en Vercel (prod).");
+}
 const KEY = scryptSync(SECRET, "campus-utn-urltoken-salt", 32);
 
 interface UrlPayload {

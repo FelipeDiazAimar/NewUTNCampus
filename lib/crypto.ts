@@ -5,10 +5,14 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypt
  * AES-256-GCM con clave derivada de SESSION_SECRET (env). El blob va en una cookie
  * httpOnly, así nunca es legible por el cliente; solo el servidor puede descifrarlo.
  *
- * En producción definí SESSION_SECRET (Vercel → Environment Variables). En dev usa
- * un fallback para no romper, pero NO es seguro: configurá el secreto real.
+ * SESSION_SECRET es obligatorio en todos los entornos (sin fallback): con esta
+ * clave se descifran credenciales de alumnos y se firman las sesiones de admin.
+ * Definilo en .env.local (dev) y en Vercel → Environment Variables (prod).
  */
-const SECRET = process.env.SESSION_SECRET || "campus-utn-dev-secret-change-me";
+const SECRET = process.env.SESSION_SECRET;
+if (!SECRET) {
+  throw new Error("Falta SESSION_SECRET (env). Definilo en .env.local (dev) y en Vercel (prod).");
+}
 const KEY = scryptSync(SECRET, "campus-utn-cred-salt", 32);
 
 export function encryptCred(plain: string): string {

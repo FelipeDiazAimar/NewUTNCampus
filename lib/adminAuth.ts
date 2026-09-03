@@ -6,7 +6,11 @@ import { createHmac, scryptSync, timingSafeEqual } from "crypto";
  * token no compromete al otro. HMAC alcanza acá — a diferencia de lib/urlToken,
  * no hay nada que ocultar dentro del token, solo que no se pueda falsificar.
  */
-const SECRET = process.env.SESSION_SECRET || "campus-utn-dev-secret-change-me";
+// SESSION_SECRET es obligatorio (sin fallback): firma las sesiones de admin.
+const SECRET = process.env.SESSION_SECRET;
+if (!SECRET) {
+  throw new Error("Falta SESSION_SECRET (env). Definilo en .env.local (dev) y en Vercel (prod).");
+}
 const KEY = scryptSync(SECRET, "campus-utn-admin-salt", 32);
 
 export const ADMIN_SESSION_COOKIE = "admin_session_token";

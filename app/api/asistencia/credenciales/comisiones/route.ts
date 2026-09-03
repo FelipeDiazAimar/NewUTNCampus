@@ -3,13 +3,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
+import { hasWorkerSecret } from "@/lib/workerAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.NOTIFICATIONS_WEBHOOK_SECRET;
-  if (!secret || req.headers.get("x-worker-secret") !== secret) {
+  if (!hasWorkerSecret(req)) {
     return NextResponse.json({ error: "no autorizado" }, { status: 401 });
   }
 

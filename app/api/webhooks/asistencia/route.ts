@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
 import { sendPushNotification } from "@/lib/webPush";
+import { hasWorkerSecret } from "@/lib/workerAuth";
 
 export const runtime = "nodejs";
 
@@ -54,10 +55,8 @@ async function reservarAviso(
 }
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.NOTIFICATIONS_WEBHOOK_SECRET ?? "";
-  const provided =
-    req.headers.get("x-agent-secret") ?? req.headers.get("x-notify-secret") ?? "";
-  if (secret && secret !== provided) {
+  // Fail-closed: si NOTIFICATIONS_WEBHOOK_SECRET no está seteado, se rechaza todo.
+  if (!hasWorkerSecret(req, ["x-agent-secret", "x-notify-secret"])) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

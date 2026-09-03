@@ -6,13 +6,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
+import { hasWorkerSecret } from "@/lib/workerAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function autorizado(req: NextRequest): boolean {
-  const s = process.env.NOTIFICATIONS_WEBHOOK_SECRET;
-  return !!s && req.headers.get("x-worker-secret") === s;
+  return hasWorkerSecret(req);
 }
 
 export async function GET(req: NextRequest) {
