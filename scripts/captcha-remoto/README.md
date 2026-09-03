@@ -18,7 +18,9 @@ Navegador del usuario ──wss──► xxx.trycloudflare.com ──► ESTA PC
 
 - `server.mts` — servidor `ws` local. Valida `?token=` (y opcionalmente el
   `Origin`) y por cada conexión crea una `SesionCaptcha` (reusa
-  `lib/captchaSesion.ts` tal cual, vía `tsx`).
+  `lib/captchaSesion.ts` tal cual). Se corre con `node server.mts` (TS nativo
+  de Node 24: borra tipos sin transformar — necesario para que las funciones
+  de `page.evaluate()` lleguen intactas al navegador).
 - `cloudflared` — Cloudflare quick tunnel: da una URL `https://…trycloudflare.com`
   con TLS (necesario para `wss://` desde la app `https://`), soporta WebSocket,
   sin cuenta ni dominio. El tráfico a Google **sale por esta PC**.
@@ -27,7 +29,8 @@ Navegador del usuario ──wss──► xxx.trycloudflare.com ──► ESTA PC
 
 ## Requisitos
 
-- Node en el PATH (el mismo del proyecto). `npm install` ya corrido (trae `tsx`).
+- **Node 22.6+ (idealmente 24)** en el PATH — para correr `.mts` nativo.
+  `npm install` ya corrido.
 - Windows + PowerShell para `start.ps1`. Linux: ver abajo.
 
 ## Uso
@@ -78,13 +81,15 @@ Después:
 - **Windows:** copiar el repo (o solo tener Node + `npm install`), correr
   `start.ps1`. Arranque automático: Task Scheduler → tarea "Al iniciar sesión" →
   `powershell -ExecutionPolicy Bypass -File C:\ruta\scripts\captcha-remoto\start.ps1`.
-- **Linux:**
+- **Linux** (Node 22.6+):
+
   ```bash
   npx playwright install chromium
   CAPTCHA_WORKER_TOKEN=xxx CAPTCHA_WORKER_PORT=8788 \
-    npx tsx scripts/captcha-remoto/server.mts &
+    node scripts/captcha-remoto/server.mts &
   cloudflared tunnel --url http://localhost:8788
   ```
+
   (bajar `cloudflared` de github.com/cloudflare/cloudflared/releases). Un par de
   unidades `systemd` y queda permanente. Actualizar
   `NEXT_PUBLIC_CAPTCHA_WS_URL` con la URL que imprima.

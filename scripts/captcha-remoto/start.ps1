@@ -50,16 +50,17 @@ if (-not (Test-Path $cf)) {
   Invoke-WebRequest "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cf
 }
 
-# 4) Arrancar el worker (node + cli de tsx directo: Start-Process no lanza
-#    npx.cmd, y matar el PID de node corta limpio)
+# 4) Arrancar el worker con el TS nativo de Node (24+): borra tipos sin
+#    transformar, asi las funciones de page.evaluate() llegan intactas al
+#    navegador (tsx/esbuild las rompia con "__name is not defined").
 $env:CAPTCHA_WORKER_PORT = "$PORT"
 $env:CAPTCHA_WORKER_TOKEN = $TOKEN
 if ($Origin) { $env:CAPTCHA_ALLOWED_ORIGINS = $Origin }
 if ($Headful) { $env:CAPTCHA_HEADFUL = "1" }
-$tsxCli = Join-Path $root "node_modules\tsx\dist\cli.mjs"
 $serverMts = Join-Path $dir "server.mts"
-if (-not (Test-Path $tsxCli)) { throw "Falta node_modules/tsx. Corre 'npm install' en la raiz del repo." }
-$worker = Start-Process node -ArgumentList "`"$tsxCli`"", "`"$serverMts`"" -PassThru -NoNewWindow
+$nodeMajor = [int](& node -e "console.log(process.versions.node.split('.')[0])")
+if ($nodeMajor -lt 22) { throw "Node $nodeMajor: se necesita Node 22.6+ (idealmente 24) para correr .mts nativo." }
+$worker = Start-Process node -ArgumentList "`"$serverMts`"" -PassThru -NoNewWindow
 Start-Sleep -Seconds 2
 if ($worker.HasExited) { throw "El worker no arranco (revisa la consola)." }
 

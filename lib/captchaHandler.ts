@@ -11,6 +11,9 @@
 //   fases: listo | verificando | desafio{texto,filas,imgs,celdas} |
 //          resuelto{token} | abortado | error-widget{mensaje}
 
+// Usado solo por la ruta de Vercel (app/api/captcha/route.ts). El worker
+// standalone (scripts/captcha-remoto/server.mts) tiene su propia copia del
+// switch para poder correr con el TS nativo de Node sin pasar por el bundler.
 import { SesionCaptcha, MAX_SESIONES_CAPTCHA } from "./captchaSesion";
 
 type Enviar = (obj: Record<string, unknown>) => void;
