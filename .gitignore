@@ -71,3 +71,6 @@ scripts/proxy-casero/credentials.txt
 # asistencia daemon (local): config/secretos generados
 scripts/asistencia-daemon/app-url.txt
 scripts/asistencia-daemon/secret.txt
+# el daemon ya no usa cuenta-bot, pero si quedó un credenciales.txt local con un
+# DNI en texto plano, que nunca sea commiteable:
+scripts/asistencia-daemon/credenciales.txt
