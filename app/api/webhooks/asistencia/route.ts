@@ -4,36 +4,75 @@ import { sendPushNotification } from "@/lib/webPush";
 
 export const runtime = "nodejs";
 
+type Opcion = { id: string; name: string };
 type AsistenciaWebhookPayload = {
   materia?: string;
   source?: string;
-  activeOptions?: { id: string; name: string }[];
+  activeOptions?: Opcion[];
 };
 
-async function updateAgentStatus(status: "listening" | "detected" | "idle", payload?: unknown) {
-  await supabaseFetch("asistencia_agent_status?agent_id=eq.motorola-local", {
-    method: "PATCH",
+/** "ANÁLISIS MATEMÁTICO I - 2026 - ISI - 2008 - A" -> "ANÁLISIS MATEMÁTICO I" */
+function limpiarNombreMateria(nombre: string): string {
+  return nombre.replace(/\s*[-–]\s*\d{4}\b.*$/u, "").trim() || nombre.trim();
+}
+
+/** Fecha de hoy en Argentina, formato YYYY-MM-DD. */
+function hoyArgentina(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/** true si NO había fila para (fecha, materiaId) y la insertó ahora. */
+async function reservarAviso(
+  fecha: string,
+  materiaId: string,
+  materiaNombre: string
+): Promise<boolean> {
+  const yaRes = await supabaseFetch(
+    `asistencia_avisos_log?select=materia_id&fecha=eq.${fecha}&materia_id=eq.${encodeURIComponent(materiaId)}`
+  );
+  if (yaRes.ok) {
+    const filas = (await yaRes.json()) as unknown[];
+    if (filas.length > 0) return false;
+  }
+  const insRes = await supabaseFetch("asistencia_avisos_log", {
+    method: "POST",
     headers: { Prefer: "return=minimal" },
     body: JSON.stringify({
-      status,
-      last_seen_at: new Date().toISOString(),
-      last_payload: payload ?? null,
-      updated_at: new Date().toISOString(),
+      fecha,
+      materia_id: materiaId,
+      materia_nombre: materiaNombre,
+      enviados: 0,
     }),
   });
+  // 201 = insertada; 409 = otro daemon la insertó en la carrera -> ya avisado.
+  return insRes.ok;
 }
 
 export async function POST(req: NextRequest) {
   const secret = process.env.NOTIFICATIONS_WEBHOOK_SECRET ?? "";
-  const provided = req.headers.get("x-agent-secret") ?? req.headers.get("x-notify-secret") ?? "";
+  const provided =
+    req.headers.get("x-agent-secret") ?? req.headers.get("x-notify-secret") ?? "";
   if (secret && secret !== provided) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   const payload = (await req.json().catch(() => ({}))) as AsistenciaWebhookPayload;
-  const materia = payload.materia || payload.activeOptions?.[0]?.name;
 
-  await updateAgentStatus("detected", payload);
+  // Normalizar: aceptar el shape viejo { materia } suelto.
+  let opciones: Opcion[] = Array.isArray(payload.activeOptions)
+    ? payload.activeOptions.filter((o) => o && o.id && o.name)
+    : [];
+  if (opciones.length === 0 && payload.materia) {
+    opciones = [{ id: payload.materia, name: payload.materia }];
+  }
+  if (opciones.length === 0) {
+    return NextResponse.json({ ok: true, materias: [] });
+  }
 
   // Usuarios que desactivaron los avisos de asistencia (o el global) — se excluyen.
   const disabledRes = await supabaseFetch(
@@ -43,15 +82,38 @@ export async function POST(req: NextRequest) {
     ? new Set(((await disabledRes.json()) as { email: string }[]).map((r) => r.email))
     : undefined;
 
-  const result = await sendPushNotification(
-    {
-      title: "¡La asistencia está abierta!",
-      body: materia ? `Ya podés marcar asistencia en ${materia}.` : "Ya podés marcar asistencia.",
-      url: "/asistencia",
-      tag: "asistencia-abierta",
-    },
-    excludeUserKeys
-  );
+  const fecha = hoyArgentina();
+  const materias: { materiaId: string; materia: string; enviado: boolean; sent?: number }[] = [];
 
-  return NextResponse.json({ ok: true, ...result });
+  for (const opcion of opciones) {
+    const nombre = limpiarNombreMateria(opcion.name);
+    const nuevo = await reservarAviso(fecha, opcion.id, nombre);
+    if (!nuevo) {
+      materias.push({ materiaId: opcion.id, materia: nombre, enviado: false });
+      continue;
+    }
+
+    const result = await sendPushNotification(
+      {
+        title: "¡La asistencia está abierta!",
+        body: `Ya podés marcar asistencia en ${nombre}.`,
+        url: "/asistencia",
+        tag: `asistencia-${opcion.id}`,
+      },
+      excludeUserKeys
+    );
+
+    await supabaseFetch(
+      `asistencia_avisos_log?fecha=eq.${fecha}&materia_id=eq.${encodeURIComponent(opcion.id)}`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ enviados: result.sent }),
+      }
+    ).catch(() => {});
+
+    materias.push({ materiaId: opcion.id, materia: nombre, enviado: true, sent: result.sent });
+  }
+
+  return NextResponse.json({ ok: true, materias });
 }
