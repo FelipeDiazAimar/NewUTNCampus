@@ -47,16 +47,23 @@ type MensajeServidor = {
 
 type Diag = { paso: string; detalle?: unknown; t: number };
 
-function wsUrl(): string {
-  const custom = process.env.NEXT_PUBLIC_CAPTCHA_WS_URL;
-  const base = custom || `${location.protocol === "https:" ? "wss://" : "ws://"}${location.host}/api/captcha`;
-  // Token del worker standalone (no es secreto real: va en el bundle; sirve
-  // junto con la URL efímera del túnel y el tope de sesiones).
+// NEXT_PUBLIC_CAPTCHA_WS_URL puede ser UNA url o VARIAS separadas por coma (una
+// por PC worker). Devuelve la lista de candidatos ya barajada y con el token.
+function wsUrls(): string[] {
+  const custom = process.env.NEXT_PUBLIC_CAPTCHA_WS_URL?.trim();
   const token = process.env.NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN;
-  if (custom && token) {
-    return base + (base.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+  if (!custom) {
+    return [`${location.protocol === "https:" ? "wss://" : "ws://"}${location.host}/api/captcha`];
   }
-  return base;
+  const lista = custom.split(",").map((s) => s.trim()).filter(Boolean);
+  // Fisher-Yates: reparte carga entre workers.
+  for (let i = lista.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+  }
+  return lista.map((u) =>
+    token ? u + (u.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : u
+  );
 }
 
 // Recreación simple del logo de reCAPTCHA: dos flechas curvas formando un
@@ -97,11 +104,13 @@ export default function CaptchaRemoto({
   const rondaRef = useRef<{ texto: string; firmas: string[] }>({ texto: "", firmas: [] });
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl());
-    wsRef.current = ws;
+    const urls = wsUrls();
+    let cancelado = false;
+    let idx = 0;
+    let arranco = false; // ya recibimos algo del server => no hacer failover
 
-    ws.onopen = () => ws.send(JSON.stringify({ type: "iniciar" }));
-    ws.onmessage = (ev) => {
+    const onMensaje = (ev: MessageEvent) => {
+      arranco = true;
       const m: MensajeServidor = JSON.parse(ev.data);
       if (m.type === "diag") {
         setDiags((d) => [...d, { paso: m.paso || "?", detalle: m.detalle, t: m.t || Date.now() }].slice(-60));
@@ -154,21 +163,45 @@ export default function CaptchaRemoto({
           break;
       }
     };
-    ws.onerror = () => {
-      setEstado({
-        fase: "error",
-        mensaje:
-          "No se pudo conectar con el servicio de captcha. Verificá tu conexión e intentá de nuevo.",
-      });
+
+    const conectar = () => {
+      if (cancelado) return;
+      const ws = new WebSocket(urls[idx]);
+      wsRef.current = ws;
+      arranco = false;
+      ws.onopen = () => ws.send(JSON.stringify({ type: "iniciar" }));
+      ws.onmessage = onMensaje;
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        if (cancelado) return;
+        if (arranco) {
+          setEstado((prev) =>
+            prev.fase === "resuelto" || prev.fase === "error"
+              ? prev
+              : { fase: "error", mensaje: "Se cortó la conexión con el servicio de captcha." }
+          );
+          return;
+        }
+        // Este worker no respondió: probar el siguiente.
+        idx++;
+        if (idx < urls.length) conectar();
+        else
+          setEstado({
+            fase: "error",
+            mensaje: "No se pudo conectar con el servicio de captcha. Probá de nuevo en un momento.",
+          });
+      };
     };
+    conectar();
 
     return () => {
+      cancelado = true;
       try {
-        ws.send(JSON.stringify({ type: "abortar" }));
+        wsRef.current?.send(JSON.stringify({ type: "abortar" }));
       } catch {
         /* ya cerrado */
       }
-      ws.close();
+      wsRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

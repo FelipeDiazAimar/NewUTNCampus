@@ -301,6 +301,24 @@ export class SesionCaptcha {
     }
 
     this.context = context;
+
+    // Corta lo que no hace falta para el solve: el mapa de Google embebido en
+    // la página de turnos (pesadísimo), trackers, y todas las fuentes. NO se
+    // toca nada de google.com/recaptcha ni gstatic/recaptcha (widget + tiles).
+    await context.route("**/*", (route) => {
+      const req = route.request();
+      const url = req.url();
+      if (/\/recaptcha\/|gstatic\.com\/recaptcha/.test(url)) return route.continue();
+      if (
+        req.resourceType() === "font" ||
+        /\/maps\/|maps\.google|maps\.gstatic|khms\d|mts\d\.google/.test(url) ||
+        /google-analytics\.com|googletagmanager\.com|doubleclick\.net|connect\.facebook|hotjar|clarity\.ms/.test(url)
+      ) {
+        return route.abort();
+      }
+      return route.continue();
+    });
+
     // Parche de fingerprint antes de cualquier script de la página.
     await context.addInitScript(STEALTH_INIT);
     this.page = await context.newPage();
