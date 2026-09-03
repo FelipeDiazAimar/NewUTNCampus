@@ -54,3 +54,43 @@ CREATE TABLE IF NOT EXISTS asistencia_agent_status (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Daemon de asistencia: monitor + anti-repetición
+-- (ver scripts/asistencia-workers.sql y scripts/asistencia-avisos-log.sql)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS asistencia_workers (
+  id             TEXT PRIMARY KEY,
+  actualizado    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  proceso_desde  TIMESTAMP WITH TIME ZONE,
+  version        TEXT,
+  estado         TEXT NOT NULL DEFAULT 'activo',
+  motivo         TEXT,
+  ram_total_mb   INTEGER NOT NULL DEFAULT 0,
+  ram_usada_mb   INTEGER NOT NULL DEFAULT 0,
+  polls_total    INTEGER NOT NULL DEFAULT 0,
+  errores        INTEGER NOT NULL DEFAULT 0,
+  login_ok       BOOLEAN NOT NULL DEFAULT FALSE,
+  ultimo_error   TEXT,
+  rt_ultimo_ms   INTEGER NOT NULL DEFAULT 0,
+  rt_prom_ms     INTEGER NOT NULL DEFAULT 0,
+  rt_max_ms      INTEGER NOT NULL DEFAULT 0,
+  rt_min_ms      INTEGER NOT NULL DEFAULT 0,
+  materias_hoy   TEXT,
+  pushes_hoy     INTEGER NOT NULL DEFAULT 0,
+  comando        TEXT,
+  comando_nonce  TEXT,
+  comando_pedido TIMESTAMP WITH TIME ZONE,
+  comando_ack    TIMESTAMP WITH TIME ZONE,
+  comando_por    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS asistencia_avisos_log (
+  fecha           DATE NOT NULL,
+  materia_id      TEXT NOT NULL,
+  materia_nombre  TEXT,
+  enviado_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  enviados        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (fecha, materia_id)
+);
