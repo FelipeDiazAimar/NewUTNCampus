@@ -1,9 +1,8 @@
 # Notificaciones de asistencia — daemon local + pruebas desde admin
 
-Fecha: 2026-09-02
-Estado: aprobado (diseño) — **implementación bloqueada** hasta que cierre la
-conversación paralela del monitor del captcha worker (ver "Dependencia y orden
-de trabajo").
+Fecha: 2026-09-02 (revisado 2026-09-03 para espejar el patrón del captcha worker
+ya mergeado en `main`)
+Estado: aprobado (diseño) — listo para plan de implementación.
 
 ## Objetivo
 
@@ -22,7 +21,7 @@ un usuario concreto (por email) o a todos.
 Incluye un **monitor en `/admin/dashboard`**: si la PC que corre el daemon está
 conectada, hace cuánto, uptime, polls hechos, tiempo de respuesta del legacy
 (último / promedio / máx / mín), errores y motivo de caída, materias detectadas
-hoy y pushes enviadas hoy; y **control remoto** (reiniciar / parar / arrancar el
+hoy y pushes enviadas hoy; y **control remoto** (reiniciar / frenar / arrancar el
 daemon desde la web) vía un supervisor local que lo mantiene vivo y arranca solo
 al bootear la PC.
 
@@ -88,34 +87,54 @@ al bootear la PC.
 3. **Usuarios nuevos = sin lógica dedicada.** El broadcast ya alcanza a cualquier
    suscripción activa; `/notificaciones` ya auto-crea el perfil con asistencia
    activada. Sólo se documenta.
-4. **Monitor = mismo patrón que el captcha worker, tabla propia.** Se copia la
-   forma del monitor que está diseñando la conversación paralela (heartbeat con
-   métricas cada ~10s → tabla → endpoint admin → sección en `/admin/dashboard`),
-   pero con tabla `asistencia_workers` y endpoint propios, sin compartir con
-   `captcha_workers`. Las métricas de conexiones simultáneas **no aplican** (el
-   daemon pollea, no acepta conexiones); las métricas reales son de poll y de
-   tiempo de respuesta al legacy.
-5. **Control remoto = ahora, con supervisor único.** Entra en este spec: cola de
-   comandos en Supabase + botones en el monitor + un supervisor local que
-   mantiene vivo al daemon, obedece los comandos y arranca al bootear. El
-   supervisor se diseña para poder gobernar **también** el captcha worker + túnel
-   (un solo servicio en la PC), coordinando con la conversación paralela.
+4. **Monitor = calcado del captcha worker (`main`), tabla propia.** Se copia
+   1:1 el patrón ya mergeado (`scripts/captcha-workers*.sql`,
+   `app/api/captcha/heartbeat`, `app/api/captcha/comando`,
+   `app/api/admin/captcha-workers`, `app/api/admin/captcha-command`,
+   `CaptchaWorkersSection.tsx`, `lib/captchaMetricas.ts`,
+   `scripts/captcha-remoto/supervisor.mts` + `install-tarea.ps1` +
+   `captcha-worker.service`), con nombres `asistencia*` y las métricas propias
+   del daemon (poll y tiempo de respuesta al legacy, **no** conexiones
+   simultáneas — el daemon pollea, no acepta conexiones).
+5. **Comandos = columnas en la misma fila** (`comando`, `comando_nonce`,
+   `comando_pedido`, `comando_ack`, `comando_por`), igual que `captcha_workers`.
+   No hay tabla de cola aparte.
+6. **Supervisor = mirror por-script** (decidido 2026-09-03). El daemon lleva su
+   propio `supervisor.mts` + su propia tarea de Windows `CampusAsistenciaWorker`,
+   calcado del de captcha pero **sin túnel** (el daemon llama de salida, no
+   necesita entrada). Un supervisor único que gobierne captcha + asistencia y una
+   tabla `local_workers` genérica quedan como refactor posterior — no se hace
+   ahora para no tocar el supervisor de captcha que ya anda.
+7. **Secreto = se reusa `NOTIFICATIONS_WEBHOOK_SECRET`** para los endpoints
+   nuevos del worker (`heartbeat` + `comando`), con header `x-worker-secret`.
+   Diverge de captcha (que usó `CAPTCHA_HEARTBEAT_SECRET` dedicado porque su
+   token de worker es `NEXT_PUBLIC_`); acá el daemon ya tiene ese secreto para
+   llamar a `/api/webhooks/asistencia` y es el mismo límite de confianza ("la PC
+   que corre el daemon"), así que una env var menos.
 
-## Dependencia y orden de trabajo
+## Referencia: el patrón del captcha worker en `main`
 
-La conversación paralela ("monitor del captcha worker") define primero:
+Commits `7f08bbe`, `5381531`, `50687fe`. Piezas a espejar:
 
-- el shape del heartbeat con métricas y de la tabla (`captcha_workers`);
-- el endpoint admin (`/api/admin/captcha-workers`) y el componente de sección;
-- el mecanismo de "levantarlo desde la web": supervisor + cola de comandos
-  (`/api/captcha/comando`) + auto-arranque (nssm / Task Scheduler).
+| Captcha (existe) | Asistencia (a crear) |
+|---|---|
+| `scripts/captcha-workers.sql` (+ `-comando.sql`, `-ram.sql`) | `scripts/asistencia-workers.sql` (todo junto) |
+| `POST /api/captcha/heartbeat` (`x-worker-secret`) | `POST /api/asistencia/worker/heartbeat` |
+| `GET\|POST /api/captcha/comando` | `GET\|POST /api/asistencia/worker/comando` |
+| `GET /api/admin/captcha-workers` | `GET /api/admin/asistencia-workers` |
+| `POST /api/admin/captcha-command` | `POST /api/admin/asistencia-command` |
+| `app/admin/dashboard/_components/CaptchaWorkersSection.tsx` | `AsistenciaWorkersSection.tsx` |
+| `lib/captchaMetricas.ts` (singleton, `ramHost()`, ventana RT 50) | `scripts/asistencia-daemon/metricas.mts` (al lado del daemon) |
+| `scripts/captcha-remoto/supervisor.mts` (túnel + worker + comandos) | `scripts/asistencia-daemon/supervisor.mts` (solo daemon + comandos) |
+| `scripts/captcha-remoto/{start.ps1, install-tarea.ps1, captcha-worker.service}` | equivalentes en `scripts/asistencia-daemon/` |
 
-**No se arranca la implementación de este spec hasta que eso esté mergeado.**
-Cuando lo esté, este diseño se ajusta para **espejar los nombres y la estructura
-finales** (columnas, endpoints, forma de la cola de comandos, forma del
-supervisor) en vez de lo aquí propuesto, que es la mejor estimación a hoy. Los
-Componentes 1–4 no dependen de esa conversación y podrían adelantarse, pero se
-prefiere un solo tramo de trabajo ordenado.
+Convenciones heredadas: TS nativo de Node (`.mts` corrido con `node`, exige Node
+22.6+); `start.ps1` con params que setean `$env:` y persisten config/secretos en
+`*.txt` gitignoreados (`app-url.txt`, etc.); `version` = `git rev-parse --short
+HEAD`; `estado` `'activo' | 'apagado'`; `conectada` = `estado === 'activo' &&
+(now - actualizado) < 30_000`; `comando_vencido` = pedido sin ack hace > 90s;
+`matarArbol` con `taskkill /pid X /T /F` en Windows; sección del dashboard con
+`useEffect` + `setInterval(5000)` (no SWR).
 
 ## Diseño
 
@@ -148,54 +167,68 @@ scripts/asistencia-daemon/
   devuelve `isOpen`, manda **todas** las `activeOptions` al webhook y sigue
   polleando normal. El webhook es idempotente (Componente 2), así que repetir el
   POST no genera avisos duplicados.
-- **Instrumentación (para el monitor, Componente 5).** Contadores en memoria +
-  ventana móvil de los últimos 50 RT, en `lib`-style local dentro de
-  `daemon.mjs` (o `metricas.mjs` al lado): `poll_count`, `errores`,
-  `rt_ultimo_ms` / `rt_prom_ms` / `rt_max_ms` / `rt_min_ms` (duración del
-  `GET /apply-leave.php`), `login_ok`, `ultimo_error` + `ultimo_error_at`,
-  `materias_detectadas_hoy` (set de nombres, se resetea al cambiar el día
-  Argentina), `pushes_enviadas_hoy` (suma de `result.sent` que devuelve el
-  webhook).
-- **Heartbeat cada ~10s** a `POST /api/asistencia/worker/heartbeat` (secret-
-  gated) con: `worker_id` (`"asistencia-daemon"`, override
-  `ASISTENCIA_WORKER_ID`), `estado` (`running`), `proceso_desde`, `version`
-  (constante en el archivo), `host` (`os.hostname()`), y el bloque de métricas de
-  arriba. Sustituye al heartbeat viejo a `/api/asistencia/agent` (ese endpoint y
-  `asistencia_agent_status` se retiran — ver Componente 5).
-- **En `SIGINT` / `SIGTERM`**: un último heartbeat con `estado: "stopped"` y
-  `motivo: "cierre limpio (señal X)"` antes de salir.
-- **Polling de comandos (Componente 6).** Cada ~15s, `GET
-  /api/asistencia/worker/comando?worker_id=…` (secret-gated). Si hay un comando
-  `stop` → heartbeat `stopped` + `process.exit(0)` (el supervisor decide si
-  relanzar). `restart` → `process.exit(0)` con código que el supervisor
-  interpreta como "volvé a levantarme". `start` es no-op para el daemon (lo
-  maneja el supervisor). Tras ejecutarlo, `POST` de ack a
-  `/api/asistencia/worker/comando`.
+- **Instrumentación → `metricas.mts` al lado** (calco de `lib/captchaMetricas.ts`,
+  pero standalone en `scripts/asistencia-daemon/`, no en `lib/`). Singleton con
+  ventana móvil de 50 RT y el helper `ramHost()` **copiado tal cual** del de
+  captcha (lee `/proc/meminfo` `MemAvailable`, fallback `os.totalmem/freemem`).
+  `snapshot()` devuelve campos planos: `proceso_desde`, `version`,
+  `ram_total_mb`, `ram_usada_mb`, `polls_total`, `errores`, `login_ok`,
+  `ultimo_error`, `rt_ultimo_ms` / `rt_prom_ms` / `rt_max_ms` / `rt_min_ms`
+  (duración del `GET /apply-leave.php`), `materias_hoy` (CSV de nombres
+  detectados hoy, se resetea al cambiar el día Argentina), `pushes_hoy` (suma de
+  `result.sent` que devuelve el webhook).
+- **Heartbeat cada 10s** — `setInterval(10000)` — a
+  `POST {APP_URL}/api/asistencia/worker/heartbeat` con header
+  `x-worker-secret: NOTIFICATIONS_WEBHOOK_SECRET` y cuerpo
+  `{ id: WORKER_ID, estado: "activo", ...metricas.snapshot() }`. `WORKER_ID` =
+  `process.env.ASISTENCIA_WORKER_NAME || os.hostname()` (igual que captcha).
+  Reemplaza el heartbeat viejo a `/api/asistencia/agent` (endpoint y
+  `asistencia_agent_status` se retiran — Componente 5).
+- **En `SIGINT` / `SIGTERM`**: un último POST con
+  `{ estado: "apagado", motivo: "cierre manual" }` antes de `process.exit(0)`
+  (idéntico a `server.mts`).
+- **Polling de comandos (Componente 6)** — `setInterval(15000)`: `GET
+  {APP_URL}/api/asistencia/worker/comando?id=WORKER_ID` con `x-worker-secret`.
+  Respuesta `{ cmd, nonce }` o `{ cmd: null }`. El **daemon no ejecuta comandos**
+  — lo hace el `supervisor.mts` (igual que en captcha, donde `server.mts` no
+  toca comandos y el supervisor sí). Este bullet se implementa en el supervisor,
+  no en el daemon; se deja acá sólo para no perder el hilo.
 - Limpieza cosmética del nombre de materia: recortar sufijos tipo
   ` - 2026 - <especialidad> - <plan> - <comisión>` para el texto de la push,
   conservando el nombre completo en el payload por si se necesita.
 - Logs a stdout con timestamp (igual que `agent.js`).
 
-**`start.ps1`** — espejo de `proxy-casero/start.ps1` pero más simple:
-- Si no existe `.env`, copia `.env.example` a `.env`, avisa "completá .env" y
-  corta.
-- Lanza `node --env-file=.env daemon.mjs` (Node 20+ del proyecto soporta
-  `--env-file`). Deja la ventana abierta; Ctrl+C corta.
-- Nota en el header sobre Task Scheduler para arranque automático.
+**`start.ps1`** — calco de `scripts/captcha-remoto/start.ps1`:
+- `param([string]$Name="", [string]$AppUrl="", [int]$PollMs=0, ...)`.
+- Secretos/config persistidos en `*.txt` gitignoreados: `app-url.txt`
+  (reusa si existe), `credenciales.txt` (dos líneas: usuario y password de la
+  cuenta-bot; si falta, avisa y corta). `NOTIFICATIONS_WEBHOOK_SECRET` **no** se
+  genera acá — lo pega el usuario en un `secret.txt` (o lo toma de un prompt),
+  porque tiene que ser el mismo que está en Vercel.
+- `version` = `git rev-parse --short HEAD`.
+- Chequea Node ≥ 22.6 (`node -e "process.versions.node"`).
+- Setea `$env:CAMPUS_APP_URL`, `$env:NOTIFICATIONS_WEBHOOK_SECRET`,
+  `$env:ASISTENCIA_WORKER_NAME`, `$env:ASISTENCIA_WORKER_VERSION`,
+  `$env:ASISTENCIA_USER`, `$env:ASISTENCIA_PASSWORD`, `$env:ASISTENCIA_POLL_MS`,
+  y `& node (Join-Path $dir "supervisor.mts")` (el supervisor orquesta el
+  daemon, igual que en captcha).
+- Header con nota sobre `install-tarea.ps1` para arranque automático.
 
 **`README.md`** — cubre:
 - Qué hace y por qué corre local (resumen de las decisiones 1–2).
-- Requisitos: Node en el PATH, PowerShell.
-- Uso: completar `.env`, `.\start.ps1`, dejar la ventana abierta.
-- Qué env vars van en `.env` (local) vs. cuáles ya están en Vercel
-  (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `SUPABASE_URL`,
-  `SUPABASE_SERVICE_ROLE_KEY`, `NOTIFICATIONS_WEBHOOK_SECRET`).
-- "Mover a otra PC": clonar el repo, copiar `.env`, `npm install` (o sólo tener
-  Node), `.\start.ps1`. Se puede tener las dos PCs prendidas: el dedup en BD
-  evita avisos dobles.
+- Requisitos: Node 22.6+ en el PATH, PowerShell.
+- Setup una vez: correr `scripts/asistencia-workers.sql` +
+  `scripts/asistencia-avisos-log.sql` en Supabase; `NOTIFICATIONS_WEBHOOK_SECRET`
+  ya está en Vercel (se reusa).
+- Uso: `.\start.ps1 -AppUrl https://campusutn.dpdns.org -Name esta-pc`, completar
+  `credenciales.txt`, dejar la ventana abierta.
+- "Mover a otra PC": clonar el repo, copiar los `*.txt`, `.\start.ps1`. Se puede
+  tener las dos PCs prendidas: el dedup en BD evita avisos dobles (y el monitor
+  muestra las dos como workers separados).
 - "Usuarios nuevos": no hay que hacer nada; el aviso alcanza a toda suscripción
   activa.
-- Seguridad: el `.env` con la credencial de la cuenta-bot está gitignoreado.
+- Auto-arranque: `.\install-tarea.ps1 -Args "-AppUrl … -Name …"`.
+- Seguridad: `credenciales.txt` / `app-url.txt` / `secret.txt` gitignoreados.
 
 ### Componente 2 — dedup en Supabase + `/api/webhooks/asistencia`
 
@@ -288,159 +321,199 @@ falta "vigilar" altas.
 
 ### Componente 5 — monitor en `/admin/dashboard`
 
-> Nombres y forma sujetos a espejar el resultado final de la conversación
-> paralela (ver "Dependencia y orden de trabajo").
+Calco de `captcha_workers` + sus endpoints + `CaptchaWorkersSection.tsx`. Sólo
+cambian los nombres (`asistencia*`) y las métricas (poll, no conexiones).
 
-**Tabla nueva** `asistencia_workers` (en `scripts/asistencia-workers.sql` y
-consolidado en `scripts/notifications.sql`):
+**Tabla** `scripts/asistencia-workers.sql` — misma forma que
+`scripts/captcha-workers.sql` (RLS on, índice `actualizado desc`), con las
+columnas de comando ya incluidas (no en un ALTER aparte, porque acá se hace
+todo junto):
 
 ```sql
-CREATE TABLE IF NOT EXISTS asistencia_workers (
-  worker_id      TEXT PRIMARY KEY,           -- "asistencia-daemon"
-  estado         TEXT NOT NULL DEFAULT 'stopped', -- running | stopped | error
-  motivo         TEXT,                       -- por qué no está corriendo
-  actualizado    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),  -- último heartbeat
-  proceso_desde  TIMESTAMP WITH TIME ZONE,   -- arranque del proceso actual
-  version        TEXT,
-  host           TEXT,
-  metrics        JSONB DEFAULT '{}'::jsonb,  -- poll_count, rt_*, errores, etc.
-  created_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+create table if not exists public.asistencia_workers (
+  id             text primary key,          -- nombre del worker (-Name, default hostname)
+  actualizado    timestamptz not null default now(),
+  proceso_desde  timestamptz,
+  version        text,
+  estado         text not null default 'activo',  -- 'activo' | 'apagado'
+  motivo         text,
+  ram_total_mb   integer not null default 0,
+  ram_usada_mb   integer not null default 0,
+  -- métricas propias del daemon:
+  polls_total    integer not null default 0,
+  errores        integer not null default 0,
+  login_ok       boolean not null default false,
+  ultimo_error   text,
+  rt_ultimo_ms   integer not null default 0,
+  rt_prom_ms     integer not null default 0,
+  rt_max_ms      integer not null default 0,
+  rt_min_ms      integer not null default 0,
+  materias_hoy   text,                       -- CSV de nombres detectados hoy
+  pushes_hoy     integer not null default 0,
+  -- comandos (mismas columnas que captcha_workers):
+  comando        text,                       -- 'reiniciar' | 'frenar' | 'arrancar' | null
+  comando_nonce  text,
+  comando_pedido timestamptz,
+  comando_ack    timestamptz,
+  comando_por    text
 );
+create index if not exists asistencia_workers_actualizado_idx
+  on public.asistencia_workers (actualizado desc);
+alter table public.asistencia_workers enable row level security;
 ```
 
-**Endpoint de heartbeat** `app/api/asistencia/worker/heartbeat/route.ts`:
-`runtime = "nodejs"`, valida `x-agent-secret` / `x-notify-secret` contra
-`NOTIFICATIONS_WEBHOOK_SECRET`, hace `upsert` (`on_conflict=worker_id`,
-`merge-duplicates`) con `actualizado = now()`. Fire-and-forget para el daemon.
+**`POST /api/asistencia/worker/heartbeat`** — calco de
+`app/api/captcha/heartbeat/route.ts`: `runtime = "nodejs"`,
+`dynamic = "force-dynamic"`, header `x-worker-secret === NOTIFICATIONS_WEBHOOK_SECRET`,
+helper `n()` para coerción numérica, `upsert` a
+`asistencia_workers?on_conflict=id` con
+`Prefer: resolution=merge-duplicates,return=minimal`, `actualizado = now()`,
+`estado` = `"apagado"` sólo si el body lo dice, si no `"activo"`.
 
-**Endpoint admin** `app/api/admin/asistencia-workers/route.ts`: `GET`,
-`isAdminRequest`. Devuelve las filas de `asistencia_workers` con un campo
-calculado `conectado = (now - actualizado) < 30_000`. Si `conectado === false`,
-`motivo_desconexion`: el `motivo` guardado (si hubo cierre limpio) o
-`"sin señal desde <hora de 'actualizado'>"`.
+**`GET|POST /api/asistencia/worker/comando`** — calco **exacto** de
+`app/api/captcha/comando/route.ts`: `GET ?id=X` con `x-worker-secret` devuelve
+`{ cmd, nonce }` si `comando && !comando_ack`, si no `{ cmd: null }`;
+`POST { id, nonce }` marca `comando_ack = now()`.
 
-**Sección** `app/admin/dashboard/_components/AsistenciaWorkerSection.tsx`
-(montada en `AdminDashboardClient`, debajo de la sección de prueba):
+**`GET /api/admin/asistencia-workers`** — calco de
+`app/api/admin/captcha-workers/route.ts`: `isAdminRequest`, lee
+`asistencia_workers?select=*&order=actualizado.desc`, devuelve
+`{ workers, ahora }` donde cada worker suma `hace_ms`, `activa_hace_ms`,
+`conectada = estado === "activo" && hace_ms < 30_000`,
+`comando_vencido = comando && !comando_ack && (now - comando_pedido) > 90_000`.
 
-- `useSWR` con `refreshInterval: 5000`.
-- Semáforo verde/rojo + título "Daemon de asistencia".
-- Verde: "Conectado — hace 2 h 14 m" (desde `proceso_desde`), host, versión.
-- Rojo: `motivo_desconexion` en tono naranja ("sin señal desde 21:03 — ¿la PC,
-  internet o el script?").
-- Grilla de métricas (de `metrics`): polls hechos, RT último / prom / máx / mín,
-  errores, último error, login al legacy (ok / fallando), materias detectadas
-  hoy (chips), pushes enviadas hoy.
-- Botones **Reiniciar** / **Parar** / **Arrancar** → `POST
-  /api/admin/asistencia-workers/comando` (Componente 6). Deshabilitados mientras
-  hay un comando `pendiente` para ese worker; muestran el estado del último
-  comando ("reiniciando…", "ejecutado 21:40", "sin respuesta del supervisor").
+**`POST /api/admin/asistencia-command`** — calco de
+`app/api/admin/captcha-command/route.ts`: `isAdminRequest`, body `{ id, cmd }`
+con `cmd ∈ {reiniciar, frenar, arrancar}`, genera `nonce`, `PATCH` de la fila
+con `comando/comando_nonce/comando_pedido/comando_ack:null/comando_por:"admin"`.
+
+**Sección** `app/admin/dashboard/_components/AsistenciaWorkersSection.tsx` —
+calco de `CaptchaWorkersSection.tsx`:
+
+- `useEffect` + `setInterval(cargar, 5000)` sobre `/api/admin/asistencia-workers`
+  (no SWR), `enviando` state para los botones.
+- Título de sección: "Daemon de asistencia — workers".
+- Tarjeta por worker: punto verde/rojo, `id`, "conectada"/"desconectada".
+- Grid `grid-cols-3 md:grid-cols-4` de `Dato`: "Activa hace"
+  (`dur(activa_hace_ms)`), "Última señal" (`hace ${dur(hace_ms)}`), `RamDato`
+  (barra, mismo componente), "Polls" (`polls_total`), "Errores" (`errores`),
+  "Login legacy" (`login_ok ? "OK" : "fallando"`), "RT último" (`ms()`),
+  "RT promedio", "RT mín / máx", "Materias hoy" (`materias_hoy` como chips o
+  texto), "Pushes hoy" (`pushes_hoy`).
+- Banner de caída: `estado === "apagado" && motivo` → `Apagada: ${motivo}`;
+  si no → `Sin señal desde ${new Date(actualizado).toLocaleTimeString("es-AR")}
+  — PC apagada, sin internet, o el script se cerró.`
+- Botones **Reiniciar** / **Frenar** / **Arrancar** → `POST
+  /api/admin/asistencia-command` con `{ id, cmd }`; al lado, estado del comando:
+  `comando_ack ? "confirmado ✓" : comando_vencido ? "sin respuesta" : "pendiente…"`.
+- Montada en `AdminDashboardClient` **justo después de `<CaptchaWorkersSection/>`**.
 
 **Retiro de lo viejo**: se elimina `asistencia_agent_status`,
 `app/api/asistencia/agent/route.ts` y el componente `AgentStatus` de
-`AdminPanelClient` (`/admin/testnotis`). El estado del daemon pasa a verse sólo
-en el monitor nuevo de `/admin/dashboard`. `/api/asistencia/notify` deja de
-tocar `asistencia_agent_status`.
+`AdminPanelClient` (`/admin/testnotis`); `/api/asistencia/notify` deja de tocar
+`asistencia_agent_status`; y en `AdminDashboardClient` la entrada `TOOLS`
+"Simulador PWA" pierde el "y ver el agente de asistencia" de su `description`.
 
-### Componente 6 — supervisor + cola de comandos + auto-arranque
+### Componente 6 — supervisor + auto-arranque
 
-**Tabla nueva** `worker_comandos` (en el mismo `.sql`):
+Los comandos ya viven como columnas en `asistencia_workers` (Componente 5) y los
+endpoints `GET|POST /api/asistencia/worker/comando` ya están descritos ahí. Acá
+sólo el lado PC.
 
-```sql
-CREATE TABLE IF NOT EXISTS worker_comandos (
-  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  worker_id     TEXT NOT NULL,
-  comando       TEXT NOT NULL,              -- restart | stop | start
-  estado        TEXT NOT NULL DEFAULT 'pendiente', -- pendiente | ejecutado | error
-  creado_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  ejecutado_at  TIMESTAMP WITH TIME ZONE,
-  resultado     TEXT
-);
-CREATE INDEX IF NOT EXISTS worker_comandos_pend_idx
-  ON worker_comandos (worker_id, estado) WHERE estado = 'pendiente';
-```
+**`scripts/asistencia-daemon/supervisor.mts`** — calco de
+`scripts/captcha-remoto/supervisor.mts` **sin la parte del túnel**:
 
-**Endpoints**:
+- Un proceso Node siempre corriendo. Env que le pasa `start.ps1`:
+  `CAMPUS_APP_URL`, `NOTIFICATIONS_WEBHOOK_SECRET`, `ASISTENCIA_WORKER_NAME`, y
+  todo lo del daemon (`ASISTENCIA_USER/PASSWORD/POLL_MS`, `ASISTENCIA_WORKER_VERSION`).
+- Lanza `node daemon.mts` (un solo hijo, no hay túnel). `abrirWorker()` con
+  `stdio: "inherit"` y `env` propagado.
+- **Keep-alive**: en `exit` del hijo, si no está `apagando` ni `frenado`, lo
+  relanza con backoff `2s → x2 → tope 30s` (mismo esquema que captcha).
+- **`matarArbol()`** copiado tal cual: `taskkill /pid X /T /F` en Windows,
+  `SIGTERM` + `SIGKILL` a los 3s en Linux.
+- **`pollComandos()`** cada 15s: `GET {APP_URL}/api/asistencia/worker/comando?id=WORKER_ID`
+  con `x-worker-secret`; `frenar` → mata el hijo y `frenado = true`; `arrancar`
+  y `reiniciar` → `frenado = false` + `reiniciarCiclo()`; luego `POST` de ACK
+  con `{ id, nonce }`.
+- `SIGINT`/`SIGTERM` → `matarArbol(worker)` + `process.exit(0)`.
 
-- `POST /api/admin/asistencia-workers/comando` — `isAdminRequest`. Body
-  `{ worker_id, comando }`. Inserta fila `pendiente`. Rechaza si ya hay una
-  `pendiente` para ese `worker_id` (evita cola infinita).
-- `GET /api/asistencia/worker/comando?worker_id=…` — secret-gated. Devuelve el
-  comando `pendiente` más viejo (o `null`).
-- `POST /api/asistencia/worker/comando` — secret-gated. Body
-  `{ id, estado: "ejecutado" | "error", resultado? }`. Marca la fila.
+**`scripts/asistencia-daemon/install-tarea.ps1`** — calco de
+`scripts/captcha-remoto/install-tarea.ps1`: registra la tarea
+`CampusAsistenciaWorker` (`-AtLogOn`, `RestartCount 999`,
+`ExecutionTimeLimit 0`, `MultipleInstances IgnoreNew`) que corre
+`start.ps1` con los `-Args` que se le pasen.
 
-**Supervisor** `scripts/supervisor/supervisor.mjs` + `start.ps1` + `README.md`:
+**`scripts/asistencia-daemon/asistencia-worker.service`** — unidad systemd
+equivalente para una PC Linux (`ExecStart=/usr/bin/node
+scripts/asistencia-daemon/supervisor.mts`, `Restart=always`).
 
-- Un proceso Node siempre corriendo. Config por `.env` propio (reusa el mismo
-  `NOTIFICATIONS_WEBHOOK_SECRET` y `CAMPUS_APP_URL`).
-- Lanza y vigila **hijos** definidos en un array: por ahora el daemon de
-  asistencia (`node --env-file=… daemon.mjs`). Pensado para agregar el captcha
-  worker + túnel `bore` como hijos adicionales, coordinando con la conversación
-  paralela — si esa conversación entrega su propio supervisor, este se funde con
-  aquel en vez de duplicarlo.
-- **Keep-alive**: si un hijo sale, lo relanza con backoff (1s, 2s, 5s, 15s, tope
-  30s). Si sale con el "código de restart" pedido por comando, lo relanza ya.
-- **Comandos**: cada ~15s hace `GET .../worker/comando` por cada hijo. `stop` →
-  mata el hijo y no lo relanza hasta un `start`. `restart` → lo mata (se
-  relanza solo). `start` → si estaba detenido, lo lanza. Ack con `POST`.
-- Heartbeat propio opcional (`worker_id: "supervisor"`) para ver en el monitor
-  que el supervisor mismo está vivo.
-- **Auto-arranque**: el `README.md` documenta instalarlo como servicio con
-  **nssm** (`nssm install CampusUTNSupervisor …`) o, más simple, una tarea de
-  **Task Scheduler** "al iniciar sesión" que corre `start.ps1`. Al prender la
-  PC, el supervisor levanta todo solo.
+**"Levantarlo desde la web" — por qué así y no SSH** (sin cambios): se descartó
+SSH (abre el puerto 22, clave privada en Vercel, funciones efímeras) y
+Wake-on-LAN (sólo prende la PC, no arranca el script). El patrón heartbeat +
+columna de comando no abre ningún puerto entrante: todo es la PC llamando de
+salida. Único caso no cubierto: PC físicamente apagada (WoL, o dejarla siempre
+encendida — que es el plan).
 
-**"Levantarlo desde la web" — por qué así y no SSH**: se descartó exponer SSH
-(abre el puerto 22 a internet, clave privada en Vercel, funciones efímeras) y
-Wake-on-LAN (sólo prende la PC, no arranca el script, y necesita reenvío en el
-router). El patrón supervisor + cola de comandos no abre ningún puerto entrante
-en la PC: todo es la PC llamando de salida a la API. Único caso no cubierto: PC
-físicamente apagada (ahí haría falta WoL, o dejarla siempre encendida — que es
-el plan).
+**Refactor futuro (no ahora)**: un único `scripts/supervisor/` que gobierne
+captcha + asistencia como hijos, y una tabla `local_workers` genérica que
+reemplace `captcha_workers` + `asistencia_workers`. Se difiere para no tocar el
+supervisor de captcha ya funcionando.
 
 ## Variables de entorno
 
 **Ya en Vercel (no cambian):** `NEXT_PUBLIC_VAPID_PUBLIC_KEY`,
 `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (opcional), `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `NOTIFICATIONS_WEBHOOK_SECRET`, `SESSION_SECRET`.
+No hace falta ninguna env var nueva en Vercel — los endpoints del worker de
+asistencia validan contra `NOTIFICATIONS_WEBHOOK_SECRET` (decisión 7).
 
-**Nuevas, sólo en `scripts/asistencia-daemon/.env` (local, gitignoreado):**
-`CAMPUS_APP_URL`, `NOTIFICATIONS_WEBHOOK_SECRET` (copia del de Vercel),
-`ASISTENCIA_USER`, `ASISTENCIA_PASSWORD` (o `ASISTENCIA_COOKIE`),
-`ASISTENCIA_POLL_MS` (opcional), `ASISTENCIA_WORKER_ID` (opcional, default
-`asistencia-daemon`), overrides opcionales del form de login.
-
-**En `scripts/supervisor/.env` (local, gitignoreado):** `CAMPUS_APP_URL`,
-`NOTIFICATIONS_WEBHOOK_SECRET`. El supervisor no necesita las credenciales del
-legacy — se las pasa el `.env` del daemon hijo.
+**En la PC (las setea `start.ps1` desde params + `*.txt` gitignoreados, estilo
+`captcha-remoto/start.ps1` — no hay `.env`):**
+`CAMPUS_APP_URL` (de `app-url.txt` / `-AppUrl`), `NOTIFICATIONS_WEBHOOK_SECRET`
+(de `secret.txt`, mismo valor que Vercel), `ASISTENCIA_USER` +
+`ASISTENCIA_PASSWORD` (de `credenciales.txt`), `ASISTENCIA_WORKER_NAME`
+(de `-Name`, default hostname), `ASISTENCIA_WORKER_VERSION` (git short sha),
+`ASISTENCIA_POLL_MS` (de `-PollMs`, default 120000), overrides opcionales del
+form de login. El `supervisor.mts` recibe todas por `process.env` y las propaga
+al `daemon.mts` hijo.
 
 ## Archivos
 
 | Acción | Archivo | Motivo |
 |---|---|---|
-| nuevo | `scripts/asistencia-daemon/daemon.mjs` | porta `agent.js`, sin estado local, loop por materia, instrumentación, heartbeat con métricas, polling de comandos |
-| nuevo | `scripts/asistencia-daemon/metricas.mjs` | contadores + ventana móvil de RT (si no queda inline en `daemon.mjs`) |
-| nuevo | `scripts/asistencia-daemon/start.ps1` | arranque |
-| nuevo | `scripts/asistencia-daemon/.env.example` | plantilla config |
-| nuevo | `scripts/asistencia-daemon/.gitignore` | ignora `.env` |
-| nuevo | `scripts/asistencia-daemon/README.md` | uso + mover a otra PC + usuarios nuevos |
-| borrar | `agent.js` | reemplazado por el daemon |
-| nuevo | `scripts/supervisor/supervisor.mjs` | keep-alive de hijos + ejecución de comandos + auto-arranque |
-| nuevo | `scripts/supervisor/start.ps1` | arranque del supervisor |
-| nuevo | `scripts/supervisor/.env.example` + `.gitignore` | config del supervisor |
-| nuevo | `scripts/supervisor/README.md` | instalar como servicio (nssm / Task Scheduler) |
-| nuevo | `scripts/asistencia-avisos-log.sql` | tabla de dedup + `asistencia_workers` + `worker_comandos` (o `.sql` por tabla) |
-| editar | `scripts/notifications.sql` | agregar las tablas al consolidado |
+| nuevo | `scripts/asistencia-daemon/daemon.mts` | porta `agent.js`, sin estado local, loop por materia, instrumentación, heartbeat |
+| nuevo | `scripts/asistencia-daemon/metricas.mts` | calco de `lib/captchaMetricas.ts` (singleton, `ramHost()`, ventana RT 50, `snapshot()`) |
+| nuevo | `scripts/asistencia-daemon/supervisor.mts` | calco de `captcha-remoto/supervisor.mts` sin túnel: keep-alive + `pollComandos()` + ACK |
+| nuevo | `scripts/asistencia-daemon/start.ps1` | calco de `captcha-remoto/start.ps1`: params, `*.txt`, `$env:`, lanza `supervisor.mts` |
+| nuevo | `scripts/asistencia-daemon/install-tarea.ps1` | calco: tarea `CampusAsistenciaWorker` (Task Scheduler) |
+| nuevo | `scripts/asistencia-daemon/asistencia-worker.service` | calco: unidad systemd para PC Linux |
+| nuevo | `scripts/asistencia-daemon/README.md` | uso + mover a otra PC + auto-arranque + usuarios nuevos |
+| borrar | `agent.js` | reemplazado por `daemon.mts` |
+| editar | `.gitignore` | agrega `scripts/asistencia-daemon/{app-url.txt,secret.txt,credenciales.txt}` |
+| nuevo | `scripts/asistencia-workers.sql` | `asistencia_workers` (con columnas de comando), estilo `captcha-workers.sql` |
+| nuevo | `scripts/asistencia-avisos-log.sql` | tabla de dedup `asistencia_avisos_log` |
+| editar | `scripts/notifications.sql` | agregar las dos tablas al consolidado |
 | editar | `app/api/webhooks/asistencia/route.ts` | loop por materia + dedup en BD + tag por materia; deja de tocar `asistencia_agent_status` |
 | nuevo | `app/api/admin/notifications/test-send/route.ts` | envío de prueba (email / todos) |
-| nuevo | `app/api/asistencia/worker/heartbeat/route.ts` | recibe heartbeat con métricas (secret) |
-| nuevo | `app/api/asistencia/worker/comando/route.ts` | GET (supervisor toma comando) + POST (ack), secret |
-| nuevo | `app/api/admin/asistencia-workers/route.ts` | GET lista de workers + `conectado` calculado |
-| nuevo | `app/api/admin/asistencia-workers/comando/route.ts` | POST encola comando (admin) |
+| nuevo | `app/api/asistencia/worker/heartbeat/route.ts` | calco de `api/captcha/heartbeat` |
+| nuevo | `app/api/asistencia/worker/comando/route.ts` | calco de `api/captcha/comando` (GET toma / POST ACK) |
+| nuevo | `app/api/admin/asistencia-workers/route.ts` | calco de `api/admin/captcha-workers` |
+| nuevo | `app/api/admin/asistencia-command/route.ts` | calco de `api/admin/captcha-command` (encola comando) |
 | borrar | `app/api/asistencia/agent/route.ts` | reemplazado por `worker/heartbeat` |
-| nuevo | `app/admin/dashboard/_components/AsistenciaWorkerSection.tsx` | monitor + botones de control |
-| editar | `app/admin/dashboard/_components/AdminDashboardClient.tsx` | monta sección de prueba + monitor |
+| nuevo | `app/admin/dashboard/_components/AsistenciaWorkersSection.tsx` | calco de `CaptchaWorkersSection.tsx` |
+| editar | `app/admin/dashboard/_components/AdminDashboardClient.tsx` | monta sección de prueba + `<AsistenciaWorkersSection/>` tras `<CaptchaWorkersSection/>`; ajusta `description` de "Simulador PWA" |
 | editar | `app/admin/_components/AdminPanelClient.tsx` | quita el componente `AgentStatus` (tabla retirada) |
+
+## Notas para la implementación
+
+- **AGENTS.md**: esta versión de Next (16.2.6) tiene breaking changes — leer la
+  guía pertinente en `node_modules/next/dist/docs/` antes de escribir route
+  handlers.
+- Los archivos marcados "calco de X" se implementan copiando X y renombrando;
+  no reinventar la forma. Divergencias intencionales: secreto reusado
+  (decisión 7), sin túnel en el supervisor, métricas de poll en vez de
+  conexiones.
 
 ## Testing
 
@@ -458,18 +531,20 @@ No hay suite automatizada. Verificación manual:
    `ASISTENCIA_*` a la cuenta-bot real; `.\start.ps1`; confirmar en logs el poll
    y, cuando haya asistencia real abierta (o forzando con la cuenta-bot), el POST
    al webhook.
-5. **Monitor**: con el daemon corriendo, `/admin/dashboard` muestra "Conectado —
-   hace N m", RT y contadores que suben poll a poll. Cortar el daemon (Ctrl+C) →
-   a los ~30s pasa a rojo con "cierre limpio (señal SIGINT)". Matar la ventana a
-   la fuerza → rojo con "sin señal desde HH:MM".
-6. **Comandos**: desde el monitor, "Reiniciar" → fila `pendiente` en
-   `worker_comandos`; con el supervisor corriendo, el daemon sale y vuelve en
-   segundos, la fila queda `ejecutado`. "Parar" → el supervisor no lo relanza.
-   "Arrancar" → vuelve. Sin supervisor: el botón encola igual y el monitor
-   muestra "sin respuesta del supervisor" pasado un timeout.
-7. **Supervisor**: `.\start.ps1`; matar el daemon hijo desde el Task Manager →
-   el supervisor lo relanza con backoff (ver logs). Reiniciar la PC con la tarea
-   de Task Scheduler instalada → supervisor + daemon levantan solos.
+5. **Monitor**: con `start.ps1` corriendo, `/admin/dashboard` muestra la tarjeta
+   del worker "conectada", "Activa hace N m", RAM, y RT/contadores que suben poll
+   a poll. Ctrl+C en la ventana → `estado="apagado"`, banner "Apagada: cierre
+   manual". Matar el proceso a la fuerza → a los ~30s "desconectada" + "Sin señal
+   desde HH:MM".
+6. **Comandos**: desde el monitor, "Reiniciar" → `POST /api/admin/asistencia-command`
+   setea `comando`/`comando_nonce`/`comando_pedido`; el `supervisor.mts` lo toma
+   en ≤15s, mata y relanza el daemon, y hace `POST` de ACK → la etiqueta pasa a
+   "confirmado ✓". "Frenar" → el supervisor no relanza. "Arrancar" → vuelve. Si
+   pasan 90s sin ACK → "sin respuesta".
+7. **Supervisor / auto-arranque**: matar `daemon.mts` desde el Task Manager → el
+   supervisor lo relanza con backoff (ver logs `[sup]`). `.\install-tarea.ps1
+   -Args "-AppUrl … -Name …"`, reiniciar la PC → la tarea `CampusAsistenciaWorker`
+   levanta `start.ps1` → supervisor + daemon solos.
 8. **Admin (prueba)**: en `/admin/dashboard`, "Enviar a este usuario" con el
    propio email → llega a este dispositivo; con un email sin suscripciones → 404
    con mensaje. "Enviar a todos" → llega el resultado con `total`/`sent`.
