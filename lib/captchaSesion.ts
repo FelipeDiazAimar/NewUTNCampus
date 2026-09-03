@@ -29,7 +29,13 @@ const DEBOUNCE_MS = 120;
 // lectura igual para no quedarnos sin espejo mientras el widget "respira".
 const DEBOUNCE_MAX_MS = 1200;
 
-export const MAX_SESIONES_CAPTCHA = 2;
+// Tope de Chromium headless en simultáneo. En el worker de casa se ajusta con
+// CAPTCHA_MAX_SESIONES según la RAM (cada sesión ~300-500 MB). En Vercel dejar
+// el default (memoria acotada de la función).
+export const MAX_SESIONES_CAPTCHA = Math.max(
+  1,
+  Number(process.env.CAPTCHA_MAX_SESIONES) || 2
+);
 let sesionesActivas = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

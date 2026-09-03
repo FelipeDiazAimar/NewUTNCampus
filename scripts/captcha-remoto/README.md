@@ -47,6 +47,10 @@ Opciones:
   una ventana de Chrome cada vez que alguien pide turno.
 - `-Origin https://tu-app.vercel.app` — solo acepta conexiones desde ese origin
   (además del token). Recomendado una vez que sepas la URL final.
+- `-MaxSesiones N` — cuántos captcha a la vez (default **2**). Cada uno es un
+  Chromium headless, ~300-500 MB de RAM. Guía: 8 GB → 3-4, 16 GB → 6-8,
+  32 GB → 10-12. El usuario N+1 recibe "Hay N sesiones activas, esperá" y
+  reintenta; cada sesión dura ~30 s-2 min y libera el lugar al resolver.
 
 Después:
 
