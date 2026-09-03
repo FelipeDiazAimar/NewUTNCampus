@@ -22,7 +22,9 @@
 #                                un solo Chromium; cada sesion suma un context
 #                                (~100-150 MB). Guia: 8GB -> 6-8, 16GB -> 12-16.
 #   .\start.ps1 -MaxCola 60      cuanta gente puede quedar ESPERANDO (default 40)
-param([switch]$Headful, [string]$Origin = "", [int]$MaxSesiones = 0, [int]$MaxCola = 0)
+#   .\start.ps1 -Pool 3          contextos pre-cargados listos (arranque ~0s en
+#                                vez de ~5s). Suman RAM: total = MaxSesiones+Pool
+param([switch]$Headful, [string]$Origin = "", [int]$MaxSesiones = 0, [int]$MaxCola = 0, [int]$Pool = 0)
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
 $root = (Resolve-Path (Join-Path $dir "..\..")).Path
@@ -63,6 +65,7 @@ if ($Origin) { $env:CAPTCHA_ALLOWED_ORIGINS = $Origin }
 if ($Headful) { $env:CAPTCHA_HEADFUL = "1" }
 if ($MaxSesiones -gt 0) { $env:CAPTCHA_MAX_SESIONES = "$MaxSesiones" }
 if ($MaxCola -gt 0) { $env:CAPTCHA_MAX_COLA = "$MaxCola" }
+if ($Pool -gt 0) { $env:CAPTCHA_POOL = "$Pool" }
 $serverMts = Join-Path $dir "server.mts"
 $nodeMajor = [int](& node -e "console.log(process.versions.node.split('.')[0])")
 if ($nodeMajor -lt 22) { throw "Node ${nodeMajor}: se necesita Node 22.6+ (idealmente 24) para correr .mts nativo." }

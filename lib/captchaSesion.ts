@@ -213,9 +213,154 @@ async function obtenerNavegador(): Promise<{ browser: Browser; nuevo: boolean }>
   return { browser: await lanzandoNavegador, nuevo: true };
 }
 
+// ── Preparado de contexto (compartido por el pool y el arranque directo) ──────
+const OPCS_CONTEXT = {
+  userAgent: UA,
+  viewport: { width: 1280, height: 800 },
+  locale: "es-AR",
+  timezoneId: "America/Argentina/Cordoba",
+  deviceScaleFactor: 1,
+  isMobile: false,
+  hasTouch: false,
+  colorScheme: "light" as const,
+  extraHTTPHeaders: { "Accept-Language": "es-AR,es;q=0.9,en;q=0.8" },
+};
+
+// Corta lo que no hace falta para el solve: fuentes, imágenes/media de la
+// página de turnos, el mapa de Google embebido y trackers. NO toca NADA de
+// recaptcha/gstatic (widget + tiles del desafío pasan siempre).
+function aplicarBloqueo(route: import("playwright-core").Route): void {
+  const req = route.request();
+  const url = req.url();
+  if (/\/recaptcha\/|gstatic\.com\/recaptcha/.test(url)) {
+    void route.continue();
+    return;
+  }
+  const tipo = req.resourceType();
+  if (
+    tipo === "font" ||
+    tipo === "image" ||
+    tipo === "media" ||
+    /\/maps\/|maps\.google|maps\.gstatic|khms\d|mts\d\.google/.test(url) ||
+    /google-analytics\.com|googletagmanager\.com|doubleclick\.net|connect\.facebook|hotjar|clarity\.ms/.test(url)
+  ) {
+    void route.abort();
+    return;
+  }
+  void route.continue();
+}
+
+const GRECAPTCHA_LISTO = () =>
+  typeof (globalThis as { grecaptcha?: unknown }).grecaptcha !== "undefined" &&
+  !!document.querySelector(".g-recaptcha iframe");
+
+async function warmupPage(page: Page): Promise<void> {
+  const puntos: Array<[number, number]> = [
+    [200 + Math.random() * 300, 200 + Math.random() * 200],
+    [500 + Math.random() * 400, 300 + Math.random() * 250],
+    [300 + Math.random() * 500, 450 + Math.random() * 200],
+  ];
+  for (const [x, y] of puntos) {
+    await page.mouse.move(x, y, { steps: 8 + Math.floor(Math.random() * 10) });
+    await sleep(120 + Math.random() * 260);
+  }
+  await page.mouse.wheel(0, 120 + Math.random() * 160);
+  await sleep(300 + Math.random() * 500);
+  await page.mouse.wheel(0, -(80 + Math.random() * 120));
+  await sleep(400 + Math.random() * 700);
+}
+
+// ── Pool de contextos pre-cargados ──────────────────────────────────────────
+// Contextos ya en la página de turnos + grecaptcha listo + warmup hecho,
+// esperando. El usuario agarra uno al instante (0 s en vez de ~5 s). Solo en
+// el worker (proceso largo) y sin proxy. CAPTCHA_POOL=N lo activa.
+const POOL_OBJETIVO = HAY_PROXY ? 0 : Math.max(0, Number(process.env.CAPTCHA_POOL) || 0);
+const POOL_TTL_MS = 150000; // 2.5 min: el anchor de reCAPTCHA se mantiene fresco un rato
+
+type PoolEntry = {
+  context: BrowserContext;
+  page: Page;
+  creado: number;
+  setEvento: (fn: () => void) => void;
+};
+
+const pool: PoolEntry[] = [];
+let poolInterval: ReturnType<typeof setInterval> | null = null;
+let rellenandoPool = false;
+
+async function prepararEntry(): Promise<PoolEntry> {
+  const { browser } = await obtenerNavegador();
+  const context = await browser.newContext(OPCS_CONTEXT);
+  await context.route("**/*", aplicarBloqueo);
+  await context.addInitScript(STEALTH_INIT);
+  const holder: { fn: (() => void) | null } = { fn: null };
+  await context.exposeFunction("__captchaEvento", () => holder.fn?.());
+  const page = await context.newPage();
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForFunction(GRECAPTCHA_LISTO, { timeout: 20000 });
+  await warmupPage(page);
+  return { context, page, creado: Date.now(), setEvento: (fn) => (holder.fn = fn) };
+}
+
+function tomarDelPool(): PoolEntry | null {
+  const ahora = Date.now();
+  while (pool.length) {
+    const e = pool.shift();
+    if (!e) break;
+    if (ahora - e.creado > POOL_TTL_MS || !navegadorCompartido?.isConnected()) {
+      void e.context.close().catch(() => {});
+      continue;
+    }
+    return e;
+  }
+  return null;
+}
+
+async function mantenerPool(): Promise<void> {
+  if (POOL_OBJETIVO <= 0 || rellenandoPool) return;
+  rellenandoPool = true;
+  try {
+    const ahora = Date.now();
+    for (let i = pool.length - 1; i >= 0; i--) {
+      if (ahora - pool[i].creado > POOL_TTL_MS || !navegadorCompartido?.isConnected()) {
+        const e = pool.splice(i, 1)[0];
+        void e.context.close().catch(() => {});
+      }
+    }
+    while (pool.length < POOL_OBJETIVO) {
+      pool.push(await prepararEntry());
+    }
+  } catch (e) {
+    console.warn("[captcha] mantenerPool:", String((e as Error).message || e).slice(0, 100));
+  } finally {
+    rellenandoPool = false;
+  }
+}
+
+// El worker lo llama al arrancar. En serverless no (POOL_OBJETIVO queda 0).
+export function iniciarPool(): void {
+  if (POOL_OBJETIVO <= 0 || poolInterval) return;
+  void mantenerPool();
+  poolInterval = setInterval(() => void mantenerPool(), 30000);
+  poolInterval.unref?.();
+  console.log(`[captcha] pool activo: objetivo=${POOL_OBJETIVO}`);
+}
+
 // Cierre explícito (el worker lo llama en SIGINT). En serverless el proceso
 // muere y Chromium con él.
 export async function cerrarNavegadorCompartido(): Promise<void> {
+  if (poolInterval) {
+    clearInterval(poolInterval);
+    poolInterval = null;
+  }
+  while (pool.length) {
+    const e = pool.pop();
+    try {
+      await e?.context.close();
+    } catch {
+      /* nada */
+    }
+  }
   const b = navegadorCompartido;
   navegadorCompartido = null;
   try {
@@ -327,117 +472,69 @@ export class SesionCaptcha {
     } catch {
       /* diagnóstico best-effort */
     }
+    const proxies = parsearProxies();
+
     try {
-      this.diag("iniciar:navegador");
-      const r = await obtenerNavegador();
-      this.browser = r.browser;
-      this.diag("iniciar:navegador-ok", r.nuevo ? "nuevo" : "reusado");
+      if (proxies.length === 0) {
+        // ── Camino directo (worker): pool o preparado fresco ──────────────
+        let entry = tomarDelPool();
+        if (entry) {
+          this.diag("iniciar:pool-hit", { edadMs: Date.now() - entry.creado, restan: pool.length });
+        } else {
+          this.diag("iniciar:pool-miss");
+          this.diag("iniciar:navegador");
+          entry = await prepararEntry();
+          this.diag("iniciar:preparado");
+        }
+        this.context = entry.context;
+        this.page = entry.page;
+        this.browser = navegadorCompartido;
+        entry.setEvento(() => this.onMutacion());
+        this.page.on("frameattached", (f) => void this.instalarObserver(f));
+        this.page.on("framenavigated", (f) => void this.instalarObserver(f));
+        // Rellena el pool en segundo plano.
+        void mantenerPool();
+      } else {
+        // ── Camino con proxy (opt-in): sin pool ──────────────────────────
+        this.diag("iniciar:navegador");
+        const r = await obtenerNavegador();
+        this.browser = r.browser;
+        this.diag("iniciar:navegador-ok", r.nuevo ? "nuevo" : "reusado");
+        this.diag("proxy:probando-lista", { candidatos: proxies.length });
+        const context = await this.elegirProxy(proxies, OPCS_CONTEXT);
+        if (!context) {
+          this.diag("proxy:TODOS-FALLARON", `${proxies.length} proxies sin conexión`);
+          throw new Error(
+            `Ninguno de los ${proxies.length} proxies respondió. Probá otra lista en CAPTCHA_PROXIES, o CAPTCHA_PROXIES=off para salir directo.`
+          );
+        }
+        this.context = context;
+        await context.route("**/*", aplicarBloqueo);
+        await context.addInitScript(STEALTH_INIT);
+        this.page = await context.newPage();
+        await this.page.exposeFunction("__captchaEvento", () => this.onMutacion());
+        this.page.on("frameattached", (f) => void this.instalarObserver(f));
+        this.page.on("framenavigated", (f) => void this.instalarObserver(f));
+        await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
+        this.diag("iniciar:goto-ok", `${BASE}/`);
+        await this.page.waitForFunction(GRECAPTCHA_LISTO, { timeout: 20000 });
+        this.diag("iniciar:grecaptcha-listo");
+        await warmupPage(this.page);
+      }
     } catch (e) {
       this.liberarCupo();
-      this.diag("iniciar:navegador-ERROR", String((e as Error).message || e));
+      this.diag("iniciar:ERROR", String((e as Error).message || e).slice(0, 160));
       throw e;
     }
-    const opcsContext = {
-      userAgent: UA,
-      viewport: { width: 1280, height: 800 },
-      locale: "es-AR",
-      timezoneId: "America/Argentina/Cordoba",
-      deviceScaleFactor: 1,
-      isMobile: false,
-      hasTouch: false,
-      colorScheme: "light" as const,
-      extraHTTPHeaders: { "Accept-Language": "es-AR,es;q=0.9,en;q=0.8" },
-    };
 
-    const proxies = parsearProxies();
-    let context: BrowserContext | null = null;
-    if (proxies.length === 0) {
-      context = await this.browser.newContext(opcsContext);
-      this.diag("proxy:directo", "CAPTCHA_PROXIES=off");
-    } else {
-      this.diag("proxy:probando-lista", { candidatos: proxies.length });
-      context = await this.elegirProxy(proxies, opcsContext);
-      if (!context) {
-        this.diag("proxy:TODOS-FALLARON", `${proxies.length} proxies sin conexión`);
-        throw new Error(
-          `Ninguno de los ${proxies.length} proxies respondió. Probá otra lista en CAPTCHA_PROXIES, o CAPTCHA_PROXIES=off para salir directo.`
-        );
-      }
-    }
-
-    this.context = context;
-
-    // Corta lo que no hace falta para el solve: fuentes, imágenes de la página
-    // de turnos, el mapa de Google embebido (pesadísimo) y trackers. NO se toca
-    // NADA de recaptcha/gstatic (widget + tiles del desafío pasan siempre).
-    await context.route("**/*", (route) => {
-      const req = route.request();
-      const url = req.url();
-      if (/\/recaptcha\/|gstatic\.com\/recaptcha/.test(url)) return route.continue();
-      const tipo = req.resourceType();
-      if (
-        tipo === "font" ||
-        tipo === "image" ||
-        tipo === "media" ||
-        /\/maps\/|maps\.google|maps\.gstatic|khms\d|mts\d\.google/.test(url) ||
-        /google-analytics\.com|googletagmanager\.com|doubleclick\.net|connect\.facebook|hotjar|clarity\.ms/.test(url)
-      ) {
-        return route.abort();
-      }
-      return route.continue();
-    });
-
-    // Parche de fingerprint antes de cualquier script de la página.
-    await context.addInitScript(STEALTH_INIT);
-    this.page = await context.newPage();
     this.diag("iniciar:context-ok");
 
-    // Binding disponible en window de TODOS los frames (incluidos los iframes
-    // cross-origin del reCAPTCHA y los que se creen después, como el bframe del
-    // desafío). Se registra una sola vez, antes de navegar.
-    await this.page.exposeFunction("__captchaEvento", () => this.onMutacion());
-    this.diag("iniciar:binding-expuesto");
-
-    // Reinyecta el observer cuando el bframe se crea / re-navega (nueva ronda,
-    // recarga del desafío).
-    this.page.on("frameattached", (f) => void this.instalarObserver(f));
-    this.page.on("framenavigated", (f) => void this.instalarObserver(f));
-
-    try {
-      // 90s: por el túnel residencial la página del legacy + embeds cargan lento.
-      await this.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
-      this.diag("iniciar:goto-ok", `${BASE}/`);
-    } catch (e) {
-      this.diag("iniciar:goto-ERROR", String((e as Error).message || e));
-      throw e;
-    }
-    try {
-      await this.page.waitForFunction(
-        () =>
-          typeof (globalThis as { grecaptcha?: unknown }).grecaptcha !== "undefined" &&
-          !!document.querySelector(".g-recaptcha iframe"),
-        { timeout: 20000 }
-      );
-      this.diag("iniciar:grecaptcha-listo");
-    } catch (e) {
-      this.diag(
-        "iniciar:grecaptcha-TIMEOUT",
-        "no apareció grecaptcha/.g-recaptcha iframe en 20s — ¿cambió la página del legacy?"
-      );
-      throw e;
-    }
-
-    // Observers en el frame principal + los que ya existan (anchor).
+    // Observers en el frame principal + los que ya existan (anchor/bframe).
     await this.instalarObserver(this.page.mainFrame());
     for (const f of this.page.frames()) await this.instalarObserver(f);
     this.diag("iniciar:observers-instalados", {
       frames: this.page.frames().map((f) => f.url().slice(0, 80)),
     });
-
-    // Warm-up: un rato de "actividad humana" (mouse paseando, scroll suave)
-    // antes de que el usuario tilde el checkbox. reCAPTCHA puntúa el
-    // comportamiento previo, no solo el clic.
-    await this.warmup();
 
     this.emitir("listo");
     // Lectura inicial por si el widget ya trae estado.
@@ -508,28 +605,6 @@ export class SesionCaptcha {
       }
     }
     return null;
-  }
-
-  private async warmup(): Promise<void> {
-    if (!this.page) return;
-    try {
-      const puntos: Array<[number, number]> = [
-        [200 + Math.random() * 300, 200 + Math.random() * 200],
-        [500 + Math.random() * 400, 300 + Math.random() * 250],
-        [300 + Math.random() * 500, 450 + Math.random() * 200],
-      ];
-      for (const [x, y] of puntos) {
-        await this.page.mouse.move(x, y, { steps: 8 + Math.floor(Math.random() * 10) });
-        await sleep(120 + Math.random() * 260);
-      }
-      await this.page.mouse.wheel(0, 120 + Math.random() * 160);
-      await sleep(300 + Math.random() * 500);
-      await this.page.mouse.wheel(0, -(80 + Math.random() * 120));
-      await sleep(400 + Math.random() * 700);
-      this.diag("iniciar:warmup-ok");
-    } catch (e) {
-      this.diag("iniciar:warmup-error", String((e as Error).message || e).slice(0, 80));
-    }
   }
 
   async cerrar(): Promise<void> {

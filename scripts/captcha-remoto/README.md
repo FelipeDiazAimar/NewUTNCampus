@@ -57,6 +57,12 @@ Opciones:
   fila FIFO y ven "Sos el N.º X". Al liberarse un cupo entra el siguiente. Si
   el usuario cierra la pantalla mientras espera, sale de la fila. Recién si la
   fila está llena (`> MaxCola`) se rechaza con "probá en unos minutos".
+- `-Pool N` — mantiene **N contextos pre-cargados** (ya en la página de turnos,
+  `grecaptcha` listo, warmup hecho). El usuario agarra uno al instante: el
+  arranque baja de ~5 s a **~30 ms**. Suman RAM: presupuestá
+  `total = MaxSesiones + Pool` contextos. Recomendado `-Pool 2` o `3`. Se
+  recicla cada 2,5 min y se rellena solo en segundo plano. (Sin efecto si usás
+  `CAPTCHA_PROXIES`.)
 
 Después:
 
