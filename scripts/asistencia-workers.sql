@@ -23,6 +23,8 @@ create table if not exists public.asistencia_workers (
   rt_min_ms      integer not null default 0,
   materias_hoy   text,                        -- CSV de nombres detectados hoy
   pushes_hoy     integer not null default 0,
+  cuentas        integer not null default 0,   -- credenciales de usuarios cargadas
+  comisiones     integer not null default 0,   -- comisiones distintas cubiertas
   -- comandos remotos (mismas columnas que captcha_workers):
   comando        text,                        -- 'reiniciar' | 'frenar' | 'arrancar' | null
   comando_nonce  text,

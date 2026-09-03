@@ -94,3 +94,23 @@ CREATE TABLE IF NOT EXISTS asistencia_avisos_log (
   enviados        INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (fecha, materia_id)
 );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Asistencia: cobertura total vía credenciales cifradas por usuario
+-- (ver scripts/asistencia-credenciales.sql)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS asistencia_credenciales (
+  legajo         TEXT PRIMARY KEY,
+  cred_cifrada   TEXT NOT NULL,
+  email          TEXT,
+  comisiones     JSONB,
+  comisiones_at  TIMESTAMP WITH TIME ZONE,
+  strikes        INTEGER NOT NULL DEFAULT 0,
+  visto_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  creado_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE asistencia_workers
+  ADD COLUMN IF NOT EXISTS cuentas    INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS comisiones INTEGER NOT NULL DEFAULT 0;
