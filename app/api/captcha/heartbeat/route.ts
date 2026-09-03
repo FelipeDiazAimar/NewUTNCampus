@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
     proceso_desde: b.proceso_desde ? String(b.proceso_desde) : null,
     wss_url: b.wss_url ? String(b.wss_url).slice(0, 300) : null,
     version: b.version ? String(b.version).slice(0, 40) : null,
+    ram_total_mb: n(b.ram_total_mb),
+    ram_usada_mb: n(b.ram_usada_mb),
     estado: b.estado === "apagado" ? "apagado" : "activo",
     motivo: b.motivo ? String(b.motivo).slice(0, 200) : null,
     conex_total: n(b.conex_total),

@@ -39,7 +39,7 @@ export default function AdminDashboardClient() {
     <div className="min-h-screen bg-[var(--bg)]">
       <Navbar />
 
-      <main className="mx-auto max-w-xl px-4 pt-12 pb-12">
+      <main className="mx-auto max-w-5xl px-4 pt-12 pb-12">
         <Breadcrumb items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Admin" }]} />
 
         <div className="mb-6 flex items-center gap-3">
@@ -54,9 +54,10 @@ export default function AdminDashboardClient() {
           </div>
         </div>
 
-        <LoginStatsSection />
-
-        <ErrorStatsSection />
+        <div className="grid gap-x-6 lg:grid-cols-2 [&_section]:mb-7 lg:[&_section]:mb-6">
+          <LoginStatsSection />
+          <ErrorStatsSection />
+        </div>
 
         <CaptchaWorkersSection />
 

@@ -22,6 +22,8 @@ type Worker = {
   rt_prom_ms: number;
   rt_max_ms: number;
   rt_min_ms: number;
+  ram_total_mb: number;
+  ram_usada_mb: number;
   hace_ms: number;
   activa_hace_ms: number | null;
   conectada: boolean;
@@ -49,6 +51,23 @@ function Dato({ k, v }: { k: string; v: React.ReactNode }) {
     <div className="flex flex-col">
       <span className="text-[11px] uppercase tracking-wide text-[var(--secondary)]">{k}</span>
       <span className="text-[14px] font-semibold text-[var(--fg)] tabular-nums">{v}</span>
+    </div>
+  );
+}
+
+function RamDato({ total, usada }: { total: number; usada: number }) {
+  if (!total) return <Dato k="RAM de la PC" v="—" />;
+  const pct = Math.min(100, Math.round((usada / total) * 100));
+  const color = pct >= 88 ? "#ff3b30" : pct >= 70 ? "#ff9500" : "#34c759";
+  return (
+    <div className="flex flex-col">
+      <span className="text-[11px] uppercase tracking-wide text-[var(--secondary)]">RAM de la PC</span>
+      <span className="text-[14px] font-semibold text-[var(--fg)] tabular-nums">
+        {(usada / 1024).toFixed(1)} / {(total / 1024).toFixed(1)} GB
+      </span>
+      <span className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[var(--separator)]">
+        <span className="block h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </span>
     </div>
   );
 }
@@ -140,13 +159,13 @@ export default function CaptchaWorkersSection() {
                 </span>
               </div>
 
-              <div className="px-4 py-3 grid grid-cols-3 gap-x-3 gap-y-3">
+              <div className="px-4 py-3 grid grid-cols-3 gap-x-3 gap-y-3 md:grid-cols-4">
                 <Dato
                   k="Activa hace"
                   v={online && w.activa_hace_ms != null ? dur(w.activa_hace_ms) : "—"}
                 />
                 <Dato k="Última señal" v={`hace ${dur(w.hace_ms)}`} />
-                <Dato k="Versión" v={w.version || "—"} />
+                <RamDato total={w.ram_total_mb} usada={w.ram_usada_mb} />
 
                 <Dato k="Conexiones ahora" v={w.conex_actual} />
                 <Dato k="Máx simultáneas" v={w.conex_max} />
