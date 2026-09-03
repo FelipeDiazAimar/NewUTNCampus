@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SYSACADWS_BASE, type SysacadDatosPersonales, type SysacadWsUser } from "@/lib/sysacadws";
 import { sessionCookieOptions } from "@/lib/cookies";
+import { supabaseFetch } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -53,7 +54,21 @@ export async function POST(req: NextRequest) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
+  // Borra la credencial guardada para el daemon de asistencia (best-effort).
+  try {
+    const auth = req.cookies.get("sysacadws_auth")?.value;
+    const legajo = auth ? Buffer.from(auth, "base64").toString("utf8").split(":")[0]?.trim() : null;
+    if (legajo) {
+      await supabaseFetch(`asistencia_credenciales?legajo=eq.${encodeURIComponent(legajo)}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" },
+      });
+    }
+  } catch {
+    /* no bloquea el logout */
+  }
+
   const response = NextResponse.json({ ok: true });
   response.cookies.delete("sysacadws_auth");
   response.cookies.delete("sysacadws_user");

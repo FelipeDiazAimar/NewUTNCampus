@@ -63,6 +63,7 @@ export default function SessionGuard() {
         // Fire-and-forget: no bloquea el keep-alive ni produce errores visibles.
         if (k === "campus") {
           fetch("/api/notifications/push-subscription/session", { method: "POST" }).catch(() => {});
+          fetch("/api/asistencia/credencial/refresh", { method: "POST" }).catch(() => {});
         }
       }
     } catch {

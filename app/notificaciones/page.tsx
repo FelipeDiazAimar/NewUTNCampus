@@ -471,6 +471,7 @@ export default function NotificacionesPage() {
                           materias.map((m) => updateMateria(m.materia_nombre, { materia_activa: true }))
                         );
                       }
+                      fetch("/api/asistencia/credencial/refresh", { method: "POST" }).catch(() => {});
                     }}
                   />
                 </div>
@@ -640,9 +641,16 @@ export default function NotificacionesPage() {
                         <Toggle
                           checked={asistenciaActive}
                           disabled={!globalActive}
-                          onChange={(next) => updateProfile({ notificar_asistencia: next })}
+                          onChange={async (next) => {
+                            await updateProfile({ notificar_asistencia: next });
+                            fetch("/api/asistencia/credencial/refresh", { method: "POST" }).catch(() => {});
+                          }}
                         />
                       </Row>
+                      <p className="px-4 py-2 text-[12px] leading-relaxed text-[var(--secondary)]">
+                        Para avisarte, Campus guarda tu credencial de Sysacad cifrada y revisa la
+                        asistencia por vos. Se borra si desactivás esto o cerrás sesión de Sysacad.
+                      </p>
                     </div>
                   </CollapsibleSection>
                 )}
