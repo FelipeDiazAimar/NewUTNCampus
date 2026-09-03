@@ -168,11 +168,49 @@ const STEALTH_INIT = `
 })();
 `;
 
+// ── Navegador compartido ─────────────────────────────────────────────────────
+// Un solo Chromium para todas las sesiones; cada sesión abre su propio
+// BrowserContext (cookies/almacenamiento aislados). Baja la RAM por usuario de
+// ~400 MB (browser) a ~100 MB (context) y el arranque de ~2-3 s a ~200 ms.
+let navegadorCompartido: Browser | null = null;
+let lanzandoNavegador: Promise<Browser> | null = null;
+
+async function obtenerNavegador(): Promise<{ browser: Browser; nuevo: boolean }> {
+  if (navegadorCompartido?.isConnected()) return { browser: navegadorCompartido, nuevo: false };
+  if (!lanzandoNavegador) {
+    lanzandoNavegador = lanzarChromium()
+      .then((b) => {
+        navegadorCompartido = b;
+        b.on("disconnected", () => {
+          navegadorCompartido = null;
+        });
+        return b;
+      })
+      .finally(() => {
+        lanzandoNavegador = null;
+      });
+  }
+  return { browser: await lanzandoNavegador, nuevo: true };
+}
+
+// Cierre explícito (el worker lo llama en SIGINT). En serverless el proceso
+// muere y Chromium con él.
+export async function cerrarNavegadorCompartido(): Promise<void> {
+  const b = navegadorCompartido;
+  navegadorCompartido = null;
+  try {
+    await b?.close();
+  } catch {
+    /* ya cerrado */
+  }
+}
+
 type EnviarFn = (obj: Record<string, unknown>) => void;
 
 export class SesionCaptcha {
   private send: EnviarFn;
   private browser: Browser | null = null;
+  private context: BrowserContext | null = null;
   private page: Page | null = null;
   private _token: string | null = null;
   private abortado = false;
@@ -225,12 +263,13 @@ export class SesionCaptcha {
       /* diagnóstico best-effort */
     }
     try {
-      this.diag("iniciar:lanzando-chromium");
-      this.browser = await lanzarChromium();
-      this.diag("iniciar:chromium-ok");
+      this.diag("iniciar:navegador");
+      const r = await obtenerNavegador();
+      this.browser = r.browser;
+      this.diag("iniciar:navegador-ok", r.nuevo ? "nuevo" : "reusado");
     } catch (e) {
       sesionesActivas--;
-      this.diag("iniciar:chromium-ERROR", String((e as Error).message || e));
+      this.diag("iniciar:navegador-ERROR", String((e as Error).message || e));
       throw e;
     }
     const opcsContext = {
@@ -261,6 +300,7 @@ export class SesionCaptcha {
       }
     }
 
+    this.context = context;
     // Parche de fingerprint antes de cualquier script de la página.
     await context.addInitScript(STEALTH_INIT);
     this.page = await context.newPage();
@@ -411,10 +451,12 @@ export class SesionCaptcha {
     if (this.debounce) clearTimeout(this.debounce);
     this.debounce = null;
     try {
-      await this.browser?.close();
+      // Solo el context de esta sesión; el navegador es compartido.
+      await this.context?.close();
     } catch {
       /* ya cerrado */
     }
+    this.context = null;
     this.browser = null;
     this.page = null;
     if (sesionesActivas > 0) sesionesActivas--;

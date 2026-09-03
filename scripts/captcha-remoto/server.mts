@@ -17,7 +17,11 @@
 // NEXT_PUBLIC_CAPTCHA_WS_URL y manda ?token=NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN.
 
 import { WebSocketServer, type WebSocket } from "ws";
-import { SesionCaptcha, MAX_SESIONES_CAPTCHA } from "../../lib/captchaSesion.ts";
+import {
+  SesionCaptcha,
+  MAX_SESIONES_CAPTCHA,
+  cerrarNavegadorCompartido,
+} from "../../lib/captchaSesion.ts";
 
 const PORT = Number(process.env.CAPTCHA_WORKER_PORT || 8788);
 const TOKEN = process.env.CAPTCHA_WORKER_TOKEN || "";
@@ -117,6 +121,7 @@ wss.on("connection", (ws: WebSocket, req) => {
 
 const cerrar = () => {
   console.log("\n[worker] cerrando...");
+  void cerrarNavegadorCompartido();
   wss.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000);
 };
