@@ -71,4 +71,3 @@ scripts/proxy-casero/credentials.txt
 # asistencia daemon (local): config/secretos generados
 scripts/asistencia-daemon/app-url.txt
 scripts/asistencia-daemon/secret.txt
-scripts/asistencia-daemon/credenciales.txt

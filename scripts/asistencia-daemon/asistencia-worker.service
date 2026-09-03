@@ -18,9 +18,6 @@ WorkingDirectory=/home/CAMBIAR_USUARIO/campus-utn
 Environment=CAMPUS_APP_URL=https://campusutn.dpdns.org
 Environment=NOTIFICATIONS_WEBHOOK_SECRET=PEGAR_SECRETO
 Environment=ASISTENCIA_WORKER_NAME=pc-linux
-Environment=ASISTENCIA_USER=PEGAR_USUARIO_BOT
-Environment=ASISTENCIA_PASSWORD=PEGAR_PASSWORD_BOT
-Environment=ASISTENCIA_POLL_MS=120000
 ExecStart=/usr/bin/node scripts/asistencia-daemon/supervisor.mts
 Restart=always
 RestartSec=5

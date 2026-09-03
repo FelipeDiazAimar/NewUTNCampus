@@ -22,6 +22,8 @@ type Worker = {
   rt_min_ms: number;
   materias_hoy: string | null;
   pushes_hoy: number;
+  cuentas: number;
+  comisiones: number;
   hace_ms: number;
   activa_hace_ms: number | null;
   conectada: boolean;
@@ -180,6 +182,9 @@ export default function AsistenciaWorkersSection() {
 
                 <Dato k="Materias hoy" v={w.materias_hoy || "—"} />
                 <Dato k="Pushes hoy" v={w.pushes_hoy} />
+
+                <Dato k="Cuentas" v={w.cuentas ?? 0} />
+                <Dato k="Comisiones" v={w.comisiones ?? 0} />
               </div>
 
               {!online && (

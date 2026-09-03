@@ -7,8 +7,9 @@ el aviso de asistencia activado. Al tocar la notificación se abre `/asistencia`
 
 ## Por qué corre local (y no en un cron en la nube)
 
-- Hay que pollear cada ~2 min. Vercel Cron (Hobby) corre 1 vez por día;
-  GitHub Actions, cada 5 min y con retrasos → el aviso llegaría tarde.
+- Hay que chequear cada comisión cada ~10 min, con muchos logins al legacy.
+  Vercel Cron (Hobby) corre 1 vez por día; GitHub Actions, cada 5 min y con
+  retrasos → el aviso llegaría tarde y sin margen para el rate-limiting.
 - El legacy chequea la red de la facultad. Desde una IP residencial / de la
   facultad es menos probable que bloquee que desde una IP de datacenter.
 
@@ -23,14 +24,16 @@ aviso (y en el monitor se ven como dos workers).
 
 ## Setup (una vez)
 
-1. En Supabase → SQL Editor, correr `scripts/asistencia-workers.sql` y
-   `scripts/asistencia-avisos-log.sql`.
+1. En Supabase → SQL Editor, correr `scripts/asistencia-workers.sql`,
+   `scripts/asistencia-avisos-log.sql` y `scripts/asistencia-credenciales.sql`.
 2. Crear `scripts/asistencia-daemon/secret.txt` con el **mismo**
    `NOTIFICATIONS_WEBHOOK_SECRET` que está en Vercel.
-3. Crear `scripts/asistencia-daemon/credenciales.txt` con 2 líneas: usuario y
-   password de la cuenta-bot del legacy (es el legajo + DNI, igual que Sysacad).
 
-Los tres `*.txt` están gitignoreados.
+No hay cuenta-bot. La cobertura sale sola de los usuarios que activan
+"Avisar asistencia disponible" en `/notificaciones`: la app guarda su credencial
+de Sysacad cifrada y el daemon la usa para ver sus comisiones.
+
+Los `*.txt` (`secret.txt`, `app-url.txt`) están gitignoreados.
 
 ## Uso
 
@@ -59,11 +62,13 @@ sesión, se reinicia sola si falla). En Linux: `asistencia-worker.service`.
 
 ## Mover a otra PC
 
-Clonar el repo, copiar los `*.txt` (`secret.txt`, `credenciales.txt`,
-`app-url.txt`), tener Node 22.6+, `.\start.ps1`.
+Clonar el repo, copiar `secret.txt` y `app-url.txt`, tener Node 22.6+,
+`.\start.ps1 -AppUrl <url> -Name <nombre>`.
 
 ## Usuarios nuevos
 
 No hay nada que hacer. El aviso llega a toda suscripción push activa; cuando un
 alumno instala la PWA y activa notificaciones, `/notificaciones` le crea el
-perfil con la asistencia activada y el próximo aviso ya le llega.
+perfil con la asistencia activada y el próximo aviso ya le llega. Si además
+mantiene el toggle "Avisar asistencia disponible" activo, sus comisiones entran
+automáticamente en la cobertura del daemon.
