@@ -22,18 +22,6 @@ export async function POST(req: NextRequest) {
     materia = body.materia;
   } catch { /* sin body — ok */ }
 
-  // Actualizar el estado del agente para reflejar el disparo manual.
-  await supabaseFetch("asistencia_agent_status?agent_id=eq.motorola-local", {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({
-      status: "detected",
-      last_seen_at: new Date().toISOString(),
-      last_payload: { source: "admin-manual", materia: materia ?? null },
-      updated_at: new Date().toISOString(),
-    }),
-  }).catch(() => {});
-
   // Usuarios que desactivaron los avisos de asistencia (o el global) — se excluyen.
   const disabledRes = await supabaseFetch(
     "perfil_notificaciones?or=(notificaciones_globales_activas.eq.false,notificar_asistencia.eq.false)&select=email"

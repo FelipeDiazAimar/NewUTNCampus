@@ -8,6 +8,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import LoginStatsSection from "./LoginStatsSection";
 import ErrorStatsSection from "./ErrorStatsSection";
 import CaptchaWorkersSection from "./CaptchaWorkersSection";
+import AsistenciaWorkersSection from "./AsistenciaWorkersSection";
 import PushTestSection from "./PushTestSection";
 
 const TOOLS: {
@@ -61,6 +62,8 @@ export default function AdminDashboardClient() {
         </div>
 
         <CaptchaWorkersSection />
+
+        <AsistenciaWorkersSection />
 
         <PushTestSection />
 
