@@ -29,14 +29,34 @@ const DEBOUNCE_MS = 120;
 // lectura igual para no quedarnos sin espejo mientras el widget "respira".
 const DEBOUNCE_MAX_MS = 1200;
 
-// Tope de Chromium headless en simultáneo. En el worker de casa se ajusta con
-// CAPTCHA_MAX_SESIONES según la RAM (cada sesión ~300-500 MB). En Vercel dejar
-// el default (memoria acotada de la función).
+// Cupos en simultáneo (cada sesión = un BrowserContext sobre el navegador
+// compartido). En el worker se ajusta con CAPTCHA_MAX_SESIONES según la RAM.
 export const MAX_SESIONES_CAPTCHA = Math.max(
   1,
   Number(process.env.CAPTCHA_MAX_SESIONES) || 2
 );
+// Cuánta gente puede quedar ESPERANDO en la fila. Pasado esto, se rechaza.
+const MAX_COLA = Math.max(0, Number(process.env.CAPTCHA_MAX_COLA) || 40);
+
 let sesionesActivas = 0;
+
+// ── Cola FIFO ────────────────────────────────────────────────────────────────
+type EnCola = { sesion: SesionCaptcha; cancelado: boolean; resolver: () => void };
+const cola: EnCola[] = [];
+
+function avisarPosiciones() {
+  cola.filter((w) => !w.cancelado).forEach((w, i) => w.sesion.avisarCola(i + 1));
+}
+
+function procesarCola() {
+  while (sesionesActivas < MAX_SESIONES_CAPTCHA && cola.length) {
+    const w = cola.shift();
+    if (!w || w.cancelado) continue;
+    sesionesActivas++; // el cupo queda reservado para este waiter
+    w.resolver();
+  }
+  avisarPosiciones();
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -222,6 +242,8 @@ export class SesionCaptcha {
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private debounceDesde = 0;
   private eventos = 0;
+  private tieneCupo = false;
+  private miWaiter: EnCola | null = null;
 
   constructor(send: EnviarFn) {
     this.send = send;
@@ -229,6 +251,51 @@ export class SesionCaptcha {
 
   static get cupoDisponible(): boolean {
     return sesionesActivas < MAX_SESIONES_CAPTCHA;
+  }
+
+  /** Aviso de posición en la fila (lo usa procesarCola). */
+  avisarCola(posicion: number): void {
+    this.emitir("en-cola", { posicion });
+  }
+
+  // Toma un cupo o espera en la fila. Lanza si la fila está llena o si la
+  // conexión se cerró mientras esperaba.
+  private async tomarCupo(): Promise<void> {
+    if (sesionesActivas < MAX_SESIONES_CAPTCHA) {
+      sesionesActivas++;
+      this.tieneCupo = true;
+      return;
+    }
+    if (cola.length >= MAX_COLA) {
+      throw new Error(
+        "Hay mucha gente esperando para verificar. Probá de nuevo en unos minutos."
+      );
+    }
+    this.diag("cola:esperando", { posicion: cola.filter((w) => !w.cancelado).length + 1 });
+    await new Promise<void>((resolve) => {
+      this.miWaiter = { sesion: this, cancelado: false, resolver: resolve };
+      cola.push(this.miWaiter);
+      this.avisarCola(cola.filter((w) => !w.cancelado).length);
+    });
+    this.miWaiter = null;
+    this.tieneCupo = true; // procesarCola ya hizo sesionesActivas++
+    if (this.abortado) {
+      this.liberarCupo();
+      throw new Error("cancelado");
+    }
+    this.diag("cola:entra");
+  }
+
+  private liberarCupo(): void {
+    if (this.miWaiter) {
+      this.miWaiter.cancelado = true;
+      this.miWaiter = null;
+    }
+    if (this.tieneCupo) {
+      this.tieneCupo = false;
+      sesionesActivas--;
+      procesarCola();
+    }
   }
 
   private emitir(fase: string, extra: Record<string, unknown> = {}) {
@@ -249,10 +316,8 @@ export class SesionCaptcha {
   }
 
   async iniciar(): Promise<void> {
-    if (!SesionCaptcha.cupoDisponible) {
-      throw new Error("Hay demasiadas sesiones de captcha activas. Probá en unos minutos.");
-    }
-    sesionesActivas++;
+    // Toma un cupo, o espera en la fila hasta que se libere uno.
+    await this.tomarCupo();
     // Diagnóstico del tracing: si nft volvió a podar browsers.json, este log
     // lo dice antes de que el import de playwright-core reviente.
     try {
@@ -268,7 +333,7 @@ export class SesionCaptcha {
       this.browser = r.browser;
       this.diag("iniciar:navegador-ok", r.nuevo ? "nuevo" : "reusado");
     } catch (e) {
-      sesionesActivas--;
+      this.liberarCupo();
       this.diag("iniciar:navegador-ERROR", String((e as Error).message || e));
       throw e;
     }
@@ -302,15 +367,18 @@ export class SesionCaptcha {
 
     this.context = context;
 
-    // Corta lo que no hace falta para el solve: el mapa de Google embebido en
-    // la página de turnos (pesadísimo), trackers, y todas las fuentes. NO se
-    // toca nada de google.com/recaptcha ni gstatic/recaptcha (widget + tiles).
+    // Corta lo que no hace falta para el solve: fuentes, imágenes de la página
+    // de turnos, el mapa de Google embebido (pesadísimo) y trackers. NO se toca
+    // NADA de recaptcha/gstatic (widget + tiles del desafío pasan siempre).
     await context.route("**/*", (route) => {
       const req = route.request();
       const url = req.url();
       if (/\/recaptcha\/|gstatic\.com\/recaptcha/.test(url)) return route.continue();
+      const tipo = req.resourceType();
       if (
-        req.resourceType() === "font" ||
+        tipo === "font" ||
+        tipo === "image" ||
+        tipo === "media" ||
         /\/maps\/|maps\.google|maps\.gstatic|khms\d|mts\d\.google/.test(url) ||
         /google-analytics\.com|googletagmanager\.com|doubleclick\.net|connect\.facebook|hotjar|clarity\.ms/.test(url)
       ) {
@@ -477,7 +545,9 @@ export class SesionCaptcha {
     this.context = null;
     this.browser = null;
     this.page = null;
-    if (sesionesActivas > 0) sesionesActivas--;
+    // Libera el cupo (o sale de la fila si estaba esperando) => entra el
+    // siguiente.
+    this.liberarCupo();
   }
 
   get token(): string | null {

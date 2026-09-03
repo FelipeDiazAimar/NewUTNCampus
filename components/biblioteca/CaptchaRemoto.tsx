@@ -19,6 +19,7 @@ type CeldaDom = { i: number; pos: string; size: string } | null;
 type Estado =
   | { fase: "conectando" }
   | { fase: "iniciando" }
+  | { fase: "en-cola"; posicion: number }
   | { fase: "listo" }
   | { fase: "verificando"; texto?: string }
   | {
@@ -40,6 +41,7 @@ type MensajeServidor = {
   celdas?: CeldaDom[];
   token?: string;
   mensaje?: string;
+  posicion?: number;
   paso?: string;
   detalle?: unknown;
   t?: number;
@@ -122,6 +124,9 @@ export default function CaptchaRemoto({
       }
       if (m.type !== "estado") return;
       switch (m.fase) {
+        case "en-cola":
+          setEstado({ fase: "en-cola", posicion: m.posicion || 1 });
+          break;
         case "listo":
           setEstado({ fase: "listo" });
           break;
@@ -247,14 +252,28 @@ export default function CaptchaRemoto({
   return (
     <div className="rounded-3xl border border-[var(--navbar-border)] bg-[var(--surface)] p-6 mb-6 flex flex-col items-center text-center">
       <h2 className="text-[16px] font-semibold text-[var(--fg)] mb-1">Verificación de seguridad</h2>
-      {estado.fase !== "resuelto" && (
+      {estado.fase !== "resuelto" && estado.fase !== "en-cola" && (
         <p className="text-[12px] text-[#ff9500] mb-4 max-w-[304px]">
           Al resolver el captcha se pedirá el turno automáticamente con los datos del formulario.
         </p>
       )}
 
-      {/* ── Clon del widget anchor de reCAPTCHA (se oculta durante el desafío) ── */}
-      {estado.fase !== "desafio" && (
+      {/* ── En fila de espera ─────────────────────────────────────────────── */}
+      {estado.fase === "en-cola" && (
+        <div className="w-full max-w-[304px] py-4 text-center">
+          <div className="w-6 h-6 border-[3px] border-[var(--separator)] border-t-[#007aff] rounded-full animate-spin mx-auto" />
+          <p className="text-[15px] font-semibold text-[var(--fg)] mt-3">
+            Sos el N.º {estado.posicion} en la fila
+          </p>
+          <p className="text-[12px] text-[var(--secondary)] mt-1">
+            Hay varias personas verificando ahora mismo. Apenas se libere un lugar seguís
+            vos — no cierres esta pantalla.
+          </p>
+        </div>
+      )}
+
+      {/* ── Clon del widget anchor de reCAPTCHA (oculto en desafío/cola) ──── */}
+      {estado.fase !== "desafio" && estado.fase !== "en-cola" && (
       <div
         onClick={estado.fase === "listo" ? clicCheckbox : undefined}
         className={`flex items-center gap-3 w-full max-w-[304px] rounded-[3px] border border-[#d3d3d3] bg-[#f9f9f9] px-3 py-3 shadow-[0_0_4px_1px_rgba(0,0,0,0.08)] select-none text-left ${

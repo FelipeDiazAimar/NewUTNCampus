@@ -47,12 +47,16 @@ Opciones:
   una ventana de Chrome cada vez que alguien pide turno.
 - `-Origin https://tu-app.vercel.app` — solo acepta conexiones desde ese origin
   (además del token). Recomendado una vez que sepas la URL final.
-- `-MaxSesiones N` — cuántos captcha a la vez (default **2**). Hay **un solo
-  Chromium compartido** (~250 MB) y cada sesión suma un `context` (~100-150 MB).
-  Guía aprox: 8 GB → 6-8, 16 GB → 12-16, 32 GB → 24+. El usuario N+1 recibe
-  "Hay N sesiones activas, esperá" y reintenta; cada sesión dura ~30 s-2 min y
-  libera el lugar al resolver. El arranque del 2do en adelante es casi
+- `-MaxSesiones N` — cuántos captcha **en paralelo** (default **2**). Hay **un
+  solo Chromium compartido** (~250 MB) y cada sesión suma un `context`
+  (~100-150 MB, con imágenes/fuentes/mapa bloqueados). Guía aprox: 8 GB → 6-8,
+  16 GB → 12-16, 32 GB → 24+. El arranque del 2do en adelante es casi
   instantáneo (no relanza Chromium).
+- `-MaxCola N` — cuánta gente puede quedar **esperando en la fila** (default
+  **40**). Pasado `-MaxSesiones`, las conexiones NO reciben error: entran a una
+  fila FIFO y ven "Sos el N.º X". Al liberarse un cupo entra el siguiente. Si
+  el usuario cierra la pantalla mientras espera, sale de la fila. Recién si la
+  fila está llena (`> MaxCola`) se rechaza con "probá en unos minutos".
 
 Después:
 

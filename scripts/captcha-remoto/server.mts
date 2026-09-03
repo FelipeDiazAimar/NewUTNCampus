@@ -17,11 +17,7 @@
 // NEXT_PUBLIC_CAPTCHA_WS_URL y manda ?token=NEXT_PUBLIC_CAPTCHA_WORKER_TOKEN.
 
 import { WebSocketServer, type WebSocket } from "ws";
-import {
-  SesionCaptcha,
-  MAX_SESIONES_CAPTCHA,
-  cerrarNavegadorCompartido,
-} from "../../lib/captchaSesion.ts";
+import { SesionCaptcha, cerrarNavegadorCompartido } from "../../lib/captchaSesion.ts";
 
 const PORT = Number(process.env.CAPTCHA_WORKER_PORT || 8788);
 const TOKEN = process.env.CAPTCHA_WORKER_TOKEN || "";
@@ -73,13 +69,7 @@ wss.on("connection", (ws: WebSocket, req) => {
     try {
       switch (msg.type) {
         case "iniciar": {
-          if (!SesionCaptcha.cupoDisponible) {
-            send({
-              type: "error",
-              mensaje: `Hay ${MAX_SESIONES_CAPTCHA} sesiones activas. Espera un momento.`,
-            });
-            return;
-          }
+          // El cupo / la cola los maneja sesion.iniciar() (emite "en-cola").
           sesion = new SesionCaptcha(send);
           send({ type: "iniciado" });
           await sesion.iniciar();

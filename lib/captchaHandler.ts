@@ -14,7 +14,7 @@
 // Usado solo por la ruta de Vercel (app/api/captcha/route.ts). El worker
 // standalone (scripts/captcha-remoto/server.mts) tiene su propia copia del
 // switch para poder correr con el TS nativo de Node sin pasar por el bundler.
-import { SesionCaptcha, MAX_SESIONES_CAPTCHA } from "./captchaSesion";
+import { SesionCaptcha } from "./captchaSesion";
 
 type Enviar = (obj: Record<string, unknown>) => void;
 
@@ -43,13 +43,8 @@ export function crearCaptchaHandler(send: Enviar): CaptchaHandler {
       try {
         switch (msg.type) {
           case "iniciar": {
-            if (!SesionCaptcha.cupoDisponible) {
-              send({
-                type: "error",
-                mensaje: `Hay ${MAX_SESIONES_CAPTCHA} sesiones activas. Esperá un momento.`,
-              });
-              return;
-            }
+            // El cupo / la cola los maneja sesion.iniciar() (emite "en-cola"
+            // mientras espera).
             sesion = new SesionCaptcha(send);
             send({ type: "iniciado" });
             await sesion.iniciar();

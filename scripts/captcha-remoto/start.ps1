@@ -18,9 +18,11 @@
 # El subdominio de trycloudflare.com cambia en cada arranque: al reiniciar,
 # actualizar NEXT_PUBLIC_CAPTCHA_WS_URL en Vercel y redeploy.
 # ---------------------------------------------------------------------------
-#   .\start.ps1 -MaxSesiones 4   cuantos Chromium en simultaneo (default 2;
-#                                ~300-500 MB de RAM cada uno)
-param([switch]$Headful, [string]$Origin = "", [int]$MaxSesiones = 0)
+#   .\start.ps1 -MaxSesiones 12  cuantos captcha en paralelo (default 2). Hay
+#                                un solo Chromium; cada sesion suma un context
+#                                (~100-150 MB). Guia: 8GB -> 6-8, 16GB -> 12-16.
+#   .\start.ps1 -MaxCola 60      cuanta gente puede quedar ESPERANDO (default 40)
+param([switch]$Headful, [string]$Origin = "", [int]$MaxSesiones = 0, [int]$MaxCola = 0)
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
 $root = (Resolve-Path (Join-Path $dir "..\..")).Path
@@ -60,6 +62,7 @@ $env:CAPTCHA_WORKER_TOKEN = $TOKEN
 if ($Origin) { $env:CAPTCHA_ALLOWED_ORIGINS = $Origin }
 if ($Headful) { $env:CAPTCHA_HEADFUL = "1" }
 if ($MaxSesiones -gt 0) { $env:CAPTCHA_MAX_SESIONES = "$MaxSesiones" }
+if ($MaxCola -gt 0) { $env:CAPTCHA_MAX_COLA = "$MaxCola" }
 $serverMts = Join-Path $dir "server.mts"
 $nodeMajor = [int](& node -e "console.log(process.versions.node.split('.')[0])")
 if ($nodeMajor -lt 22) { throw "Node ${nodeMajor}: se necesita Node 22.6+ (idealmente 24) para correr .mts nativo." }
