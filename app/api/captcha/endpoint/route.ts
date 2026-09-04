@@ -2,8 +2,11 @@
 // están vivos (heartbeat reciente). El cliente (CaptchaRemoto.tsx) lo consulta
 // si no hay NEXT_PUBLIC_CAPTCHA_WS_URL fijo, así no hay que reconfigurar Vercel
 // cada vez que el túnel del worker cambia de URL.
+//
+// Gateado por la sesión del campus: solo un usuario logueado descubre la URL
+// del worker (evita que cualquiera lo use de resolvedor / navegue turnos).
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseFetch } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -11,7 +14,13 @@ export const dynamic = "force-dynamic";
 
 const FRESCO_MS = 40000; // sin heartbeat en 40s => se considera caído
 
-export async function GET() {
+function tieneSesionApp(req: NextRequest): boolean {
+  const cookie = req.headers.get("cookie") || "";
+  return /moodle_user=|sysacadws_auth=/.test(cookie);
+}
+
+export async function GET(req: NextRequest) {
+  if (!tieneSesionApp(req)) return NextResponse.json({ urls: [] });
   try {
     const res = await supabaseFetch(
       "captcha_workers?select=id,wss_url,actualizado,estado&estado=eq.activo&order=actualizado.desc",
